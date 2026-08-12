@@ -1,0 +1,6 @@
+[install]
+# Lockfile-exact installs everywhere, so CI and a laptop resolve the same tree.
+exact = true
+
+[test]
+root = "./packages"

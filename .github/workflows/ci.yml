@@ -1,0 +1,65 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The gate. Everything here blocks a merge.
+  bun:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+
+      # Ordered cheapest-first so a lint error does not wait on a build.
+      - name: lint
+        run: bun run lint
+      - name: typecheck
+        run: bun run typecheck
+
+      # Hard rule 2 — core imports nothing from a sibling and depends on nothing outside its
+      # allowlist. The reason this repo can claim core is lightweight.
+      - name: dependency boundary
+        run: bun run check:deps
+
+      - name: test
+        run: bun test
+      - name: build
+        run: bun run build
+
+  # Decision 2.2 — Node 22+ is a soft goal, tested but never a blocker. A red leg here is
+  # information, not a merge gate.
+  node:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - run: bun install --frozen-lockfile
+      - name: build
+        run: bun run build
+      # Proves the source tree stays importable by Node unbundled, which Phase 2's
+      # `node --test` parity criterion depends on.
+      - name: node smoke
+        run: node scripts/smoke-node.ts

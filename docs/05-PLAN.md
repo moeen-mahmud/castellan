@@ -35,10 +35,10 @@ ability to review it.
 **Files.** Root config, `packages/core/src/{index,brand}.ts`, `.github/workflows/ci.yml`, `scripts/`
 
 **Acceptance**
-- [ ] `bun install && bun run build && bun test && bun run lint` clean
-- [ ] CI green
-- [ ] `bun scripts/rename-brand.ts foo` renames throughout; `git diff` touches only `brand.ts` and `package.json` files
-- [ ] Adding `import "@castellan/cli"` to core fails CI
+- [x] `bun install && bun run build && bun test && bun run lint` clean
+- [ ] CI green — workflow written; requires a push to verify
+- [x] `bun scripts/rename-brand.ts foo` renames throughout; `git diff` touches only `brand.ts` and `package.json` files
+- [x] Adding `import "@castellan/cli"` to core fails CI
 
 **Non-goals.** Any runtime behaviour.
 

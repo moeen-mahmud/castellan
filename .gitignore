@@ -1,0 +1,21 @@
+# dependencies
+node_modules/
+
+# build output
+dist/
+*.tsbuildinfo
+
+# secrets — manifests reference env var names; values live here and never in git
+.env
+.env.*
+!.env.example
+
+# runtime state directory. Named literally because gitignore has no way to read brand.ts —
+# `scripts/rename-brand.ts` reports this file as needing a manual edit after a rename.
+.castellan/
+
+# local agent tooling state
+.remember/
+
+# os
+.DS_Store
