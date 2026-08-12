@@ -1,6 +1,6 @@
-import { expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { VERSION } from "../src/index.ts"
+import { expect, test } from "./_harness.ts"
 
 test("VERSION matches package.json", () => {
     // `changeset version` bumps the manifest and knows nothing about the constant. This is

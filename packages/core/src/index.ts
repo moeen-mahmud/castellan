@@ -117,7 +117,52 @@ export { Agent, type AgentDescription, type AgentSendOptions } from "./runtime/a
 export {
     type AgentSource,
     type BootReport,
+    defaultStorePath,
     Runtime,
     type RuntimeOptions,
+    type StoreSource,
 } from "./runtime/runtime.ts"
+export {
+    type TurnAttachment,
+    type TurnBufferState,
+    TurnStreams,
+    type TurnStreamsOptions,
+} from "./store/buffer.ts"
+export {
+    formatSessionKey,
+    isSessionKey,
+    parseSessionKey,
+    type SessionParts,
+} from "./store/session-key.ts"
+export {
+    type OpenOptions,
+    openDatabase,
+    type SqlDatabase,
+    type SqlParam,
+    type SqlRunResult,
+    type SqlStatement,
+    type SqlValue,
+    setUserVersion,
+    userVersion,
+} from "./store/sqlite/driver.ts"
+export {
+    MIGRATIONS,
+    type Migration,
+    type MigrationReport,
+    migrate,
+} from "./store/sqlite/migrations.ts"
+export { openMemoryStore, SqliteStore, type SqliteStoreOptions } from "./store/sqlite/store.ts"
+export type {
+    KVStore,
+    MessagePage,
+    MessageStore,
+    SessionRecord,
+    SessionStore,
+    SessionSummary,
+    Store,
+    StoredMessage,
+    TurnRecord,
+    TurnStatus,
+    TurnStore,
+} from "./store/store.ts"
 export { VERSION } from "./version.ts"

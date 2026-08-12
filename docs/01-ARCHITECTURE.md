@@ -389,23 +389,60 @@ production configuration and typically the largest cost win available.
 
 ```ts
 interface Store {
-  sessions: SessionStore
-  messages: MessageStore
-  toolCalls: ToolCallStore
-  schedules: ScheduleStore
-  kv: KVStore
-  artifacts: ArtifactStore
+  sessions: SessionStore     // Phase 2
+  messages: MessageStore     // Phase 2
+  turns: TurnStore           // Phase 2
+  kv: KVStore                // Phase 2
+  toolCalls: ToolCallStore   // Phase 3
+  artifacts: ArtifactStore   // Phase 7
+  schedules: ScheduleStore   // Phase 8
+  location: string
+  close(): Promise<void>
 }
 ```
 
-Default driver is SQLite. `sqlite/driver.ts` picks `bun:sqlite` or `node:sqlite` at import
-time — the only runtime-conditional code in the tree. Migrations are numbered SQL files
-gated on `PRAGMA user_version`.
+Sub-stores land with their subsystems rather than as stubs. An empty implementation is
+indistinguishable from a working one at the type level, which is exactly how a later phase
+ships a silent no-op.
+
+**Every method is async** even though SQLite is synchronous. The driver returns resolved
+promises and pays an allocation per call; that buys the ability to add the deferred Postgres
+driver as a new file rather than as a rewrite of every call site.
+
+Default driver is SQLite. `sqlite/driver.ts` picks `bun:sqlite` or `node:sqlite` — the only
+runtime-conditional code in the tree. Migrations are numbered, inline, and gated on
+`PRAGMA user_version`; each runs in its own transaction that also bumps the counter, so a
+crash leaves the schema at the last fully-applied version rather than halfway through one.
+
+The two bindings differ in six ways that all produce the same class of bug — green under one
+runner, wrong under the other. The adapter normalises all six rather than passing them
+through, and `PRAGMA foreign_keys` is the one that matters most: **off** by default in
+`bun:sqlite` and **on** in `node:sqlite`, so `ON DELETE CASCADE` would silently do nothing
+under Bun. The same test suite runs under `bun test` and `node --test` because that is the
+only thing that actually demonstrates the adapter works.
+
+**Persistence is opt-in.** `Runtime` defaults to `:memory:`; the CLI passes a file path.
+A library that creates a directory in the caller's working directory as a side effect of
+construction is badly behaved, and `store.ready` reports `location` either way so which one
+is in use is observable rather than assumed. The database location is a `Runtime` option, not
+a manifest field — one process hosts N agents from N manifests but has exactly one store.
 
 **Canonicality split:**
 
 - **Files**: manifest, context markdown, skills, memory markdown, artifacts
-- **SQLite**: sessions, messages, tool_calls, schedules, phase state, kv, outbox
+- **SQLite**: sessions, messages, turns, tool_calls, schedules, phase state, kv, outbox
+
+**Turn durability.** The turn row is written `running` *before* the first model call, so a
+turn is durable from the moment it starts rather than the moment it finishes — which is what
+lets a crash be distinguished from a turn that never began. A process that dies mid-generation
+leaves the row `running`; the next boot marks those `error` with code `turn_abandoned` and
+reports them on `store.ready` rather than fixing them quietly. Nothing resumes them: the model
+stream that was being read is gone.
+
+A turn record is the audit trail and records every outcome including failures and their hints.
+The message history is the conversation, and gets nothing on a failed turn — a half-answer left
+in history is a half-answer the next turn is conditioned on. An explicit stop is different: it
+persists the partial content, because someone decided to stop it.
 
 ---
 

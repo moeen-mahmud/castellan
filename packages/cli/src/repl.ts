@@ -18,6 +18,7 @@ import {
     Agent,
     type AnyEvent,
     BRAND,
+    defaultStorePath,
     type Runtime,
     Runtime as RuntimeClass,
     VERSION,
@@ -28,6 +29,10 @@ export interface ReplOptions {
     readonly sessionKey?: string
     /** Run a single turn with this input and exit. Non-interactive. */
     readonly once?: string
+    /** Session database. Defaults to `<stateDir>/store.db` under the working directory. */
+    readonly store?: string
+    /** Keep everything in memory. Nothing is written and nothing survives the process. */
+    readonly ephemeral?: boolean
     readonly quiet?: boolean
     readonly showReasoning?: boolean
 }
@@ -35,9 +40,12 @@ export interface ReplOptions {
 const EXIT_WORDS = new Set(["/exit", "/quit", ":q"])
 
 export async function runRepl(options: ReplOptions): Promise<void> {
+    // The CLI opts into persistence explicitly — core defaults to memory so that embedding the
+    // library never writes to someone's working directory uninvited.
     const runtime: Runtime = await RuntimeClass.create({
         agents: [options.manifestPath],
         emitChunks: true,
+        store: options.ephemeral === true ? ":memory:" : (options.store ?? defaultStorePath()),
     })
 
     const agent = runtime.list()[0]
@@ -48,10 +56,21 @@ export async function runRepl(options: ReplOptions): Promise<void> {
 
     if (!quiet) {
         const described = agent.describe()
+        const turns = await agent.turns(sessionKey, 1)
+        const resumed = await agent.store.messages.count(agent.id, sessionKey)
         process.stdout.write(
             `${BRAND.name} ${VERSION} · ${described.id} · ${described.model} · window ${described.window}\n` +
-                `ready in ${runtime.boot.processMs.toFixed(0)} ms · /exit to quit · Ctrl-C cancels a reply\n\n`,
+                `session ${sessionKey} · ${resumed} message(s) · store ${runtime.store.location}\n` +
+                `ready in ${runtime.boot.processMs.toFixed(0)} ms · /exit to quit · /reset clears · Ctrl-C cancels a reply\n\n`,
         )
+        // Naming a reaped turn is the point of reaping it: the previous run died mid-generation
+        // and the person restarting is the one who needs to know.
+        const last = turns[0]
+        if (last?.errorCode === "turn_abandoned") {
+            process.stdout.write(
+                `note: the previous turn in this session did not finish — the process exited while it was generating.\n\n`,
+            )
+        }
     }
 
     // Streaming output is wired through the bus rather than a callback: the CLI is a subscriber
@@ -165,8 +184,8 @@ export async function runRepl(options: ReplOptions): Promise<void> {
                 continue
             }
             if (trimmed === "/reset") {
-                agent.clearSession(sessionKey)
-                process.stdout.write("session cleared\n")
+                await agent.clearSession(sessionKey)
+                process.stdout.write("session cleared — memory files on disk are untouched\n")
                 rl.prompt()
                 continue
             }

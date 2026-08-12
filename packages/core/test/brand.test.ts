@@ -1,4 +1,3 @@
-import { describe, expect, test } from "bun:test"
 import {
     BRAND,
     BRAND_OVERRIDE_ENV,
@@ -7,6 +6,7 @@ import {
     deriveBrand,
     SLUG_PATTERN,
 } from "../src/index.ts"
+import { describe, expect, test } from "./_harness.ts"
 
 // Deliberately no brand literals in this file. Hard rule 3 confines the product name to
 // brand.ts, and `scripts/rename-brand.ts` does not touch tests — so asserting the shipped
@@ -106,8 +106,8 @@ describe("override", () => {
     })
 
     test("set-but-empty is a mistake, not an absent override", () => {
-        // A container passing `-e CASTELLAN_BRAND` with no value lands here. Falling back would
-        // be indistinguishable from working, which is the failure mode rule 8 exists to prevent.
+        // A container passing `-e <BRAND_OVERRIDE_ENV>` with no value lands here. Falling back
+        // would be indistinguishable from working, the failure mode rule 8 exists to prevent.
         expect(() => deriveBrand("")).toThrow(BRAND_OVERRIDE_ENV)
         expect(() => deriveBrand("   ")).toThrow(BRAND_OVERRIDE_ENV)
     })

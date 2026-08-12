@@ -1,10 +1,10 @@
-import { describe, expect, test } from "bun:test"
 import { mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { BRAND } from "../src/brand.ts"
 import { HarnessError } from "../src/errors.ts"
 import { loadManifest } from "../src/manifest/load.ts"
+import { describe, expect, test } from "./_harness.ts"
 
 /**
  * Manifest loading is where a config mistake either becomes a named field and a fix, or becomes

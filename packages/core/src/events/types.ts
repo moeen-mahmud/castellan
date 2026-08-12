@@ -51,6 +51,22 @@ export interface EventDataMap {
         phases: Record<string, number>
         agents: number
     }
+    /**
+     * The store is open and migrated. Fires before `runtime.ready`, because nothing can serve a
+     * turn until it does.
+     *
+     * `reaped` names turns a previous process left `running`. It is reported rather than fixed
+     * quietly: a non-empty list means that process died mid-generation, which is worth seeing.
+     */
+    "store.ready": {
+        location: string
+        driver: "bun" | "node"
+        /** Schema version before migrating. 0 for a fresh database. */
+        from: number
+        to: number
+        applied: string[]
+        reaped: string[]
+    }
     "runtime.stopping": { reason: string }
     "agent.loaded": { tools: number; skills: number; schedules: number; model: string }
     "agent.error": ErrorDetail

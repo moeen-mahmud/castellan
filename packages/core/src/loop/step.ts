@@ -67,29 +67,42 @@ export async function runStep(input: StepInput): Promise<StepResult> {
         input.signal,
     )
 
-    for await (const chunk of stream) {
-        switch (chunk.type) {
-            case "text":
-                text += chunk.delta
-                input.bus.emit("model.chunk", { delta: chunk.delta, kind: "text" }, input.context)
-                break
-            case "reasoning":
-                reasoning += chunk.delta
-                input.bus.emit(
-                    "model.chunk",
-                    { delta: chunk.delta, kind: "reasoning" },
-                    input.context,
-                )
-                break
-            case "usage":
-                // The API-reported number is authoritative; the local estimate was only a stand-in.
-                promptTokens = chunk.promptTokens
-                reportedOutputTokens = chunk.completionTokens
-                break
-            case "finish":
-                finishReason = chunk.reason
-                break
+    try {
+        for await (const chunk of stream) {
+            switch (chunk.type) {
+                case "text":
+                    text += chunk.delta
+                    input.bus.emit(
+                        "model.chunk",
+                        { delta: chunk.delta, kind: "text" },
+                        input.context,
+                    )
+                    break
+                case "reasoning":
+                    reasoning += chunk.delta
+                    input.bus.emit(
+                        "model.chunk",
+                        { delta: chunk.delta, kind: "reasoning" },
+                        input.context,
+                    )
+                    break
+                case "usage":
+                    // The API-reported number is authoritative; the local estimate was a stand-in.
+                    promptTokens = chunk.promptTokens
+                    reportedOutputTokens = chunk.completionTokens
+                    break
+                case "finish":
+                    finishReason = chunk.reason
+                    break
+            }
         }
+    } catch (error) {
+        // Aborting a fetch makes the pending `reader.read()` reject, so cancellation reaches this
+        // loop as an exception. Rethrowing it would lose `text` — the caller never gets to add the
+        // partial reply — and would report a deliberate stop as a failure. `turn.ts` states the
+        // rule this restores: cancellation is a state, not an exception. Anything that is *not* a
+        // cancellation still propagates untouched.
+        if (!input.signal.aborted) throw error
     }
 
     const latencyMs = Math.round(performance.now() - started)

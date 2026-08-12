@@ -1,28 +1,34 @@
 /**
- * A single agent: a manifest plus its resolved model roles, identity, and session state.
+ * A single agent: a manifest plus its resolved model roles, identity, and persisted sessions.
  *
  * Identity is read from `context.files` **once, at load**, and held as one string. That is not
  * an optimisation. Slot 0 is half of the cache-stable prefix, and re-reading the files per turn
  * would let an editor save change the prefix mid-session, quietly destroying prompt caching
  * with no error and no symptom other than the bill.
  *
- * Session history is in memory here. Phase 2 moves it into SQLite behind the same interface;
- * nothing outside this class knows where it lives.
+ * Session history lives in the store, and there is no in-memory fallback. A second code path
+ * for "no store configured" would be the one exercised by every test and none of production —
+ * so the store is a required constructor argument and `Runtime` always supplies one, defaulting
+ * to an in-memory SQLite database rather than to a different implementation.
  */
 
 import { readFileSync } from "node:fs"
 import { isAbsolute, resolve } from "node:path"
 import type { EventBus } from "../events/bus.ts"
+import { newTurnId } from "../loop/ids.ts"
 import { runTurn, type TurnResult } from "../loop/turn.ts"
 import type { LoadedManifest } from "../manifest/load.ts"
 import type { AgentManifest } from "../manifest/schema.ts"
 import type { ChatMessage } from "../model/provider.ts"
 import { type ResolvedRoles, type ResolveRolesOptions, resolveRoles } from "../model/roles.ts"
+import type { SessionSummary, Store, TurnRecord } from "../store/store.ts"
 
 export interface AgentSendOptions {
     readonly sessionKey?: string
     readonly signal?: AbortSignal
     readonly source?: string
+    /** Supply a turn id to hand a client its handle before the turn starts. */
+    readonly turnId?: string
 }
 
 export interface AgentDescription {
@@ -32,7 +38,6 @@ export interface AgentDescription {
     readonly window: number
     readonly identityTokensApprox: number
     readonly contextFiles: readonly string[]
-    readonly sessions: number
 }
 
 export class Agent {
@@ -43,15 +48,16 @@ export class Agent {
     readonly roles: ResolvedRoles
     /** Concatenated `context.files`. Byte-stable for the lifetime of the agent. */
     readonly identity: string
+    readonly store: Store
 
     #bus: EventBus
-    #sessions = new Map<string, ChatMessage[]>()
 
     private constructor(init: {
         loaded: LoadedManifest
         roles: ResolvedRoles
         identity: string
         bus: EventBus
+        store: Store
     }) {
         this.id = init.loaded.manifest.id
         this.manifest = init.loaded.manifest
@@ -60,36 +66,68 @@ export class Agent {
         this.roles = init.roles
         this.identity = init.identity
         this.#bus = init.bus
+        this.store = init.store
     }
 
-    static create(loaded: LoadedManifest, bus: EventBus, options: ResolveRolesOptions = {}): Agent {
+    static create(
+        loaded: LoadedManifest,
+        bus: EventBus,
+        store: Store,
+        options: ResolveRolesOptions = {},
+    ): Agent {
         const identity = readIdentity(loaded)
         const roles = resolveRoles(loaded.manifest, options)
-        return new Agent({ loaded, roles, identity, bus })
+        return new Agent({ loaded, roles, identity, bus, store })
     }
 
     /** Default session key for a surface with no natural one, such as the REPL. */
     static readonly DEFAULT_SESSION = "local:default"
 
-    history(sessionKey = Agent.DEFAULT_SESSION): readonly ChatMessage[] {
-        return this.#sessions.get(sessionKey) ?? []
+    history(sessionKey = Agent.DEFAULT_SESSION): Promise<readonly ChatMessage[]> {
+        return this.store.messages.history(this.id, sessionKey)
     }
 
-    clearSession(sessionKey = Agent.DEFAULT_SESSION): void {
-        this.#sessions.delete(sessionKey)
+    sessions(): Promise<readonly SessionSummary[]> {
+        return this.store.sessions.list(this.id)
+    }
+
+    turns(sessionKey = Agent.DEFAULT_SESSION, limit?: number): Promise<readonly TurnRecord[]> {
+        return this.store.turns.list(this.id, sessionKey, limit === undefined ? {} : { limit })
+    }
+
+    /** Drops history and turn records. Memory files on disk are untouched. */
+    clearSession(sessionKey = Agent.DEFAULT_SESSION): Promise<void> {
+        return this.store.sessions.clear(this.id, sessionKey)
     }
 
     /**
      * Run a turn to completion. Detached by design: the returned promise resolves when the turn
      * is done, and abandoning it does not stop the work.
+     *
+     * The turn row is written `running` *before* the model is called, so a turn is durable from
+     * the moment it starts rather than from the moment it finishes. That ordering is what lets a
+     * crash be told apart from a turn that never began.
      */
     async send(input: string, options: AgentSendOptions = {}): Promise<TurnResult> {
         const sessionKey = options.sessionKey ?? Agent.DEFAULT_SESSION
-        const history = this.#sessions.get(sessionKey) ?? []
+        const turnId = options.turnId ?? newTurnId()
+        const source = options.source ?? "library"
+
+        await this.store.sessions.ensure(this.id, sessionKey)
+        const history = await this.store.messages.history(this.id, sessionKey)
+
+        await this.store.turns.start({
+            turnId,
+            agentId: this.id,
+            sessionKey,
+            source,
+            input,
+        })
 
         const result = await runTurn({
             agentId: this.id,
             sessionKey,
+            turnId,
             input,
             history,
             identity: this.identity,
@@ -101,12 +139,32 @@ export class Agent {
                 turnTimeoutMs: this.manifest.limits.turnTimeoutMs,
             },
             bus: this.#bus,
-            source: options.source ?? "library",
+            source,
             ...(options.signal === undefined ? {} : { signal: options.signal }),
         })
 
+        // The turn row is the audit trail and records every outcome, including a failure and its
+        // hint. `appended` is the conversation, and is empty on failure — a turn that errored
+        // must not leave a half-answer in the history the next turn will be conditioned on.
+        await this.store.turns.finish(turnId, {
+            status: result.reason,
+            text: result.text,
+            reasoning: result.reasoning,
+            steps: result.steps,
+            promptTokens: result.tokens.prompt,
+            outputTokens: result.tokens.output,
+            durationMs: result.durationMs,
+            ...(result.error === undefined
+                ? {}
+                : {
+                      errorCode: result.error.code,
+                      errorMessage: result.error.message,
+                      errorHint: result.error.hint,
+                  }),
+        })
+
         if (result.appended.length > 0) {
-            this.#sessions.set(sessionKey, [...history, ...result.appended])
+            await this.store.messages.append(this.id, sessionKey, result.appended, turnId)
         }
 
         return result
@@ -120,7 +178,6 @@ export class Agent {
             window: this.window,
             identityTokensApprox: Math.ceil(this.identity.length / 3.8),
             contextFiles: this.manifest.context.files,
-            sessions: this.#sessions.size,
         }
     }
 }

@@ -18,6 +18,7 @@
         "build": "bun run --filter='@castellan/core' build && bun run --filter='@castellan/cli' build && bun scripts/rewrite-dts-extensions.ts",
         "typecheck": "bun run --filter='*' typecheck",
         "test": "bun test",
+        "test:node": "node --test packages/core/test/*.test.ts",
         "lint": "biome check .",
         "format": "biome format --write .",
         "check:deps": "bun scripts/check-deps.ts",

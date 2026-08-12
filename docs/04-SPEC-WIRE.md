@@ -184,6 +184,7 @@ interface Event {
 | Type | When | Key `data` |
 | --- | --- | --- |
 | `runtime.ready` | boot complete | `bootMs`, `phases: {step: ms}` |
+| `store.ready` | store open, migrations done | `location`, `driver`, `from`, `to`, `applied[]`, `reaped[]` |
 | `runtime.stopping` | shutdown begins | `reason` |
 | `plugin.loaded` | per plugin | `name`, `version`, `setupMs`, `permissions` |
 | `plugin.slow` | setup over budget | `name`, `setupMs` |

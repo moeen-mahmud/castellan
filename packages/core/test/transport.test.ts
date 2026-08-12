@@ -1,6 +1,6 @@
-import { describe, expect, test } from "bun:test"
 import { createChatCompletionsProvider } from "../src/model/chat-completions.ts"
 import type { ChatChunk } from "../src/model/provider.ts"
+import { describe, expect, sleep, test } from "./_harness.ts"
 
 /**
  * The HTTP transport, driven by an injected `fetch`. Injection rather than a live endpoint
@@ -398,7 +398,7 @@ describe("cancellation", () => {
             fetch: async () => {
                 const stream = new ReadableStream<Uint8Array>({
                     async pull(streamController) {
-                        await Bun.sleep(5)
+                        await sleep(5)
                         streamController.enqueue(new TextEncoder().encode(delta("tick")))
                     },
                 })

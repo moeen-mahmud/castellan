@@ -17,7 +17,7 @@ jobs:
   bun:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
@@ -54,17 +54,22 @@ jobs:
       matrix:
         node: [22, 24]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: ${{ matrix.node }}
       - run: bun install --frozen-lockfile
       - name: build
         run: bun run build
-      # Proves the source tree stays importable by Node unbundled, which Phase 2's
-      # `node --test` parity criterion depends on.
+      # Proves the source tree stays importable by Node unbundled, which the `node --test`
+      # parity below depends on.
       - name: node smoke
         run: node scripts/smoke-node.ts
+      # The same suite `bun test` runs, under Node's runner. This is what actually proves the
+      # SQLite adapter: bun:sqlite and node:sqlite differ in foreign-key defaults, miss values,
+      # and parameter coercion, and only running both catches a divergence.
+      - name: test under node
+        run: bun run test:node

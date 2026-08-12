@@ -1,5 +1,5 @@
-import { describe, expect, test } from "bun:test"
 import { parseSSE } from "../src/model/sse.ts"
+import { describe, expect, test } from "./_harness.ts"
 
 /**
  * Streaming bugs are only findable with fabricated input. Every case here is something a real

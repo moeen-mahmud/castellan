@@ -1,4 +1,3 @@
-import { describe, expect, test } from "bun:test"
 import { mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -6,6 +5,7 @@ import { BRAND } from "../src/brand.ts"
 import type { AnyEvent } from "../src/events/types.ts"
 import type { FetchLike } from "../src/model/provider.ts"
 import { Runtime } from "../src/runtime/runtime.ts"
+import { describe, expect, sleep, test } from "./_harness.ts"
 
 /**
  * Boot and turn behaviour end to end, with `fetch` injected.
@@ -74,7 +74,7 @@ describe("boot", () => {
         // Boot events fired during create; read the report the runtime kept.
         expect(runtime.boot.bootMs).toBeGreaterThanOrEqual(0)
         expect(runtime.boot.processMs).toBeGreaterThan(0)
-        expect(Object.keys(runtime.boot.phases)).toEqual(["manifest", "agents"])
+        expect(Object.keys(runtime.boot.phases)).toEqual(["manifest", "store", "agents"])
 
         runtime.bus.on("*", (event) => events.push(event))
         await runtime.stop()
@@ -195,7 +195,7 @@ describe("a turn", () => {
         expect(result.text).toBe("Hello there")
         expect(result.reason).toBe("final")
         expect(deltas).toEqual(["Hello", " there"])
-        expect(agent.history().map((m) => m.role)).toEqual(["user", "assistant"])
+        expect((await agent.history()).map((m) => m.role)).toEqual(["user", "assistant"])
         await runtime.stop()
     })
 
@@ -303,11 +303,17 @@ describe("a turn", () => {
         })
         const agent = runtime.agent("test")
 
-        await agent.send("a", { sessionKey: "one" })
-        await agent.send("b", { sessionKey: "two" })
+        await agent.send("a", { sessionKey: "local:one" })
+        await agent.send("b", { sessionKey: "local:two" })
 
-        expect(agent.history("one").map((m) => m.content)).toEqual(["a", "Hello there"])
-        expect(agent.history("two").map((m) => m.content)).toEqual(["b", "Hello there"])
+        expect((await agent.history("local:one")).map((m) => m.content)).toEqual([
+            "a",
+            "Hello there",
+        ])
+        expect((await agent.history("local:two")).map((m) => m.content)).toEqual([
+            "b",
+            "Hello there",
+        ])
         await runtime.stop()
     })
 })
@@ -322,7 +328,7 @@ describe("cancellation", () => {
             fetch: async () => {
                 const stream = new ReadableStream<Uint8Array>({
                     async pull(controller) {
-                        await Bun.sleep(10)
+                        await sleep(10)
                         controller.enqueue(new TextEncoder().encode(delta("tick ")))
                     },
                 })
@@ -358,7 +364,7 @@ describe("cancellation", () => {
             fetch: async () => {
                 const stream = new ReadableStream<Uint8Array>({
                     async pull(controller) {
-                        await Bun.sleep(10)
+                        await sleep(10)
                         controller.enqueue(new TextEncoder().encode(delta("word ")))
                     },
                 })
@@ -392,7 +398,7 @@ describe("cancellation", () => {
                 fetch: async () => {
                     const stream = new ReadableStream<Uint8Array>({
                         async pull(controller) {
-                            await Bun.sleep(5)
+                            await sleep(5)
                             controller.enqueue(new TextEncoder().encode(delta("x")))
                         },
                     })
@@ -404,10 +410,10 @@ describe("cancellation", () => {
 
             const controller = new AbortController()
             const pending = runtime.agent("test").send("go", { signal: controller.signal })
-            await Bun.sleep(15)
+            await sleep(15)
             controller.abort()
             await pending
-            await Bun.sleep(20)
+            await sleep(20)
             await runtime.stop()
         } finally {
             process.off("unhandledRejection", onRejection)
@@ -438,7 +444,7 @@ limits:
             fetch: async () => {
                 const stream = new ReadableStream<Uint8Array>({
                     async pull(controller) {
-                        await Bun.sleep(10)
+                        await sleep(10)
                         controller.enqueue(new TextEncoder().encode(delta("slow ")))
                     },
                 })
@@ -598,7 +604,7 @@ context:
             fetch: exhaustedFetch,
         })
         await runtime.agent("test").send("hi")
-        expect(runtime.agent("test").history()).toEqual([])
+        expect(await runtime.agent("test").history()).toEqual([])
         await runtime.stop()
     })
 
@@ -643,7 +649,7 @@ describe("failures inside a turn", () => {
         expect(result.error?.hint.length).toBeGreaterThan(0)
         expect(errors.length).toBe(1)
         // A failed turn must not leave a half-written exchange in the session.
-        expect(runtime.agent("test").history()).toEqual([])
+        expect(await runtime.agent("test").history()).toEqual([])
         await runtime.stop()
     })
 })

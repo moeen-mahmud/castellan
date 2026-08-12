@@ -36,7 +36,9 @@ ability to review it.
 
 **Acceptance**
 - [x] `bun install && bun run build && bun test && bun run lint` clean
-- [ ] CI green — workflow written; requires a push to verify
+- [x] CI green — run `31617213199` on `cc11c22`: `bun` ✓, `node (22)` ✓, `node (24)` ✓. The Node
+      legs carry `continue-on-error`, so their steps were inspected individually rather than
+      trusted from the job checkmark.
 - [x] `bun scripts/rename-brand.ts foo` renames throughout; `git diff` touches only `brand.ts` and `package.json` files — plus, once a second package existed, files carrying the derived `@<slug>/` import scope and `apiVersion`. See the note under Phase 1.
 - [x] Adding `import "@castellan/cli"` to core fails CI
 
@@ -105,15 +107,52 @@ endpoint. No tools, no channels, no storage.
 **Files.** `packages/core/src/store/`, `loop/turn.ts` (persistence), `packages/cli/`
 
 **Acceptance**
-- [ ] REPL restarts, history intact
-- [ ] Migrations idempotent; second boot runs none
-- [ ] Killing the client mid-turn does not cancel it; turn reaches `final` in the DB
-- [ ] Reattaching replays buffered events then tails live
-- [ ] Explicit stop persists partial content; disconnect does not
-- [ ] Same test suite passes under `bun test` and `node --test`, proving the adapter
-- [ ] Boot with 1000 existing sessions still under 1000 ms
+- [x] REPL restarts, history intact — two separate `node …/dist/index.js run` processes against
+      DeepSeek: the first was told "my favourite number is 41", the second answered `41` from the
+      persisted history alone
+- [x] Migrations idempotent; second boot runs none — `store.ready.applied` is `[]` on reopen,
+      asserted under both runners
+- [x] Killing the client mid-turn does not cancel it; turn reaches `final` in the DB — the caller's
+      promise is dropped on the floor while the row goes `running` → `final`
+- [x] Reattaching replays buffered events then tails live — replay + tail reconstructs the reply
+      exactly once, with no gap and no duplicate
+- [x] Explicit stop persists partial content; disconnect does not — this criterion found a real
+      Phase 1 bug, see Recorded deviations
+- [x] Same test suite passes under `bun test` and `node --test`, proving the adapter — 229/229
+      under both, whole suite not just the store
+- [x] Boot with 1000 existing sessions still under 1000 ms — boot does not scan sessions;
+      `bench:boot` median 61.4 ms with the store phase at 3.28 ms
 
 **Non-goals.** Postgres. Outbox (Phase 4).
+
+**Recorded deviations**
+
+- **`runStep` lost partial text on cancellation.** Aborting a `fetch` makes the pending
+  `reader.read()` reject, so cancellation reached `runStep` as an exception and `text +=
+  step.text` in `runTurn` never ran. Phase 1 missed it because the REPL prints partial text from
+  `model.chunk` events as they stream — a human sees the partial answer on screen and assumes it
+  was captured, but `result.text` was empty and `appended` held only the user message. `runStep`
+  now converts an abort back into the state it is (`turn.ts`: "cancellation is a state, not an
+  exception"); anything that is not an abort still propagates.
+- **`turns` is in the `Store` interface, and `status` holds six values not four.** The plan names
+  `running | final | stopped | error`. `timeout` and `max_steps` are distinct `TurnEndReason`s the
+  loop goes out of its way not to collapse, so flattening them at the storage layer would discard
+  a diagnosis made one layer below. The column takes all six.
+- **Persistence is opt-in, not the default.** `Runtime` defaults to `:memory:` and the CLI passes
+  `defaultStorePath()`. Defaulting to a file would mean constructing a `Runtime` creates a
+  directory in the caller's working directory uninvited. `store.ready` always reports `location`.
+- **Session keys require a channel segment.** `local:default` parses; a bare `scratch` is refused
+  at the boundary. Phase 4 reads the channel back out of the key for outbound delivery, so an
+  unstructured key would fail much later as an unroutable session.
+- **The `phase` column ships in migration 001** though phases are Phase 7. One nullable column
+  now versus a migration that exists only to add it. `setPhase` is wired and tested but nothing
+  in this build reads it.
+- **`test/_harness.ts` supplies one test vocabulary for two runners.** `bun:test` and `node:test`
+  share `describe`/`test` and no assertion library. Under Bun it re-exports `bun:test` untouched;
+  under Node it wraps `node:test` and implements the twelve matchers plus `test.each` that this
+  suite uses. The matcher list is deliberately closed.
+- **`node:sqlite` prints an ExperimentalWarning on every CLI run under Node.** Not suppressed —
+  it is Node's honest notice, and the primary runtime is Bun where it does not appear.
 
 ---
 

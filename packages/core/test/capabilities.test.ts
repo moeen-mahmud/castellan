@@ -1,4 +1,3 @@
-import { describe, expect, test } from "bun:test"
 import {
     CAPABILITY_REGISTRY,
     globToRegExp,
@@ -6,6 +5,7 @@ import {
     patternSpecificity,
     resolveCapabilities,
 } from "../src/model/capabilities.ts"
+import { describe, expect, test } from "./_harness.ts"
 
 describe("glob matching", () => {
     test("a trailing wildcard matches a prefix", () => {

@@ -10,6 +10,7 @@
 
 import { BRAND, HarnessError, Runtime, VERSION } from "@castellan/core"
 import { runRepl } from "./repl.ts"
+import { sessionsCommand } from "./sessions.ts"
 import { validateCommand } from "./validate.ts"
 
 interface ParsedArgs {
@@ -59,17 +60,31 @@ const USAGE = `${BRAND.name} ${VERSION} — a lightweight, model-agnostic agent 
 usage:
   ${BRAND.slug} run <manifest>        start an interactive session against the manifest's model
   ${BRAND.slug} validate <manifest>   load and validate a manifest, then exit
+  ${BRAND.slug} sessions <manifest>   list stored sessions, or inspect one
   ${BRAND.slug} --version
   ${BRAND.slug} --help
 
 run:
   --session <key>     session key to use            (default local:default)
   --input <text>      run one turn, print, exit     (non-interactive)
+  --store <path>      session database              (default ${BRAND.stateDir}/store.db)
+  --ephemeral         keep this session in memory only; nothing is written
   --quiet             suppress the banner and stats
   --show-reasoning    print reasoning blocks as they stream
 
+sessions:
+  --session <key>     show one session's messages instead of the list
+  --turns             show turn records instead of messages
+  --clear             delete the named session's history; memory files are untouched
+  --limit <n>         rows to show                  (default 50)
+  --store <path>      session database
+  --json              machine-readable output
+
 validate:
   --json              machine-readable output
+
+Session keys are {channel}:{peerId}[:{thread}] — a bare word is refused, because outbound
+delivery reads the channel back out of the key.
 
 environment:
   ${BRAND.envPrefix}BRAND        rebrand every derived path, env prefix, and apiVersion
@@ -111,14 +126,40 @@ async function main(): Promise<void> {
                 throw new Error(`run needs a manifest path. hint: ${BRAND.slug} run ./agent.yaml`)
             }
             const input = flags.get("input")
+            const store = flags.get("store")
             await runRepl({
                 manifestPath,
                 ...(typeof flags.get("session") === "string"
                     ? { sessionKey: flags.get("session") as string }
                     : {}),
                 ...(typeof input === "string" ? { once: input } : {}),
+                ...(typeof store === "string" ? { store } : {}),
+                ephemeral: flags.get("ephemeral") === true,
                 quiet: flags.get("quiet") === true,
                 showReasoning: flags.get("show-reasoning") === true,
+            })
+            return
+        }
+
+        case "sessions": {
+            if (manifestPath === undefined) {
+                throw new Error(
+                    `sessions needs a manifest path. hint: ${BRAND.slug} sessions ./agent.yaml`,
+                )
+            }
+            const session = flags.get("session")
+            const store = flags.get("store")
+            const limit = flags.get("limit")
+            await sessionsCommand({
+                manifestPath,
+                ...(typeof session === "string" ? { sessionKey: session } : {}),
+                ...(typeof store === "string" ? { store } : {}),
+                ...(typeof limit === "string" && Number.isFinite(Number(limit))
+                    ? { limit: Number(limit) }
+                    : {}),
+                json: flags.get("json") === true,
+                clear: flags.get("clear") === true,
+                turns: flags.get("turns") === true,
             })
             return
         }

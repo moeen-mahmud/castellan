@@ -1,0 +1,167 @@
+/**
+ * The `sessions` command — inspect what the store holds.
+ *
+ * This exists to make persistence observable from outside the process that wrote it. A store you
+ * cannot look into is a store you cannot debug, and "the history is in there somewhere" is not a
+ * claim anyone should have to take on faith.
+ *
+ * It opens the same database the REPL uses, which is safe while a turn is running: the driver
+ * puts the file in WAL mode, so a reader does not block a writer.
+ */
+
+import { type Agent, defaultStorePath, Runtime, type SessionSummary } from "@castellan/core"
+
+export interface SessionsOptions {
+    readonly manifestPath: string
+    /** Show this session's messages instead of listing sessions. */
+    readonly sessionKey?: string
+    readonly store?: string
+    readonly json?: boolean
+    readonly limit?: number
+    /** Delete the named session's history. Requires `sessionKey`. */
+    readonly clear?: boolean
+    /** Show turn records rather than messages. Requires `sessionKey`. */
+    readonly turns?: boolean
+}
+
+function ago(iso: string): string {
+    const ms = Date.now() - Date.parse(iso)
+    if (Number.isNaN(ms)) return iso
+    const mins = Math.floor(ms / 60_000)
+    if (mins < 1) return "just now"
+    if (mins < 60) return `${mins}m ago`
+    const hours = Math.floor(mins / 60)
+    if (hours < 24) return `${hours}h ago`
+    return `${Math.floor(hours / 24)}d ago`
+}
+
+function pad(value: string, width: number): string {
+    return value.length >= width ? value : value + " ".repeat(width - value.length)
+}
+
+function printList(sessions: readonly SessionSummary[]): void {
+    if (sessions.length === 0) {
+        // Exit 0: an agent with no conversations yet is a correct answer to the question asked,
+        // not a failure. The line says so rather than printing nothing.
+        process.stdout.write("no sessions yet\n")
+        return
+    }
+
+    const keyWidth = Math.max(7, ...sessions.map((s) => s.sessionKey.length))
+    process.stdout.write(
+        `${pad("SESSION", keyWidth)}  ${pad("MSGS", 5)}  ${pad("TURNS", 5)}  ${pad("PHASE", 8)}  LAST\n`,
+    )
+    for (const session of sessions) {
+        process.stdout.write(
+            `${pad(session.sessionKey, keyWidth)}  ${pad(String(session.messages), 5)}  ` +
+                `${pad(String(session.turns), 5)}  ${pad(session.phase ?? "-", 8)}  ${ago(session.lastActivityAt)}\n`,
+        )
+    }
+}
+
+async function printMessages(agent: Agent, sessionKey: string, limit: number): Promise<void> {
+    const page = await agent.store.messages.page(agent.id, sessionKey, { limit })
+    if (page.messages.length === 0) {
+        process.stdout.write(`no messages in ${sessionKey}\n`)
+        return
+    }
+    // Oldest-first for reading, though the page came back newest-first for the cursor.
+    for (const message of [...page.messages].reverse()) {
+        process.stdout.write(`${message.role}: ${message.content}\n`)
+    }
+    if (page.nextBefore !== undefined) {
+        process.stdout.write(`\n… older messages exist; raise --limit\n`)
+    }
+}
+
+async function printTurns(agent: Agent, sessionKey: string, limit: number): Promise<void> {
+    const turns = await agent.turns(sessionKey, limit)
+    if (turns.length === 0) {
+        process.stdout.write(`no turns in ${sessionKey}\n`)
+        return
+    }
+    process.stdout.write(
+        `${pad("TURN", 22)}  ${pad("STATUS", 9)}  ${pad("STEPS", 5)}  ${pad("TOKENS", 13)}  ${pad("MS", 6)}  SOURCE\n`,
+    )
+    for (const turn of turns) {
+        process.stdout.write(
+            `${pad(turn.turnId, 22)}  ${pad(turn.status, 9)}  ${pad(String(turn.steps), 5)}  ` +
+                `${pad(`${turn.promptTokens}/${turn.outputTokens}`, 13)}  ` +
+                `${pad(String(turn.durationMs ?? "-"), 6)}  ${turn.source}\n`,
+        )
+        if (turn.errorCode !== undefined) {
+            process.stdout.write(`  ${turn.errorCode}: ${turn.errorMessage}\n`)
+            if (turn.errorHint !== undefined) process.stdout.write(`  hint: ${turn.errorHint}\n`)
+        }
+    }
+}
+
+export async function sessionsCommand(options: SessionsOptions): Promise<void> {
+    const runtime = await Runtime.create({
+        agents: [options.manifestPath],
+        store: options.store ?? defaultStorePath(),
+    })
+
+    try {
+        const agent = runtime.list()[0]
+        if (agent === undefined) throw new Error("The manifest produced no agent.")
+
+        const limit = options.limit ?? 50
+
+        if (options.clear === true) {
+            if (options.sessionKey === undefined) {
+                throw new Error(
+                    "--clear needs a session. hint: pass --session <key>; there is deliberately no way to clear every session at once.",
+                )
+            }
+            const before = await agent.store.messages.count(agent.id, options.sessionKey)
+            await agent.clearSession(options.sessionKey)
+            process.stdout.write(
+                `cleared ${options.sessionKey}: ${before} message(s) removed, memory files untouched\n`,
+            )
+            return
+        }
+
+        if (options.json === true) {
+            const payload =
+                options.sessionKey === undefined
+                    ? { store: runtime.store.location, sessions: await agent.sessions() }
+                    : {
+                          store: runtime.store.location,
+                          session: await agent.store.sessions.get(agent.id, options.sessionKey),
+                          messages: (
+                              await agent.store.messages.page(agent.id, options.sessionKey, {
+                                  limit,
+                              })
+                          ).messages,
+                          turns: await agent.turns(options.sessionKey, limit),
+                      }
+            process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`)
+            return
+        }
+
+        process.stdout.write(`store: ${runtime.store.location}\n\n`)
+
+        if (options.sessionKey === undefined) {
+            printList(await agent.sessions())
+            return
+        }
+
+        const session = await agent.store.sessions.get(agent.id, options.sessionKey)
+        if (session === undefined) {
+            // Exit 1: the user named a session that is not there. Printing "0 messages" would
+            // answer a question they did not ask and hide the typo.
+            process.stderr.write(
+                `no session "${options.sessionKey}" for agent ${agent.id}\n` +
+                    `  hint: run \`sessions ${options.manifestPath}\` to list the keys that exist\n`,
+            )
+            process.exitCode = 1
+            return
+        }
+
+        if (options.turns === true) await printTurns(agent, options.sessionKey, limit)
+        else await printMessages(agent, options.sessionKey, limit)
+    } finally {
+        await runtime.stop("cli-exit")
+    }
+}
