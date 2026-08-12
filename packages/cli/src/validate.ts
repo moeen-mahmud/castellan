@@ -1,19 +1,18 @@
 /**
  * `validate` — load a manifest through exactly the same path `run` uses, then report.
  *
- * Sharing the load path is the point. A validator that approves a manifest the runtime then
- * refuses is worse than no validator, so this calls `loadManifest` rather than reimplementing
- * any part of it.
+ * Sharing the load path is the point. A validator that approves a manifest the runtime then refuses
+ * is worse than no validator, so this calls `loadManifest` rather than reimplementing any part of it.
+ *
+ * Synchronous, and it imports neither Ink nor React. That is what keeps it at ~70 ms: the rich
+ * renderer costs ~170-210 ms to import under Node, which would be most of this command's runtime.
  */
 
 import { HarnessError, loadManifest, resolveCapabilities } from "@castellan/core"
+import { EXIT_FAILURE, EXIT_OK } from "#lib/const"
+import type { ValidateOptions } from "#lib/schema"
 
-export interface ValidateOptions {
-    readonly manifestPath: string
-    readonly json?: boolean
-}
-
-export async function validateCommand(options: ValidateOptions): Promise<void> {
+export function validateCommand(options: ValidateOptions): number {
     try {
         const loaded = loadManifest(options.manifestPath)
         const { manifest } = loaded
@@ -37,7 +36,7 @@ export async function validateCommand(options: ValidateOptions): Promise<void> {
                     2,
                 )}\n`,
             )
-            return
+            return EXIT_OK
         }
 
         const roles = (["main", "selector", "compactor"] as const)
@@ -57,12 +56,15 @@ export async function validateCommand(options: ValidateOptions): Promise<void> {
                 `  context      ${manifest.context.files.length} file(s): ${manifest.context.files.join(", ") || "(none)"}\n` +
                 `  limits       maxSteps=${manifest.limits.maxSteps} turnTimeoutMs=${manifest.limits.turnTimeoutMs}\n`,
         )
+        return EXIT_OK
     } catch (error) {
         if (options.json === true && error instanceof HarnessError) {
             process.stdout.write(
                 `${JSON.stringify({ ok: false, error: error.toDetail(), details: error.details }, null, 2)}\n`,
             )
-            process.exit(1)
+            // A returned code rather than `process.exit`: exiting here would discard buffered stdout
+            // when this is piped, which is exactly how `--json` output gets read.
+            return EXIT_FAILURE
         }
         throw error
     }

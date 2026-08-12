@@ -26,7 +26,8 @@ import type {
     TurnStatus,
     TurnStore,
 } from "../store.ts"
-import { type OpenOptions, openDatabase, type SqlDatabase } from "./driver.ts"
+import type { OpenOptions, SqlDatabase } from "./driver.ts"
+import { openDatabase } from "./driver.ts"
 import { type MigrationReport, migrate } from "./migrations.ts"
 
 const DEFAULT_PAGE = 50
@@ -83,7 +84,7 @@ function nowIso(): string {
 
 // Nullable columns are spread in conditionally rather than assigned `undefined`, because
 // `exactOptionalPropertyTypes` distinguishes an absent optional property from one present with
-// the value `undefined` — and the wire surface serialises those two differently.
+// the value `undefined` — and the wire surface serializes those two differently.
 function toSession(row: SessionRow): SessionRecord {
     return {
         agentId: row.agent_id,

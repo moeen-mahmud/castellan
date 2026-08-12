@@ -138,6 +138,9 @@ OpenClaw as consumed by VelaOps; those are cited as `[VO]`.
 | 11.5 | **Zero network I/O before ready** | The direct cause of OpenClaw's ~4-minute startup: hook handlers blocking initialisation on network calls. Channels connect after ready and report status via events. |
 | 11.6 | Observability is **structured JSON lifecycle events**; OpenTelemetry is a plugin | Core emits, consumers persist. Core writes no rows it doesn't own. |
 | 11.7 | Docker image published, `oven/bun` slim base | Deployability is a v1 requirement, not a follow-up. |
+| 11.8 | CLI interactive surface is **Ink + React**, and Ink is never the *only* renderer | Every command has a plain-text path carrying the same information. The CLI is the debugging instrument for a runtime that lives in containers and CI, where there is no TTY — and a TUI that garbles piped output is worse than no TUI. |
+| 11.9 | Render mode is resolved **once**, ordered and total: `--json` > `--plain` > one-shot > not-a-TTY > `NO_COLOR`/`TERM=dumb`/`CI` > rich | Same principle as 3.5. Behaviour that shifts silently with the environment cannot be reasoned about. The resolution returns *why* it chose, so "it wasn't interactive and I don't know why" has an answer. |
+| 11.10 | `ink` + `react` are the CLI's only runtime dependencies, and they load **lazily** | Measured: ~65 ms to import under Bun, ~170-210 ms under Node, against ~70 ms for all of `validate --json`. A static import would make every command pay for a renderer it does not use. No input or spinner package: the editor is ~150 lines and owns the Ctrl-C semantics, which no third-party input component would respect. |
 
 ## Open items
 

@@ -514,6 +514,61 @@ retry, reassign, or surface it.
 
 ---
 
+## CLI
+
+Four commands — `run`, `sessions`, `validate`, `agents` — and three renderers.
+
+```
+packages/cli/src/
+  index.ts          parse → dispatch → exit. Imports no Ink and no React.
+  lib/              plumbing, one concern per file
+    commands.ts       the command and flag table — data only
+    args.ts           pure parser
+    help.ts           help rendered from the table
+    output.ts         resolveMode(): json | plain | rich
+    env.ts            every environment read
+    exit.ts           the single teardown
+    const.ts types.ts schema.ts wrap.ts
+  transcript.ts     pure AnyEvent → TranscriptState reducer
+  keymap.ts         pure key → intent
+  editor.ts         pure intent → input line
+  run.ts sessions.ts validate.ts agents.ts    one module per command
+  components/       App, Transcript, Live, StatusBar, Prompt
+  hooks/            useTurn, useTerminalSize, useElapsed
+```
+
+**Mode is resolved once**, ordered and total, and reports its reason. `json` is a single document on
+stdout; `plain` is line-oriented with no ANSI and no cursor movement; `rich` is the Ink app. A
+one-shot `--input` is always plain, so a scripted turn does not depend on whether a human was
+watching. `--plain` at a terminal produces exactly what a pipe produces, which is why the terminal
+restore fires only when the rich path has actually dirtied the terminal.
+
+**Ink loads lazily.** Importing `react` + `ink` costs ~65 ms under Bun and ~170-210 ms under Node,
+against ~70 ms for all of `validate --json`. The renderer sits behind a dynamic `import()` reached
+only on the rich path, the build keeps it in a separate chunk, and a structural test fails if a
+static import appears on a shared path. Verified by deleting `ink` from `node_modules`: every
+non-rich command still exits 0.
+
+**`<Static>` is load-bearing.** Ink erases and redraws its whole *dynamic* tree every frame, so a
+transcript in that tree would be redrawn on every streamed token — flicker, CPU, and destroyed
+scrollback on a long session. Finished items live in `<Static>`, written once and never touched
+again; only the in-flight reply is dynamic, and it is capped in terminal *rows* (not lines, since one
+long paragraph is many rows). Two consequences: transcript items must be append-only and immutable,
+because mutating one changes something the renderer will never look at again, and their keys come
+from a counter in the reducer rather than from an array index.
+
+**The interesting logic is pure.** `transcript.ts`, `keymap.ts`, `editor.ts` and `lib/wrap.ts` import
+no renderer, no clock and no `process`, so "what does the reader see when a turn errors mid-stream"
+is a unit test rather than something reproduced by hand against a live endpoint. The reducer takes
+its durations from `turn.end`, which is why it needs no clock; the one clock in the view layer is
+`useElapsed`, whose entire job is to distinguish a slow model from a hung one.
+
+**Ctrl-C cancels the turn, not the process** — the contract Phase 1 measured. `keymap.ts` owns the
+decision so it can be tested in both states, and Ink's `exitOnCtrlC` is disabled because its default
+would silently undo it.
+
+---
+
 ## Boot sequence and budget
 
 **Target: process start → `runtime.ready` in under 1000 ms.** CI fails a PR above 1200 ms.

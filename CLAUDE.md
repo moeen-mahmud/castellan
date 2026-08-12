@@ -74,6 +74,7 @@ framework explainers, go straight to the specific thing.
 | Modules | ESM only |
 | Lint/format | Biome — not ESLint, not Prettier |
 | Tests | `bun test` — not Vitest, not Jest |
+| CLI rendering | Ink 7 + React 19, `.tsx`, in `packages/cli` only — lazily imported |
 | Schema | Zod |
 | Storage | SQLite via `bun:sqlite` / `node:sqlite` adapter |
 | Release | Changesets, semver |
@@ -86,6 +87,7 @@ bun run build
 bun test
 bun run lint
 bun run bench:boot        # must stay under 1000ms; CI fails at 1200ms
+bun run test:node         # core only, under Node's runner — proves the sqlite adapter
 ```
 
 ---
@@ -133,7 +135,7 @@ Full detail: `docs/01-ARCHITECTURE.md`.
 
 ```
 packages/core/       the loop, context, tools, skills, memory, store, schedule, plugins
-packages/cli/        `castellan` binary
+packages/cli/        `castellan` binary — lib/ plumbing, components/ Ink, pure reducers at top level
 packages/server/     HTTP/SSE/WS surface
 packages/channel-*/  Telegram, WhatsApp
 packages/tools-*/    Composio, MCP
@@ -198,5 +200,13 @@ Never claim a performance property without a number in `evals/` and a script to 
 - **`resolve()` must throw on unknown tool slugs.** Silently dropping them is how write tools
   get starved and how a config error becomes a runtime mystery.
 - **The outbox must be idempotent.** A crash mid-delivery must not double-send.
+- **Ink redraws its whole dynamic tree every frame.** Finished transcript items belong in
+  `<Static>`, which writes once and never touches the node again — so they must be append-only
+  and immutable, and mutating one is a change that silently never appears. The live pane is
+  capped in terminal *rows*, not lines.
+- **Nothing on a shared CLI path may import Ink or React.** They cost ~170-210 ms under Node,
+  more than the entire runtime of `validate --json`. A structural test enforces it.
+- **`--plain` at a terminal must produce exactly what a pipe produces.** That is why the
+  terminal restore fires only when the rich path has dirtied the terminal.
 - **Turns are detached from the client connection.** Never cancel on disconnect. Persist
   partial content only on explicit stop.

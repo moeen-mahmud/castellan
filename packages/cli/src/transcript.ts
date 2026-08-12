@@ -1,0 +1,173 @@
+/**
+ * Events in, view state out. Pure, and the only place that decides what a turn looks like.
+ *
+ * The CLI has always been a `runtime.bus` subscriber; this makes it a *reducer* over that bus
+ * instead of a set of callbacks writing to stdout. Three things follow from that:
+ *
+ * - "What does the reader see when a turn errors mid-stream?" is a unit test rather than something
+ *   reproduced by hand against a live endpoint.
+ * - Finished items are append-only and immutable, which is exactly the contract Ink's `<Static>`
+ *   needs: a node written once and never re-rendered. The still-moving reply lives in `live`, so
+ *   the dynamic region stays one item regardless of how long the conversation gets.
+ * - Phase 4's SSE client and Phase 12's TUI client can consume the same reduction instead of
+ *   re-deriving it.
+ *
+ * No clock and no randomness: ids come from a counter in the state, so the same events always
+ * produce the same output and the tests need no fakes.
+ */
+
+import type { AnyEvent } from "@castellan/core"
+import type { TranscriptItem, TranscriptRole, TranscriptState, TurnStats } from "#lib/types"
+
+/**
+ * The transcript is driven by more than the bus — a typed line and a cancellation request are not
+ * events — so the reducer takes an action union rather than an event directly.
+ */
+export type TranscriptAction =
+    | { readonly kind: "user"; readonly text: string }
+    | { readonly kind: "event"; readonly event: AnyEvent }
+    | { readonly kind: "note"; readonly text: string }
+    | { readonly kind: "cancelling" }
+
+export const EMPTY_TRANSCRIPT: TranscriptState = {
+    items: [],
+    live: undefined,
+    status: "idle",
+    nextId: 0,
+}
+
+function append(
+    state: TranscriptState,
+    role: TranscriptRole,
+    text: string,
+    stats?: TurnStats,
+): TranscriptState {
+    const item: TranscriptItem =
+        stats === undefined
+            ? { id: `t${state.nextId}`, role, text }
+            : { id: `t${state.nextId}`, role, text, stats }
+    return { ...state, items: [...state.items, item], nextId: state.nextId + 1 }
+}
+
+/** `data` is typed per event in core's map; narrowing by `type` first is what makes this safe. */
+export function reduce(state: TranscriptState, action: TranscriptAction): TranscriptState {
+    switch (action.kind) {
+        case "user":
+            return append(state, "user", action.text)
+
+        case "note":
+            return append(state, "note", action.text)
+
+        case "cancelling":
+            // A state, not an item. Cancellation that produced partial text still ends in a
+            // `turn.end`, and that is what commits the text.
+            return state.status === "idle" ? state : { ...state, status: "cancelling" }
+
+        case "event":
+            return reduceEvent(state, action.event)
+    }
+}
+
+function reduceEvent(state: TranscriptState, event: AnyEvent): TranscriptState {
+    switch (event.type) {
+        case "turn.start":
+            return {
+                ...state,
+                live: { text: "", reasoning: "", last: undefined },
+                status: "thinking",
+            }
+
+        case "model.chunk": {
+            const { delta, kind } = event.data
+            const live = state.live ?? { text: "", reasoning: "", last: undefined }
+            return {
+                ...state,
+                live: {
+                    text: kind === "text" ? live.text + delta : live.text,
+                    reasoning: kind === "reasoning" ? live.reasoning + delta : live.reasoning,
+                    last: kind,
+                },
+                // A cancellation already asked for is not undone by another token arriving in
+                // flight; the request stands until the turn actually ends.
+                status: state.status === "cancelling" ? "cancelling" : "streaming",
+            }
+        }
+
+        case "model.retry": {
+            const { status, attempt, delayMs } = event.data
+            return append(
+                state,
+                "note",
+                `retrying after HTTP ${status} — attempt ${attempt}, waiting ${delayMs} ms`,
+            )
+        }
+
+        case "turn.end": {
+            const { reason, steps, tokens, durationMs } = event.data
+            const live = state.live
+            const stats: TurnStats = {
+                promptTokens: tokens.prompt,
+                outputTokens: tokens.output,
+                durationMs,
+                steps,
+                reason,
+            }
+
+            // Reasoning is committed as its own item, ahead of the reply it produced. Whether it is
+            // shown is the view's business; dropping it here would make --show-reasoning impossible
+            // to honour after the fact.
+            let next = state
+            if (live !== undefined && live.reasoning !== "") {
+                next = append(next, "reasoning", live.reasoning)
+            }
+            if (live !== undefined && live.text !== "") {
+                next = append(next, "assistant", live.text, stats)
+            } else if (reason === "final") {
+                // A clean turn that produced nothing is not a normal outcome and must not look
+                // like one.
+                next = append(next, "note", "the model returned no text", stats)
+            }
+            return { ...next, live: undefined, status: "idle" }
+        }
+
+        case "agent.error":
+        case "error": {
+            const { code, message, hint } = event.data
+            return append(state, "error", `${code}: ${message}\nhint: ${hint}`)
+        }
+
+        case "agent.warning": {
+            const { code, message } = event.data
+            return append(state, "note", `${code}: ${message}`)
+        }
+
+        default:
+            // Boot and bookkeeping events — `runtime.ready`, `store.ready`, `model.call`,
+            // `model.result`, `context.assembled`. They belong to the banner and the status bar,
+            // not the transcript. Ignored explicitly so that a new event type added in a later
+            // phase is inert here rather than a crash.
+            return state
+    }
+}
+
+/** What a renderer writes for a turn's cost. Kept here so the plain and rich paths agree. */
+export function formatStats(stats: TurnStats): string {
+    return `${stats.promptTokens} prompt · ${stats.outputTokens} output · ${stats.durationMs} ms`
+}
+
+/** Opening notes — version, session, store, any turn a previous process left unfinished. */
+export function seed(notes: readonly string[]): TranscriptState {
+    return notes.reduce<TranscriptState>(
+        (state, text) => reduce(state, { kind: "note", text }),
+        EMPTY_TRANSCRIPT,
+    )
+}
+
+/** The most recent completed turn's cost, for the status bar. */
+export function lastStats(items: readonly TranscriptItem[]): TurnStats | undefined {
+    for (let i = items.length - 1; i >= 0; i -= 1) {
+        const stats = items[i]?.stats
+        if (stats !== undefined) return stats
+    }
+    return undefined
+}

@@ -23,14 +23,25 @@
             "default": "./dist/index.js"
         }
     },
+    "imports": {
+        "#components/*": "./src/components/*.tsx",
+        "#*": "./src/*.ts"
+    },
     "scripts": {
-        "build": "bun build ./src/index.ts --outdir dist --target node --format esm --sourcemap=linked --packages=external --banner '#!/usr/bin/env node' && tsc -p tsconfig.build.json",
+        "dev": "bun run ./src/index.ts",
+        "build": "bun build ./src/index.ts --outdir dist --target node --format esm --splitting --sourcemap=linked --external '@castellan/core' --external ink --external react --external 'react/*' --banner '#!/usr/bin/env node' && tsc -p tsconfig.build.json",
         "typecheck": "tsc -p tsconfig.json"
     },
     "dependencies": {
-        "@castellan/core": "workspace:*"
+        "@castellan/core": "workspace:*",
+        "ink": "7.1.1",
+        "react": "19.2.8"
     },
     "publishConfig": {
         "access": "public"
+    },
+    "devDependencies": {
+        "@types/react": "19.2.18",
+        "ink-testing-library": "4.0.0"
     }
 }

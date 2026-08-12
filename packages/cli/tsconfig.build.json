@@ -5,7 +5,8 @@
         "outDir": "dist",
         "emitDeclarationOnly": true,
         "noEmit": false,
-        "types": ["bun"]
+        "types": ["bun"],
+        "jsx": "react-jsx"
     },
-    "include": ["src/**/*.ts"]
+    "include": ["src/**/*.ts", "src/**/*.tsx"]
 }

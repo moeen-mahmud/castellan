@@ -1,198 +1,128 @@
 /**
- * The command line surface.
+ * The entry point: parse, dispatch, exit.
  *
- * Two commands in Phase 1: `run` for an interactive REPL against any OpenAI-compatible
- * endpoint, and `validate` for checking a manifest without starting anything.
+ * No shebang here — the build prepends one via `--banner`. Two would be a syntax error, and the
+ * source is never executed directly: `bun run src/index.ts` and `node dist/index.js` are the two
+ * supported ways in.
  *
- * Exit codes are load-bearing: 0 only when the thing asked for actually happened. Nothing here
- * prints a warning and exits 0.
+ * Three rules hold here and nowhere else.
+ *
+ * **It imports no Ink and no React.** The rich renderer is reached through a dynamic `import()` in
+ * `run.ts`, because loading it costs ~170-210 ms under Node — more than the entire runtime of
+ * `validate --json`. A static import anywhere on this path would be paid by every command.
+ *
+ * **Commands return exit codes; they never call `process.exit`.** Exiting mid-write discards buffered
+ * stdout when the output is a pipe, which is how `--json` gets read.
+ *
+ * **Asking for help is a success.** The previous entry point set exit code 1 for `--help` given
+ * without a command, reporting failure for the one thing that had worked.
  */
 
-import { BRAND, HarnessError, Runtime, VERSION } from "@castellan/core"
-import { runRepl } from "./repl.ts"
-import { sessionsCommand } from "./sessions.ts"
-import { validateCommand } from "./validate.ts"
+import { HarnessError, VERSION } from "@castellan/core"
+import { agentsCommand } from "#agents"
+import { parse } from "#lib/args"
+import { EXIT_FAILURE, EXIT_OK } from "#lib/const"
+import { readEnv } from "#lib/env"
+import { finish, installGuards } from "#lib/exit"
+import { helpText } from "#lib/help"
+import { runCommand } from "#run"
+import { sessionsCommand } from "#sessions"
+import { validateCommand } from "#validate"
 
-interface ParsedArgs {
-    command: string | undefined
-    positionals: string[]
-    flags: Map<string, string | true>
-}
-
-function parseArgs(argv: readonly string[]): ParsedArgs {
-    const positionals: string[] = []
-    const flags = new Map<string, string | true>()
-
-    for (let i = 0; i < argv.length; i += 1) {
-        const arg = argv[i]
-        if (arg === undefined) continue
-
-        if (arg.startsWith("--")) {
-            const body = arg.slice(2)
-            const eq = body.indexOf("=")
-            if (eq !== -1) {
-                flags.set(body.slice(0, eq), body.slice(eq + 1))
-                continue
-            }
-            const next = argv[i + 1]
-            if (next !== undefined && !next.startsWith("-")) {
-                flags.set(body, next)
-                i += 1
-            } else {
-                flags.set(body, true)
-            }
-            continue
-        }
-
-        if (arg.startsWith("-") && arg.length > 1) {
-            flags.set(arg.slice(1), true)
-            continue
-        }
-
-        positionals.push(arg)
-    }
-
-    return { command: positionals[0], positionals: positionals.slice(1), flags }
-}
-
-const USAGE = `${BRAND.name} ${VERSION} — a lightweight, model-agnostic agent runtime
-
-usage:
-  ${BRAND.slug} run <manifest>        start an interactive session against the manifest's model
-  ${BRAND.slug} validate <manifest>   load and validate a manifest, then exit
-  ${BRAND.slug} sessions <manifest>   list stored sessions, or inspect one
-  ${BRAND.slug} --version
-  ${BRAND.slug} --help
-
-run:
-  --session <key>     session key to use            (default local:default)
-  --input <text>      run one turn, print, exit     (non-interactive)
-  --store <path>      session database              (default ${BRAND.stateDir}/store.db)
-  --ephemeral         keep this session in memory only; nothing is written
-  --quiet             suppress the banner and stats
-  --show-reasoning    print reasoning blocks as they stream
-
-sessions:
-  --session <key>     show one session's messages instead of the list
-  --turns             show turn records instead of messages
-  --clear             delete the named session's history; memory files are untouched
-  --limit <n>         rows to show                  (default 50)
-  --store <path>      session database
-  --json              machine-readable output
-
-validate:
-  --json              machine-readable output
-
-Session keys are {channel}:{peerId}[:{thread}] — a bare word is refused, because outbound
-delivery reads the channel back out of the key.
-
-environment:
-  ${BRAND.envPrefix}BRAND        rebrand every derived path, env prefix, and apiVersion
-`
-
-function fail(error: unknown): never {
+function report(error: unknown): number {
     if (error instanceof HarnessError) {
+        // `format()` prints the code, the field, the hint, and every sub-failure — so a command line
+        // with two mistakes in it reports both rather than one at a time.
         process.stderr.write(`${error.format()}\n`)
     } else if (error instanceof Error) {
         process.stderr.write(`${error.message}\n`)
-        if (process.env.DEBUG !== undefined && error.stack !== undefined) {
-            process.stderr.write(`${error.stack}\n`)
-        }
+        if (readEnv().debug && error.stack !== undefined) process.stderr.write(`${error.stack}\n`)
     } else {
         process.stderr.write(`${String(error)}\n`)
     }
-    process.exit(1)
+    return EXIT_FAILURE
 }
 
-async function main(): Promise<void> {
-    const { command, positionals, flags } = parseArgs(process.argv.slice(2))
+async function dispatch(argv: readonly string[]): Promise<number> {
+    const result = parse(argv)
 
-    if (flags.has("version") || flags.has("v") || command === "version") {
-        process.stdout.write(`${VERSION}\n`)
-        return
+    switch (result.kind) {
+        case "version":
+            process.stdout.write(`${VERSION}\n`)
+            return EXIT_OK
+
+        case "help":
+            process.stdout.write(helpText(result.command))
+            return EXIT_OK
+
+        case "usage":
+            // Invoked with nothing to do. The help goes to stdout because it was not an error in the
+            // arguments — but the code is non-zero, because nothing was accomplished.
+            process.stdout.write(helpText())
+            return EXIT_FAILURE
+
+        case "command":
+            break
     }
 
-    if (command === undefined || flags.has("help") || flags.has("h") || command === "help") {
-        process.stdout.write(USAGE)
-        if (command === undefined) process.exitCode = 1
-        return
-    }
+    const { command, positionals, flags } = result.parsed
+    // Guaranteed by the parser: every command declares a required first argument.
+    const manifestPath = positionals[0] as string
 
-    const manifestPath = positionals[0]
-
-    switch (command) {
+    switch (command.name) {
         case "run": {
-            if (manifestPath === undefined) {
-                throw new Error(`run needs a manifest path. hint: ${BRAND.slug} run ./agent.yaml`)
-            }
-            const input = flags.get("input")
-            const store = flags.get("store")
-            await runRepl({
+            const session = flags.str("session")
+            const input = flags.str("input")
+            const store = flags.str("store")
+            return await runCommand({
                 manifestPath,
-                ...(typeof flags.get("session") === "string"
-                    ? { sessionKey: flags.get("session") as string }
-                    : {}),
-                ...(typeof input === "string" ? { once: input } : {}),
-                ...(typeof store === "string" ? { store } : {}),
-                ephemeral: flags.get("ephemeral") === true,
-                quiet: flags.get("quiet") === true,
-                showReasoning: flags.get("show-reasoning") === true,
+                ...(session === undefined ? {} : { sessionKey: session }),
+                ...(input === undefined ? {} : { once: input }),
+                ...(store === undefined ? {} : { store }),
+                ephemeral: flags.bool("ephemeral"),
+                quiet: flags.bool("quiet"),
+                showReasoning: flags.bool("show-reasoning"),
+                plain: flags.bool("plain"),
             })
-            return
         }
 
         case "sessions": {
-            if (manifestPath === undefined) {
-                throw new Error(
-                    `sessions needs a manifest path. hint: ${BRAND.slug} sessions ./agent.yaml`,
-                )
-            }
-            const session = flags.get("session")
-            const store = flags.get("store")
-            const limit = flags.get("limit")
-            await sessionsCommand({
+            const session = flags.str("session")
+            const store = flags.str("store")
+            const limit = flags.num("limit")
+            return await sessionsCommand({
                 manifestPath,
-                ...(typeof session === "string" ? { sessionKey: session } : {}),
-                ...(typeof store === "string" ? { store } : {}),
-                ...(typeof limit === "string" && Number.isFinite(Number(limit))
-                    ? { limit: Number(limit) }
-                    : {}),
-                json: flags.get("json") === true,
-                clear: flags.get("clear") === true,
-                turns: flags.get("turns") === true,
+                ...(session === undefined ? {} : { sessionKey: session }),
+                ...(store === undefined ? {} : { store }),
+                ...(limit === undefined ? {} : { limit }),
+                json: flags.bool("json"),
+                clear: flags.bool("clear"),
+                turns: flags.bool("turns"),
             })
-            return
         }
 
-        case "validate": {
-            if (manifestPath === undefined) {
-                throw new Error(
-                    `validate needs a manifest path. hint: ${BRAND.slug} validate ./agent.yaml`,
-                )
-            }
-            await validateCommand({ manifestPath, json: flags.get("json") === true })
-            return
-        }
+        case "validate":
+            return validateCommand({ manifestPath, json: flags.bool("json") })
 
-        case "agents": {
-            // Small, and it proves the runtime hosts N agents from one process.
-            if (manifestPath === undefined) {
-                throw new Error(`agents needs at least one manifest path.`)
-            }
-            const runtime = await Runtime.create({ agents: positionals })
-            for (const agent of runtime.list()) {
-                const d = agent.describe()
-                process.stdout.write(`${d.id}\t${d.model}\twindow=${d.window}\t${d.name}\n`)
-            }
-            await runtime.stop("cli-exit")
-            return
-        }
+        case "agents":
+            return await agentsCommand({ manifestPaths: positionals, json: flags.bool("json") })
 
         default:
-            throw new Error(
-                `Unknown command "${command}". hint: run \`${BRAND.slug} --help\` for the command list.`,
-            )
+            // Unreachable: `parse` refuses an unknown command with a suggestion. Present so that
+            // adding a command to lib/commands.ts without wiring it fails loudly rather than
+            // silently doing nothing and exiting 0.
+            throw new HarnessError({
+                code: "cli_command_unwired",
+                message: `Command "${command.name}" is declared but not wired up.`,
+                hint: "Add a case for it in src/index.ts.",
+            })
     }
 }
 
-main().catch(fail)
+installGuards()
+
+// One `finish` for every route out, so the terminal is restored and buffered output drains before
+// the process ends.
+await dispatch(process.argv.slice(2))
+    .catch(report)
+    .then((code) => finish(code))

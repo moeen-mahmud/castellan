@@ -156,6 +156,101 @@ endpoint. No tools, no channels, no storage.
 
 ---
 
+## Phase 2.5 — CLI
+
+**Goal.** The command line stops being a means of exercising the runtime and becomes an instrument
+you can trust: an Ink-rendered chat surface at a terminal, byte-identical plain text everywhere
+else, and a parser that cannot fail silently.
+
+Inserted between 2 and 3 rather than renumbered: "Phase 3", "Phase 7" and "Phase 8" are referenced
+in roughly thirty places across source comments and the other docs, and every phase from here on
+ships a CLI command. Doing this now makes each of their CLI deliverables one line instead of a
+retrofit across nine commands.
+
+**Deliverables**
+- `lib/commands.ts` — the command and flag table; one source for parsing, `--help`, and error hints
+- `lib/args.ts` — pure parser: unknown flags, missing values and bad numbers all refused
+- `lib/help.ts` — help rendered *from* the table, so the two cannot drift
+- `lib/output.ts` + `lib/env.ts` — `resolveMode()` → `json | plain | rich`, resolved once, with its reason
+- `lib/exit.ts` — one teardown: unmount Ink, restore the terminal, flush, preserve the exit code
+- `transcript.ts` — pure `AnyEvent → TranscriptState` reducer
+- `keymap.ts`, `editor.ts` — pure key→intent and intent→line, including history and code-point cursors
+- `lib/wrap.ts` — wrap-aware row counting, so the live pane's height cap means terminal rows
+- `components/` — `App`, `Transcript` (`<Static>`), `Live`, `StatusBar`, `Prompt`
+- `hooks/` — `useTurn` (bus → reducer), `useTerminalSize`, `useElapsed`
+- One module per command: `run.ts`, `sessions.ts`, `validate.ts`, `agents.ts`
+- `packages/cli/test/` — nine files, where there were none
+
+**Files.** `packages/cli/src/**`, `packages/cli/test/**`
+
+**Acceptance**
+- [x] Rich path renders at a terminal — driven through a pty with injected keystrokes against the
+      real DeepSeek endpoint: banner, streaming live pane, `● replying 1.1s`, then the reply
+      committed with `153 prompt · 12 output · 1299 ms` and the prompt back
+- [x] `run … | cat` and `run … --plain` at a terminal produce identical stdout, zero escape
+      sequences in either
+- [x] `--json` is valid JSON and the only thing on stdout, on all three commands that accept it
+- [x] An unknown command or flag is refused, exit 1, naming the nearest match
+- [x] `--input` with no value and `--limit abc` are refused naming the flag and the expected type
+- [x] `--input "-5 degrees"` runs one turn with that text rather than silently opening a session
+- [x] `--help` exits 0, bare invocation exits 1, `run --help` lists only `run`'s flags
+- [x] Help is generated from the table — a test asserts every parseable flag appears in it
+- [x] Ctrl-C mid-stream cancels the turn, the status shows `cancelling`, the prompt returns, and the
+      partial reply is persisted: turn `stopped`, 309 output tokens, essay fragment in the history.
+      Ctrl-C at an idle prompt exits
+- [x] Terminal restored on every exit route — `stty -g` before and after a SIGTERM delivered while
+      Ink held raw mode is byte-identical
+- [x] `validate --json` loads neither Ink nor React — with `ink` physically removed from
+      `node_modules`, `validate`, `sessions` and `--help` all still exit 0 and only the rich path
+      fails. A structural test additionally forbids a static import outside `components/` and `hooks/`
+- [x] The live pane is height-capped in terminal rows, and committed items are immutable — both
+      asserted in tests. `<Static>`'s own write-once behaviour is Ink's documented contract, observed
+      in the spike, not re-measured here
+- [x] `packages/cli/test/` covers args, output, env, exit, transcript, keymap, editor, wrap, and the
+      structural boundaries — 178 cases
+- [x] `bun run bench:boot` unchanged: manifest 11.51 ms, store 3.45 ms, agents 0.37 ms
+
+**Non-goals.** Interactive browsers for `sessions`/`skills`/`schedules` — those keep `--json` and a
+plain table. Mouse support. Themes. A config file. Shell completions. Any command belonging to
+Phase 3 or later. Any change to `packages/core`.
+
+**Recorded deviations**
+
+- **`ink` + `react` are the CLI's only new dependencies, and they load lazily.** Measured: importing
+  them costs ~65 ms under Bun and ~170-210 ms under Node, against ~70 ms for the whole of
+  `validate --json`. So the renderer sits behind a dynamic `import()` reached only on the rich path,
+  `--splitting` keeps it in a separate chunk, and a structural test fails if a static import appears
+  on a shared path. There is no text-input or spinner dependency: `editor.ts` is ~150 lines and owns
+  the Ctrl-C semantics, which no third-party input component would respect.
+- **`--packages=external` had to go.** It treats the `#…` subpath imports as packages and leaves them
+  unresolved in the bundle, where they would resolve against `./src` — which `files` does not ship.
+  The three real dependencies are now externalised by name and everything else is bundled.
+- **`packages/cli` uses `#…` subpath imports; `packages/core` keeps relative `.ts` paths.** Verified
+  working under node, bun and tsc, but only for an application: the emitted `.d.ts` carries `#…`
+  specifiers that resolve through this package's own `imports` map, which is fine for a bin nobody
+  imports and wrong for a published library. Apps get aliases, libraries do not. Note `#lib/const`
+  must stay extensionless — `#lib/const.ts` fails tsc with TS2877.
+- **A one-shot (`--input`) is always plain, even at a terminal.** Otherwise `--input` means one thing
+  in a shell script and another in a shell, and scripted output would depend on who was watching.
+- **The terminal restore is conditional on having dirtied the terminal.** Restoring unconditionally
+  put a cursor-and-style reset at the end of plain output whenever stdout was a TTY, which broke the
+  one property plain mode exists for. Only the rich path marks it, so the safety net still covers
+  every route out of a raw-mode session.
+- **Submitting while a turn is running is refused, not queued.** Two turns on one session would
+  interleave in the history the next turn is conditioned on. The refusal is a note in the transcript.
+- **A chunk containing newlines is a distinct intent.** Found by driving the real app through a pty:
+  pasted text arrives as one chunk, and stripping its carriage returns as control characters joined
+  the last word of one line to the first of the next and submitted nothing. Multi-line input now
+  submits each finished line in order and leaves an unterminated tail on the prompt.
+- **`exitOnCtrlC: false` is passed to Ink's `render`.** Ink's default is to handle Ctrl-C itself and
+  exit the process, which would silently undo the contract Phase 1 measured.
+- **The `agents` command gained `--json`** and moved out of the entry point, where being inline is
+  how it ended up the one command whose flags the usage text never documented.
+- **CLI tests are Bun-only.** Node's type-stripper cannot handle JSX, and Phase 2's dual-runtime
+  criterion is about the store adapter. `bun run test:node` still runs core's 229 under Node.
+
+---
+
 ## Phase 3 — Tools and the NLT dialect
 
 **Goal.** The agent uses tools. NLT is the default and demonstrably works on a small model.
@@ -169,6 +264,7 @@ endpoint. No tools, no channels, no storage.
 - `tools/execute.ts` — parallel read-only, serial mutating, timeouts, error surfaces
 - Local tools: `now`, `memory_write` stub
 - `packages/tools-composio` — direct SDK/HTTP, **no MCP**
+- CLI: tool-call rows in the chat transcript — a `transcript.ts` case, not a new screen
 - Context slot 1; cache breakpoint A
 - Eval harness: `scripts/eval-tools.ts`, ≥30 fixture tasks
 
@@ -199,7 +295,7 @@ endpoint. No tools, no channels, no storage.
 - `packages/channel-telegram` — raw Bot API, long-poll and webhook, chunking at 4096, typing indicator
 - `packages/server` — every endpoint in `04-SPEC-WIRE.md` except schedules
 - SSE with heartbeat; WS endpoint
-- `castellan serve`
+- `castellan serve` — a `lib/commands.ts` entry plus a plain writer
 
 **Files.** `packages/core/src/channels/`, `packages/channel-telegram/`, `packages/server/`
 
@@ -229,7 +325,7 @@ endpoint. No tools, no channels, no storage.
 - `skills/scripts.ts` — subprocess; `uv run` when Python metadata present, else `python3`; TS/JS via host; loud failure on missing runtime
 - Scripts registered as `skill.<skill>.<script>`, visible only while active
 - Skill template with mandatory `when_not_to_use`
-- `castellan skills list|show|validate`
+- `castellan skills list|show|validate` — table entry plus a plain writer, `--json` included
 - 3 example skills, one shipping a Python script
 
 **Files.** `packages/core/src/skills/`, `examples/*/skills/`, `packages/cli/`
@@ -258,7 +354,7 @@ endpoint. No tools, no channels, no storage.
 - `memory/writer.ts` — real `memory_write` appending to `memory/YYYY-MM-DD.md`
 - Incremental index on write; rebuild on mtime mismatch
 - Context slot 3
-- `castellan memory search|rebuild`
+- `castellan memory search|rebuild` — table entry plus a plain writer, `--json` included
 
 **Files.** `packages/core/src/memory/`, migration 003
 
@@ -286,6 +382,7 @@ endpoint. No tools, no channels, no storage.
 - `loop/phases.ts` + `phase_set` local tool
 - `GET /v1/agents/:id/context`
 - Events: `context.pressure`, `compaction.stage`, `context.reset`, `phase.changed`
+- CLI: compaction and phase indicators in the status bar — reducer cases, not a new screen
 
 **Files.** `packages/core/src/context/`, `loop/phases.ts`, migration 004
 
@@ -314,7 +411,7 @@ endpoint. No tools, no channels, no storage.
 - Write-time validation with specific errors
 - Isolated vs `shared:<key>` session modes
 - Manifest reconciliation: manifest owns manifest schedules; API-created ones untouched
-- Schedule endpoints; `castellan schedules`
+- Schedule endpoints; `castellan schedules` — table entry plus a plain writer
 
 **Files.** `packages/core/src/schedule/`, `packages/server/`, `packages/cli/`
 
@@ -344,7 +441,7 @@ endpoint. No tools, no channels, no storage.
 - `packages/channel-whatsapp` — Baileys, auth dir, QR, reconnect, credential wipe on `loggedOut`
 - Documented risk note in that package's README
 - `@castellan/core/testing` conformance suite
-- `castellan plugins list`
+- `castellan plugins list` — table entry plus a plain writer
 
 **Files.** `packages/core/src/plugins/`, `packages/channel-whatsapp/`, refactors
 

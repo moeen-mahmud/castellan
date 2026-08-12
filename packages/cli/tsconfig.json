@@ -3,9 +3,16 @@
     "compilerOptions": {
         "noEmit": true,
         "types": ["bun"],
+
+        // Ink is React, so the interactive surface is `.tsx`. `react-jsx` means components need no
+        // `import React`. The JSX namespace comes from `react/jsx-runtime` through normal module
+        // resolution, which is why `types` stays pinned to bun — adding "react" there would pull a
+        // global JSX namespace that React 19 no longer ships.
+        "jsx": "react-jsx",
+
         "paths": {
             "@castellan/core": ["../core/src/index.ts"]
         }
     },
-    "include": ["src/**/*.ts", "test/**/*.ts"]
+    "include": ["src/**/*.ts", "src/**/*.tsx", "test/**/*.ts", "test/**/*.tsx"]
 }
