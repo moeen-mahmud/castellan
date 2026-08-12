@@ -39,6 +39,11 @@ jobs:
       - name: build
         run: bun run build
 
+      # Checked every phase, not just at the end. A regression is cheap to fix the day it
+      # appears and expensive to bisect for a month later.
+      - name: boot budget
+        run: bun run bench:boot -- --ci
+
   # Decision 2.2 — Node 22+ is a soft goal, tested but never a blocker. A red leg here is
   # information, not a merge gate.
   node:

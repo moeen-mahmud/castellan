@@ -1,36 +1,36 @@
 {
-    "name": "@castellan/core",
+    "name": "@castellan/cli",
     "version": "0.1.0",
-    "description": "Lightweight, model-agnostic AI agent runtime \u2014 the loop, context, tools, and control.",
+    "description": "Command line interface for the agent runtime.",
     "license": "Apache-2.0",
     "author": "Moeen Mahmud",
     "repository": {
         "type": "git",
         "url": "git+https://github.com/moeen-mahmud/castellan.git",
-        "directory": "packages/core"
+        "directory": "packages/cli"
     },
     "type": "module",
+    "bin": {
+        "castellan": "./dist/index.js"
+    },
     "files": [
         "dist",
-        "README.md",
-        "LICENSE"
+        "README.md"
     ],
     "exports": {
         ".": {
             "types": "./dist/index.d.ts",
             "default": "./dist/index.js"
-        },
-        "./package.json": "./package.json"
+        }
     },
     "scripts": {
-        "build": "bun build ./src/index.ts --outdir dist --target node --format esm --sourcemap=linked --packages=external && tsc -p tsconfig.build.json",
+        "build": "bun build ./src/index.ts --outdir dist --target node --format esm --sourcemap=linked --packages=external --banner '#!/usr/bin/env node' && tsc -p tsconfig.build.json",
         "typecheck": "tsc -p tsconfig.json"
+    },
+    "dependencies": {
+        "@castellan/core": "workspace:*"
     },
     "publishConfig": {
         "access": "public"
-    },
-    "dependencies": {
-        "yaml": "^2.8.1",
-        "zod": "^4.1.12"
     }
 }

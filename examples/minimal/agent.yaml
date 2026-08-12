@@ -1,0 +1,28 @@
+# The smallest useful manifest: one model, one identity file, no tools or channels.
+#
+# Everything endpoint-specific comes from the environment, so this one file works unchanged
+# against OpenAI, an Anthropic-compatible base URL, and a local Ollama — which is the point.
+# See README.md in this directory for the three env presets.
+apiVersion: castellan/v1
+id: minimal
+name: Minimal Assistant
+
+model:
+  main:
+    id: ${MODEL_ID}
+    baseUrl: ${MODEL_BASE_URL}
+    # The *name* of an env var. A literal key here fails validation.
+    apiKeyEnv: MODEL_API_KEY
+    temperature: 0.3
+
+context:
+  files:
+    - IDENTITY.md
+  # Held back from the window for the reply. Generous because a reasoning model bills its
+  # thinking to this same budget: too small and the answer comes back empty with
+  # finish_reason=length, which the runtime reports as a failure rather than a blank reply.
+  reserveOutput: 8192
+
+limits:
+  maxSteps: 4
+  turnTimeoutMs: 120000

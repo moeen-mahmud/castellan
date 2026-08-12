@@ -1,0 +1,225 @@
+import { describe, expect, test } from "bun:test"
+import {
+    CAPABILITY_REGISTRY,
+    globToRegExp,
+    matchCapabilities,
+    patternSpecificity,
+    resolveCapabilities,
+} from "../src/model/capabilities.ts"
+
+describe("glob matching", () => {
+    test("a trailing wildcard matches a prefix", () => {
+        expect(globToRegExp("gpt-4o*").test("gpt-4o-mini")).toBe(true)
+    })
+
+    test("matching is anchored at both ends", () => {
+        expect(globToRegExp("gpt-4o").test("my-gpt-4o-proxy")).toBe(false)
+    })
+
+    test("matching is case-insensitive", () => {
+        expect(globToRegExp("claude-*").test("Claude-Sonnet-4")).toBe(true)
+    })
+
+    test("dots are literal, not any-character", () => {
+        expect(globToRegExp("gpt-4.1*").test("gpt-4x1-turbo")).toBe(false)
+    })
+})
+
+describe("specificity", () => {
+    test("more literal characters means more specific", () => {
+        expect(patternSpecificity("gpt-4o*")).toBeGreaterThan(patternSpecificity("gpt*"))
+    })
+
+    test("the catch-all is the least specific thing in the registry", () => {
+        expect(patternSpecificity("*")).toBe(0)
+    })
+
+    test("the most specific pattern wins, not the first declared", () => {
+        // `deepseek-r1*` and `deepseek*` both match. Resolution order must not depend on where
+        // someone happened to add an entry.
+        expect(matchCapabilities("deepseek-r1-distill-qwen-7b").pattern).toBe("deepseek-r1*")
+    })
+
+    test("resolution is deterministic across repeated calls", () => {
+        const first = matchCapabilities("gpt-4o-mini").pattern
+        for (let i = 0; i < 5; i += 1) expect(matchCapabilities("gpt-4o-mini").pattern).toBe(first)
+    })
+})
+
+describe("gateway and tag prefixes", () => {
+    test("an OpenRouter-style vendor prefix still matches", () => {
+        expect(matchCapabilities("openai/gpt-4o").capabilities.contextWindow).toBe(128_000)
+    })
+
+    test("an Ollama tag suffix still matches", () => {
+        expect(matchCapabilities("qwen3:8b").capabilities.contextWindow).toBe(32_768)
+    })
+
+    test("a vendor prefix and a tag together still match", () => {
+        expect(matchCapabilities("library/llama3.1:70b").capabilities.nativeTools).toBe(true)
+    })
+
+    test("an unknown model falls back to the conservative default", () => {
+        const capabilities = matchCapabilities("some-inhouse-model-v3").capabilities
+        expect(capabilities.contextWindow).toBe(8192)
+        expect(capabilities.nativeTools).toBe(false)
+        expect(capabilities.thinking).toBe("none")
+    })
+})
+
+describe("documented provider behaviour", () => {
+    test("Anthropic compat reports strictSchema false", () => {
+        // Not an oversight. The compat endpoint accepts `strict` and ignores it, so the coercion
+        // layer has to run regardless of dialect.
+        expect(matchCapabilities("claude-sonnet-4-20250514").capabilities.strictSchema).toBe(false)
+    })
+
+    test("Anthropic models report their own thinking protocol", () => {
+        expect(matchCapabilities("claude-opus-4-1").capabilities.thinking).toBe("anthropic")
+    })
+
+    test("the measured v4 models resolve to the values taken off the wire", () => {
+        // Measured 2026-08-12 against api.deepseek.com/v1. `maxOutput` is the endpoint's own
+        // stated range ("the valid range of max_tokens is [1, 393216]"), and `contextWindow` is a
+        // proven floor: max_tokens=393216 beside an 85-token prompt was accepted.
+        const pro = matchCapabilities("deepseek-v4-pro").capabilities
+        expect(pro.thinking).toBe("deepseek")
+        expect(pro.nativeTools).toBe(true)
+        expect(pro.maxOutput).toBe(393_216)
+        expect(pro.contextWindow).toBe(393_216)
+    })
+
+    test("v4-flash is a reasoning model too, despite the name", () => {
+        // A "flash" tier reads like a cheap non-reasoning sibling. It streams reasoning_content,
+        // and assuming otherwise would route its scratchpad into the reply.
+        expect(matchCapabilities("deepseek-v4-flash").capabilities.thinking).toBe("deepseek")
+    })
+
+    test("an unseen v4 id falls back to the v4 family, not to the pre-v4 defaults", () => {
+        const unseen = matchCapabilities("deepseek-v4-turbo").capabilities
+        expect(unseen.thinking).toBe("deepseek")
+        expect(unseen.contextWindow).toBe(393_216)
+    })
+
+    test("measured rows record their provenance, unverified rows say so", () => {
+        const pro = CAPABILITY_REGISTRY.find((entry) => entry.pattern === "deepseek-v4-pro*")
+        expect(pro?.verified).toContain("2026-08-12")
+        const chat = CAPABILITY_REGISTRY.find((entry) => entry.pattern === "deepseek-chat*")
+        expect(chat?.verified).toBeUndefined()
+        expect(chat?.note).toContain("Unverified")
+    })
+
+    test("the hosted DeepSeek reasoner declares its own reasoning protocol", () => {
+        // Not `anthropic`: reasoning arrives as `reasoning_content` and is not replayed, so
+        // treating the two as one protocol would send text the provider never asked for.
+        const capabilities = matchCapabilities("deepseek-reasoner").capabilities
+        expect(capabilities.thinking).toBe("deepseek")
+        // Deliberately low: this id was not served by the account the registry was tested
+        // against, so the row stays conservative rather than borrowing v4's numbers.
+        expect(capabilities.contextWindow).toBe(65_536)
+    })
+
+    test("deepseek-chat is not a reasoning model", () => {
+        const capabilities = matchCapabilities("deepseek-chat").capabilities
+        expect(capabilities.thinking).toBe("none")
+        expect(capabilities.nativeTools).toBe(true)
+    })
+
+    test("the open-weight R1 name resolves like the hosted reasoner", () => {
+        // A self-hosted `deepseek-r1` and the hosted `deepseek-reasoner` are the same model behind
+        // two names; resolving them differently would make a local eval mean nothing.
+        expect(matchCapabilities("deepseek-r1").capabilities.thinking).toBe("deepseek")
+        expect(matchCapabilities("deepseek-r1:14b").capabilities.thinking).toBe("deepseek")
+        expect(matchCapabilities("deepseek-r1-distill-qwen-7b").capabilities.thinking).toBe(
+            "deepseek",
+        )
+    })
+
+    test("an unknown deepseek id falls back to the family entry, not the reasoner", () => {
+        // Guessing `thinking: deepseek` for a non-reasoning model would strip reply text into a
+        // reasoning channel nobody reads.
+        expect(matchCapabilities("deepseek-v3").capabilities.thinking).toBe("none")
+    })
+
+    test("a DeepSeek id behind a gateway prefix still resolves", () => {
+        expect(matchCapabilities("deepseek/deepseek-reasoner").capabilities.thinking).toBe(
+            "deepseek",
+        )
+    })
+
+    test("promptCache none does not claim the provider caches nothing", () => {
+        // DeepSeek caches context server-side automatically. `none` means the runtime has no
+        // breakpoint to place, which is a statement about us rather than about them.
+        expect(matchCapabilities("deepseek-chat").capabilities.promptCache).toBe("none")
+    })
+
+    test("maxOutput is never derived from the window", () => {
+        // A reasoning model handed `window / 4` returns empty with finishReason=length, which looks
+        // like a broken agent rather than a misconfigured limit.
+        for (const entry of CAPABILITY_REGISTRY) {
+            expect(entry.capabilities.maxOutput).toBeLessThanOrEqual(
+                entry.capabilities.contextWindow,
+            )
+            expect(entry.capabilities.maxOutput).toBeGreaterThan(0)
+        }
+    })
+
+    test("every registry entry is fully specified", () => {
+        for (const entry of CAPABILITY_REGISTRY) {
+            const c = entry.capabilities
+            expect(typeof c.nativeTools).toBe("boolean")
+            expect(typeof c.strictSchema).toBe("boolean")
+            expect(["none", "anthropic", "openai", "deepseek"]).toContain(c.thinking)
+            expect(["none", "anthropic", "openai"]).toContain(c.promptCache)
+            expect(typeof c.parallelToolCalls).toBe("boolean")
+        }
+    })
+
+    test("the registry ends in a catch-all so resolution always succeeds", () => {
+        expect(CAPABILITY_REGISTRY.at(-1)?.pattern).toBe("*")
+    })
+})
+
+describe("manifest override merge", () => {
+    test("an override replaces only the keys it names", () => {
+        const merged = resolveCapabilities("gpt-4o-mini", { contextWindow: 16_000 })
+        expect(merged.contextWindow).toBe(16_000)
+        expect(merged.promptCache).toBe("openai")
+        expect(merged.maxOutput).toBe(16_384)
+    })
+
+    test("an empty override changes nothing", () => {
+        expect(resolveCapabilities("gpt-4o-mini", {})).toEqual(
+            matchCapabilities("gpt-4o-mini").capabilities,
+        )
+    })
+
+    test("an absent override changes nothing", () => {
+        expect(resolveCapabilities("gpt-4o-mini")).toEqual(
+            matchCapabilities("gpt-4o-mini").capabilities,
+        )
+    })
+
+    test("an override can correct a wrong registry entry entirely", () => {
+        const merged = resolveCapabilities("claude-sonnet-4", {
+            strictSchema: true,
+            thinking: "none",
+            contextWindow: 32_768,
+            maxOutput: 2048,
+        })
+        expect(merged).toEqual({
+            nativeTools: true,
+            strictSchema: true,
+            thinking: "none",
+            promptCache: "anthropic",
+            parallelToolCalls: true,
+            contextWindow: 32_768,
+            maxOutput: 2048,
+        })
+    })
+
+    test("false is a real override value, not an absent one", () => {
+        // `{...base, ...override}` with a falsy-filtering bug would silently keep `true` here.
+        expect(resolveCapabilities("gpt-4o-mini", { nativeTools: false }).nativeTools).toBe(false)
+    })
+})

@@ -352,7 +352,7 @@ A shipped registry keyed by model-id glob, merged with any manifest override:
 interface ModelCapabilities {
   nativeTools: boolean
   strictSchema: boolean
-  thinking: "none" | "anthropic" | "openai"
+  thinking: "none" | "anthropic" | "openai" | "deepseek"
   promptCache: "none" | "anthropic" | "openai"
   parallelToolCalls: boolean
   contextWindow: number
@@ -364,9 +364,18 @@ Capabilities affect **only** thinking-block replay and cache-breakpoint placemen
 never change the tool dialect — that is config, so behaviour cannot drift when the model
 changes.
 
-Thinking-block handling matters: when a provider returns reasoning blocks, they must be
-replayed alongside tool results or multi-step reasoning silently degrades. The loop does
-this automatically when `thinking !== "none"`.
+Thinking-block handling matters, and it is not uniform. With `thinking: "anthropic"` the blocks
+must be replayed alongside tool results or multi-step reasoning silently degrades. With
+`thinking: "deepseek"` reasoning arrives as `reasoning_content` beside `content` and is **not**
+replayed — sending it back is accepted and confers nothing. `openai` reasoning is opaque and
+server-side. The loop follows the capability rather than a single rule, which is why this is a
+four-valued field and not a boolean.
+
+A `deepseek` model also bills reasoning tokens to the **output** budget, so an allowance that
+does not cover the thinking returns empty content with `finish_reason: "length"`. The loop
+treats that as a failed turn — code `empty_reply_output_exhausted`, naming
+`context.reserveOutput` — because an empty reply reported as success is the precise shape of
+failure the error philosophy below exists to prevent.
 
 ### Roles
 

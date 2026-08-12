@@ -1,0 +1,89 @@
+/**
+ * The lifecycle event schema. Append-only within `v: 1` — consumers key off `type`, and
+ * removing or repurposing one breaks them silently.
+ *
+ * Core emits; consumers persist. The runtime writes no rows it does not own, so everything a
+ * platform wants to know about an agent arrives here.
+ */
+
+import type { ErrorDetail } from "../errors.ts"
+
+/** Envelope fields shared by every event. */
+export interface EventContext {
+    readonly agentId?: string
+    readonly sessionKey?: string
+    readonly turnId?: string
+    readonly stepId?: string
+}
+
+export interface EventEnvelope<TType extends string = string, TData = unknown> {
+    readonly v: 1
+    /** RFC 3339 UTC. */
+    readonly ts: string
+    readonly runtimeId: string
+    readonly agentId?: string
+    readonly sessionKey?: string
+    readonly turnId?: string
+    readonly stepId?: string
+    readonly type: TType
+    readonly data: TData
+}
+
+/** Why a turn stopped. `max_steps` and `timeout` are reported honestly, never as `final`. */
+export type TurnEndReason = "final" | "max_steps" | "stopped" | "timeout" | "error"
+
+export interface ContextSlotReport {
+    readonly slot: number
+    readonly tokens: number
+    readonly pinned: boolean
+}
+
+/**
+ * Event type → shape of its `data`. Phase 1 covers boot, turn, and model events; tool,
+ * skill, compaction, delivery, and schedule events arrive with their subsystems.
+ */
+export interface EventDataMap {
+    "runtime.ready": {
+        /** Time inside `Runtime.create`. */
+        bootMs: number
+        /** Time since process start — the number the sub-second boot claim refers to. */
+        processMs: number
+        phases: Record<string, number>
+        agents: number
+    }
+    "runtime.stopping": { reason: string }
+    "agent.loaded": { tools: number; skills: number; schedules: number; model: string }
+    "agent.error": ErrorDetail
+    "agent.warning": ErrorDetail
+    "turn.start": { source: string; inputTokens: number }
+    "context.assembled": { slots: ContextSlotReport[]; total: number }
+    "model.call": {
+        role: "main" | "selector" | "compactor"
+        model: string
+        promptTokens: number
+        cached: boolean
+        attempt: number
+    }
+    /** Suppressed unless a subscriber opted in — this is per-token and high volume. */
+    "model.chunk": { delta: string; kind: "text" | "reasoning" }
+    "model.retry": { status: number; attempt: number; delayMs: number }
+    "model.result": {
+        outputTokens: number
+        promptTokens: number
+        finishReason: string
+        latencyMs: number
+    }
+    "turn.end": {
+        reason: TurnEndReason
+        steps: number
+        tokens: { prompt: number; output: number }
+        durationMs: number
+    }
+    error: ErrorDetail & { stack?: string }
+}
+
+export type EventType = keyof EventDataMap & string
+
+export type AnyEvent = {
+    [K in EventType]: EventEnvelope<K, EventDataMap[K]>
+}[EventType]

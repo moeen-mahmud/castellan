@@ -37,7 +37,7 @@ ability to review it.
 **Acceptance**
 - [x] `bun install && bun run build && bun test && bun run lint` clean
 - [ ] CI green — workflow written; requires a push to verify
-- [x] `bun scripts/rename-brand.ts foo` renames throughout; `git diff` touches only `brand.ts` and `package.json` files
+- [x] `bun scripts/rename-brand.ts foo` renames throughout; `git diff` touches only `brand.ts` and `package.json` files — plus, once a second package existed, files carrying the derived `@<slug>/` import scope and `apiVersion`. See the note under Phase 1.
 - [x] Adding `import "@castellan/cli"` to core fails CI
 
 **Non-goals.** Any runtime behaviour.
@@ -65,15 +65,27 @@ endpoint. No tools, no channels, no storage.
 **Files.** `packages/core/src/{manifest,model,context,loop,events,runtime}/`, `packages/cli/`
 
 **Acceptance**
-- [ ] `castellan run examples/minimal/agent.yaml` reaches a prompt and answers, streaming tokens
-- [ ] Works against **three** endpoints unchanged: OpenAI, an Anthropic-compat base URL, and a local Ollama
-- [ ] `castellan validate` on a manifest with a literal API key fails naming the field
-- [ ] Missing `${ENV}` fails at load naming the variable — not later as an auth error
-- [ ] Ctrl-C mid-stream cancels within 100 ms, no unhandled rejection
-- [ ] Unit tests: manifest validation (≥15 cases), SSE parsing incl. split frames and `[DONE]`, capability merge
-- [ ] `runtime.ready` emitted with `bootMs`
+- [x] `castellan run examples/minimal/agent.yaml` reaches a prompt and answers, streaming tokens
+- [ ] Works against **three** endpoints unchanged: OpenAI, an Anthropic-compat base URL, and a local Ollama — `bun run verify:endpoints` written; needs keys and Ollama
+- [x] `castellan validate` on a manifest with a literal API key fails naming the field
+- [x] Missing `${ENV}` fails at load naming the variable — not later as an auth error
+- [x] Ctrl-C mid-stream cancels within 100 ms, no unhandled rejection — measured 4 ms via real SIGINT
+- [x] Unit tests: manifest validation (≥15 cases), SSE parsing incl. split frames and `[DONE]`, capability merge
+- [x] `runtime.ready` emitted with `bootMs`
 
 **Non-goals.** Tools, storage, channels, skills, memory, compaction.
+
+**Recorded deviations**
+- A manifest configuring an unimplemented section (`channels`, `skills`, `memory`, `phases`,
+  `schedules`, `plugins`, `delivery`, `tools.pinned`/`provider`/`local`/`search`) is **refused
+  at load** naming the phase that implements it, rather than parsed and ignored. Silently
+  dropping configuration is the failure rule 8 exists to prevent.
+- `rename-brand.ts` also rewrites the `@<slug>/` import scope in source and the derived
+  `apiVersion` in example manifests. Both are mechanically derived from the brand, so leaving
+  them would make "renames throughout" false the moment a second package imports core.
+  `.gitignore`'s state-directory entry is still a manual edit and is reported as such.
+- `context.window` is normalised at load from the capability registry, so rule 11 has a real
+  number to check rather than deferring to first use.
 
 ---
 

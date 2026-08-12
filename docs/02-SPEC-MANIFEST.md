@@ -158,7 +158,7 @@ Only override when the shipped registry is wrong for your endpoint.
 capabilities:
   nativeTools: false
   strictSchema: false
-  thinking: none          # none | anthropic | openai
+  thinking: none          # none | anthropic | openai | deepseek
   promptCache: none       # none | anthropic | openai
   parallelToolCalls: false
   contextWindow: 32768
@@ -167,6 +167,26 @@ capabilities:
 
 Capabilities affect thinking-block replay and cache-breakpoint placement **only**. They
 never change the tool dialect.
+
+`thinking` says what the loop must *do* with reasoning, and the non-`none` cases disagree:
+
+| Value | Reasoning arrives as | Replayed with tool results |
+| --- | --- | --- |
+| `none` | not exposed | n/a |
+| `anthropic` | separate thinking blocks | **required** — omitting it degrades multi-step reasoning silently |
+| `openai` | server-side, opaque | nothing to replay |
+| `deepseek` | `reasoning_content`, beside `content` | **no** — sending it back is accepted but buys nothing |
+
+`deepseek` carries a second consequence, and it is the one that actually bites: **reasoning
+tokens are billed against the output budget.** A `max_tokens` too small to cover the model's
+thinking returns empty content with `finish_reason: "length"`. Measured against
+`deepseek-v4-pro` on 2026-08-12: `max_tokens: 16` produced 16 reasoning tokens and no reply.
+Set `context.reserveOutput` high enough for reasoning *plus* the answer — the runtime reports
+this case as a failed turn rather than an empty success, but it cannot fix the budget for you.
+
+`promptCache: none` means there are no breakpoints for the runtime to place. It does not mean
+the provider caches nothing: DeepSeek caches context automatically server-side and reports
+`prompt_cache_hit_tokens` on every response.
 
 ### `context`
 

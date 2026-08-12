@@ -1,44 +1,44 @@
 {
-  "$schema": "https://json.schemastore.org/tsconfig",
-  "compilerOptions": {
-    "target": "es2023",
-    "lib": ["es2023"],
+    "$schema": "https://json.schemastore.org/tsconfig",
+    "compilerOptions": {
+        "target": "es2023",
+        "lib": ["es2023"],
 
-    // `preserve` + `bundler` keeps import syntax untouched, so `bun build` and Node's
-    // type-stripping both see exactly what was written.
-    "module": "preserve",
-    "moduleResolution": "bundler",
-    "moduleDetection": "force",
-    "verbatimModuleSyntax": true,
-    "isolatedModules": true,
+        // `preserve` + `bundler` keeps import syntax untouched, so `bun build` and Node's
+        // type-stripping both see exactly what was written.
+        "module": "preserve",
+        "moduleResolution": "bundler",
+        "moduleDetection": "force",
+        "verbatimModuleSyntax": true,
+        "isolatedModules": true,
 
-    // Relative imports are written with the `.ts` extension. Bun tolerates either form;
-    // Node's native type-stripping requires the extension. Writing it means one source
-    // tree runs unbundled under both runtimes — which Phase 2's `node --test` parity
-    // acceptance criterion depends on. `rewriteRelativeImportExtensions` turns them back
-    // into `.js` in emitted declarations.
-    "allowImportingTsExtensions": true,
-    "rewriteRelativeImportExtensions": true,
+        // Relative imports are written with the `.ts` extension. Bun tolerates either form;
+        // Node's native type-stripping requires the extension. Writing it means one source
+        // tree runs unbundled under both runtimes — which Phase 2's `node --test` parity
+        // acceptance criterion depends on. `rewriteRelativeImportExtensions` turns them back
+        // into `.js` in emitted declarations.
+        "allowImportingTsExtensions": true,
+        "rewriteRelativeImportExtensions": true,
 
-    // Bans the TS syntax Node cannot strip: enum, namespace, parameter properties,
-    // non-declare class fields with modifiers. Guards the decision above at compile time
-    // rather than discovering the violation when the Node leg of CI goes red.
-    "erasableSyntaxOnly": true,
+        // Bans the TS syntax Node cannot strip: enum, namespace, parameter properties,
+        // non-declare class fields with modifiers. Guards the decision above at compile time
+        // rather than discovering the violation when the Node leg of CI goes red.
+        "erasableSyntaxOnly": true,
 
-    "strict": true,
-    "noUncheckedIndexedAccess": true,
-    "exactOptionalPropertyTypes": true,
-    "noImplicitOverride": true,
-    "noImplicitReturns": true,
-    "noFallthroughCasesInSwitch": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "useUnknownInCatchVariables": true,
-    "forceConsistentCasingInFileNames": true,
+        "strict": true,
+        "noUncheckedIndexedAccess": true,
+        "exactOptionalPropertyTypes": true,
+        "noImplicitOverride": true,
+        "noImplicitReturns": true,
+        "noFallthroughCasesInSwitch": true,
+        "noUnusedLocals": true,
+        "noUnusedParameters": true,
+        "useUnknownInCatchVariables": true,
+        "forceConsistentCasingInFileNames": true,
 
-    // Declarations come from tsc; JS and its sourcemap come from `bun build`.
-    "declaration": true,
-    "declarationMap": true,
-    "skipLibCheck": true
-  }
+        // Declarations come from tsc; JS and its sourcemap come from `bun build`.
+        "declaration": true,
+        "declarationMap": true,
+        "skipLibCheck": true
+    }
 }

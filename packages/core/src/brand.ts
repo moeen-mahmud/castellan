@@ -20,18 +20,18 @@ const DEFAULT_NAME = "Castellan"
 const MANIFEST_MAJOR = 1
 
 export interface Brand {
-  /** Lowercase slug. Safe in paths, env var names, and package scopes. */
-  readonly slug: string
-  /** Display name, for humans. */
-  readonly name: string
-  /** Prefix for every env var the runtime reads, e.g. `CASTELLAN_API_TOKEN`. */
-  readonly envPrefix: string
-  /** Dot-directory for runtime state, relative to the workspace. */
-  readonly stateDir: string
-  /** Value required in `agent.yaml`'s `apiVersion` field. */
-  readonly apiVersion: string
-  /** npm scope for first-party packages. */
-  readonly packageScope: string
+    /** Lowercase slug. Safe in paths, env var names, and package scopes. */
+    readonly slug: string
+    /** Display name, for humans. */
+    readonly name: string
+    /** Prefix for every env var the runtime reads, e.g. `CASTELLAN_API_TOKEN`. */
+    readonly envPrefix: string
+    /** Dot-directory for runtime state, relative to the workspace. */
+    readonly stateDir: string
+    /** Value required in `agent.yaml`'s `apiVersion` field. */
+    readonly apiVersion: string
+    /** npm scope for first-party packages. */
+    readonly packageScope: string
 }
 
 /**
@@ -39,14 +39,14 @@ export interface Brand {
  * two inputs, so there is no way to rebrand half of the runtime.
  */
 export function brandFromSlug(slug: string, name: string): Brand {
-  return {
-    slug,
-    name,
-    envPrefix: `${slug.toUpperCase()}_`,
-    stateDir: `.${slug}`,
-    apiVersion: `${slug}/v${MANIFEST_MAJOR}`,
-    packageScope: `@${slug}`,
-  }
+    return {
+        slug,
+        name,
+        envPrefix: `${slug.toUpperCase()}_`,
+        stateDir: `.${slug}`,
+        apiVersion: `${slug}/v${MANIFEST_MAJOR}`,
+        packageScope: `@${slug}`,
+    }
 }
 
 /** The shipped brand, before any env override is applied. */
@@ -61,21 +61,59 @@ export const BRAND_OVERRIDE_ENV = `${DEFAULT_BRAND.envPrefix}BRAND`
 /** Slug rules: lowercase alphanumeric, inner hyphens. Safe as a path, env prefix, and scope. */
 export const SLUG_PATTERN = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/
 
-// TODO(moeen): implement the override policy. See the three trade-offs in the plan:
-//   1. Does an override rewrite every derived field, or only `name`?
-//   2. Does a malformed override throw at import time, or fall back with a warning?
-//      (Rule 8 forbids silent failure; rule 4 forbids I/O before ready, and this module is
-//      imported before an event bus exists to warn on.)
-//   3. Is `envPrefix` always `${SLUG}_`, or independently overridable?
-// `brandFromSlug`, `SLUG_PATTERN`, and `DEFAULT_BRAND` are the pieces this needs.
-export function deriveBrand(override: string | undefined): Brand {
-  if (override === undefined) return DEFAULT_BRAND
+/** `acme-run` → `Acme Run`. Display form only; never used in a path or an env var. */
+export function titleCaseSlug(slug: string): string {
+    return slug
+        .split("-")
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(" ")
+}
 
-  throw new Error(
-    `${BRAND_OVERRIDE_ENV} is set to "${override}", but brand override is not implemented yet. ` +
-      `hint: unset ${BRAND_OVERRIDE_ENV} to use the default brand, or implement deriveBrand() ` +
-      `in packages/core/src/brand.ts.`,
-  )
+/**
+ * Resolve the brand from an optional override.
+ *
+ * Three decisions, all in the direction of coherence over flexibility:
+ *
+ * 1. **An override moves every derived field, including `apiVersion`.** A half-rebranded
+ *    runtime — `.acme/` on disk but `CASTELLAN_` env vars — is worse than either end state,
+ *    and there is no reading of decision 1.5 under which an embedder wants that. The
+ *    consequence is deliberate: a rebranded runtime rejects a stock `apiVersion`, because a
+ *    fork that has changed the runtime's identity should not silently accept manifests
+ *    written for a different one.
+ * 2. **A malformed override throws here, at import.** Rule 8 forbids silent failure and rule
+ *    4 forbids I/O before readiness, so there is no bus to warn on and no log to write to.
+ *    Throwing is the only loud channel available this early, and a bad brand poisons every
+ *    path and env lookup downstream — failing at the first opportunity is cheaper than
+ *    failing at the twentieth.
+ * 3. **`envPrefix` is not independently overridable.** Two knobs that must agree are one bug
+ *    waiting to happen.
+ */
+export function deriveBrand(override: string | undefined): Brand {
+    if (override === undefined) return DEFAULT_BRAND
+
+    const slug = override.trim()
+
+    if (slug === "") {
+        throw new Error(
+            `${BRAND_OVERRIDE_ENV} is set but empty. ` +
+                `hint: unset ${BRAND_OVERRIDE_ENV} entirely to use the default brand — an empty value ` +
+                `is treated as a mistake rather than as "no override", because a declared-but-unset ` +
+                `variable is usually a container passing through a name it never assigned.`,
+        )
+    }
+
+    if (!SLUG_PATTERN.test(slug)) {
+        throw new Error(
+            `${BRAND_OVERRIDE_ENV}="${slug}" is not a usable brand slug. ` +
+                `hint: the slug becomes an env var prefix, a dot-directory, an npm scope, and the ` +
+                `manifest apiVersion, so it must be lowercase alphanumeric with inner hyphens — ` +
+                `e.g. acme or acme-run.`,
+        )
+    }
+
+    if (slug === DEFAULT_BRAND.slug) return DEFAULT_BRAND
+
+    return brandFromSlug(slug, titleCaseSlug(slug))
 }
 
 /**

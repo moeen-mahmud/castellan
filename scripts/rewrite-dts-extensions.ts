@@ -28,38 +28,38 @@ const PACKAGES = join(ROOT, "packages")
 const RELATIVE_TS_SPECIFIER = /(["'])(\.\.?\/[^"']*)\.ts\1/g
 
 function declarationFiles(dir: string): string[] {
-  const out: string[] = []
-  for (const entry of readdirSync(dir)) {
-    const full = join(dir, entry)
-    if (statSync(full).isDirectory()) out.push(...declarationFiles(full))
-    else if (entry.endsWith(".d.ts")) out.push(full)
-  }
-  return out
+    const out: string[] = []
+    for (const entry of readdirSync(dir)) {
+        const full = join(dir, entry)
+        if (statSync(full).isDirectory()) out.push(...declarationFiles(full))
+        else if (entry.endsWith(".d.ts")) out.push(full)
+    }
+    return out
 }
 
 const rewritten: string[] = []
 
 for (const pkg of readdirSync(PACKAGES)) {
-  const dist = join(PACKAGES, pkg, "dist")
-  let isDir = false
-  try {
-    isDir = statSync(dist).isDirectory()
-  } catch {
-    // No dist — package has nothing built. Not an error; not every package emits.
-  }
-  if (!isDir) continue
+    const dist = join(PACKAGES, pkg, "dist")
+    let isDir = false
+    try {
+        isDir = statSync(dist).isDirectory()
+    } catch {
+        // No dist — package has nothing built. Not an error; not every package emits.
+    }
+    if (!isDir) continue
 
-  for (const file of declarationFiles(dist)) {
-    const source = readFileSync(file, "utf8")
-    const next = source.replace(RELATIVE_TS_SPECIFIER, "$1$2.js$1")
-    if (next === source) continue
-    writeFileSync(file, next)
-    rewritten.push(relative(ROOT, file))
-  }
+    for (const file of declarationFiles(dist)) {
+        const source = readFileSync(file, "utf8")
+        const next = source.replace(RELATIVE_TS_SPECIFIER, "$1$2.js$1")
+        if (next === source) continue
+        writeFileSync(file, next)
+        rewritten.push(relative(ROOT, file))
+    }
 }
 
 console.log(
-  rewritten.length === 0
-    ? "rewrite-dts-extensions: nothing to rewrite"
-    : `rewrite-dts-extensions: ${rewritten.length} file(s) — ${rewritten.join(", ")}`,
+    rewritten.length === 0
+        ? "rewrite-dts-extensions: nothing to rewrite"
+        : `rewrite-dts-extensions: ${rewritten.length} file(s) — ${rewritten.join(", ")}`,
 )
