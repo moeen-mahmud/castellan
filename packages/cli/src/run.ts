@@ -167,8 +167,9 @@ async function runPlain(wired: Wired): Promise<number> {
     let controller: AbortController | undefined
     let cancelledAt = 0
     let exitCode = EXIT_OK
+    let reader: Interface | undefined
 
-    const onInterrupt = (rl?: Interface): void => {
+    const onInterrupt = (rl = reader): void => {
         if (controller !== undefined && !controller.signal.aborted) {
             cancelledAt = performance.now()
             controller.abort()
@@ -233,6 +234,7 @@ async function runPlain(wired: Wired): Promise<number> {
 
         if (process.stdin.isTTY !== true) {
             const rl = createInterface({ input: process.stdin })
+            reader = rl
             for await (const line of rl) {
                 const trimmed = line.trim()
                 if (trimmed === "" || EXIT_WORDS.includes(trimmed)) continue
@@ -241,8 +243,26 @@ async function runPlain(wired: Wired): Promise<number> {
             return exitCode
         }
 
-        const rl = createInterface({ input: process.stdin, output: process.stdout, prompt: PROMPT })
-        rl.on("SIGINT", () => onInterrupt(rl))
+        // `terminal: false` is the whole point of this branch.
+        //
+        // Node's readline decides for itself whether to run in terminal mode, by reading
+        // `output.isTTY` — so at a terminal it repaints the prompt with cursor-control sequences
+        // (`ESC[1G`, `ESC[0J`, `ESC[3G`) that the same command piped never emits. That silently
+        // breaks the property plain mode exists for: `--plain` at a terminal must produce exactly
+        // what a pipe produces. Only the rich path is allowed to move a cursor.
+        //
+        // The cost is that readline no longer echoes or edits: the tty driver does both, because
+        // nothing here puts stdin in raw mode. Typing, backspace and Ctrl-D behave as they do in any
+        // line-buffered program. Arrow-key history is lost on this path — the rich path owns that.
+        const rl = createInterface({
+            input: process.stdin,
+            output: process.stdout,
+            prompt: PROMPT,
+            terminal: false,
+        })
+        reader = rl
+        // Outside terminal mode readline never emits its own SIGINT, so the process-level handler
+        // installed below is the only one that fires. It closes `reader`, which ends the loop.
         rl.prompt()
         for await (const line of rl) {
             const trimmed = line.trim()

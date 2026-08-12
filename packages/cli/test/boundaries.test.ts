@@ -101,6 +101,18 @@ describe("the pure modules stay pure", () => {
     })
 })
 
+describe("only the rich path moves a cursor", () => {
+    test("the interactive readline is pinned out of terminal mode", () => {
+        // Found by running `--plain` under a pty: Node's readline decides terminal mode from
+        // `output.isTTY` rather than from the mode this CLI already resolved, so a plain run at a
+        // terminal repainted its prompt with ESC[1G / ESC[0J / ESC[3G that the same command piped
+        // never emitted — breaking the one property plain mode exists for.
+        const run = FILES.find((file) => file.path === "run.ts")?.text ?? ""
+        expect(run).toContain("createInterface({")
+        expect(run).toContain("terminal: false")
+    })
+})
+
 describe("hard rule 3 — the brand lives in one file", () => {
     test("no source file spells the product name", () => {
         // `rename-brand.ts` rewrites `brand.ts` and package manifests. A literal anywhere else,
