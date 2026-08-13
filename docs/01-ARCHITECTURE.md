@@ -257,12 +257,25 @@ once per session, that's a manifest misconfiguration and the event says so.
 
 Tools are resolved **at agent load**, not per turn:
 
-1. Read `tools.pinned` from the manifest.
-2. Ask the provider to resolve each slug to a schema.
-3. **Fail loudly on any unknown slug.** Never silently drop.
+1. Read `tools.pinned` and `tools.local` from the manifest.
+2. Ask the local provider first, then each configured provider, to resolve each slug to a schema.
+   Two providers claiming one slug is a load failure: a slug is how the model names a tool, so one
+   name cannot mean two things.
+3. **Fail loudly on any unknown slug.** Never silently drop. The failure names the slug, the
+   providers actually consulted, the manifest field, and the nearest available match.
 4. Enforce `budget.max` (default 24) with `budget.reserveWrite` (default 6) held for
    tools annotated as mutating.
 5. Cache resolved schemas to `.castellan/tools.cache.json`; refresh asynchronously after ready.
+
+The two budget rules read as one and are different in kind. Pinning **more slugs than the cap** is a
+configuration error — the manifest asked for something arithmetically impossible, and only its author
+can say what to give up, so it is refused before any provider is consulted. Resolution **expanding
+past the cap**, one toolkit slug yielding thirty tools, is a runtime fact: that trims, holding
+`reserveWrite` slots so a large read surface cannot starve the writes, and reports what it dropped as
+a warning. The reservation is a floor, not a ceiling — with only write tools resolved they take the
+whole budget.
+
+Catalogue order is manifest order, because manifest order is trim priority.
 
 ### Phases
 
@@ -282,12 +295,18 @@ single highest-leverage knob for small-model reliability.
 ```ts
 interface ToolDialect {
   id: "nlt" | "native"
-  renderCatalogue(tools: ToolSpec[]): ContextBlock[]
-  parse(output: ModelOutput): { intents: ToolIntent[]; text: string }
-  renderObservation(result: ToolResult): Message
-  renderRepair(errors: FieldError[]): Message
+  renderCatalogue(specs: readonly ToolSpec[]): readonly ContextBlock[]
+  parse(output: string): { intents: readonly ToolIntent[]; text: string }
+  renderObservation(results: readonly ToolResult[]): ChatMessage
+  renderRepair(errors: readonly FieldError[]): ChatMessage
 }
 ```
+
+`renderObservation` takes a step's results together rather than one at a time: a step may carry
+several blocks, and one message per result triples the "continue or reply" instruction that follows
+them. `parse` takes the model's text and nothing else — it is deliberately **schema-free**, reporting
+what was written verbatim, and `coerce.ts` alone decides what that means for a given tool. That split
+is why a field-matching change cannot break block detection.
 
 **NLT** is the default. The catalogue renders as prose, not JSON schema:
 
@@ -321,10 +340,26 @@ END
 
 Multiple `ACTION` blocks per output are permitted. Text outside blocks is the reply.
 
-The parser is deliberately tolerant — case-insensitive keys, whitespace trimmed, bullet
-prefixes accepted — then coerces to the JSON Schema (string → number/boolean/array) and
-validates. On validation failure it emits **one** repair step quoting exact field errors,
-then gives up and surfaces an honest error rather than looping.
+The parser is deliberately tolerant — case-insensitive keyword and keys, whitespace trimmed, bullet
+and numbered prefixes accepted, `END` optional, a wrapping code fence ignored — then coerces to the
+JSON Schema (string → number/boolean/array) and validates. Every accepted variant is one that arrives
+in practice, and refusing it would spend a repair step on punctuation rather than on meaning.
+
+Three things it will *not* do, each a failure seen in a real transcript:
+
+- A line merely *containing* `>>>` is heredoc content; only a line that is exactly `>>>` closes one.
+- Prose after a blank line inside an unterminated block is the reply, not a continuation of the last
+  field. Gluing it on is how a sentence meant for a person ends up as a tool argument.
+- A fence is dropped only when it wraps a block. A fence anywhere else is the model writing markdown
+  at the person, and eating it would mangle their reply.
+
+On validation failure it emits **one** repair step quoting exact field errors, then gives up and
+surfaces an honest error rather than looping. Two failures in a row is a catalogue problem rather than
+a model problem, and asking a third time spends the step budget producing the same broken block.
+
+A step is **all-or-nothing**. If any block in it cannot be used, none of them run: the repair asks the
+model to rewrite the whole step, and a mutating call that had already succeeded would then happen a
+second time. There is no idempotency key available at this layer to make the alternative safe.
 
 **native** uses the provider's `tools` parameter and `tool_calls` response. Opt-in only.
 Note that Anthropic's compat endpoint ignores `strict`, so schema conformance is not

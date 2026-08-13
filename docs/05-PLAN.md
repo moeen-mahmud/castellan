@@ -271,17 +271,62 @@ Phase 3 or later. Any change to `packages/core`.
 **Files.** `packages/core/src/tools/`, `packages/tools-composio/`, `scripts/eval-tools.ts`
 
 **Acceptance**
-- [ ] Agent completes a two-tool task end to end on an 8B-class model
+- [ ] Agent completes a two-tool task end to end on an 8B-class model — *the loop is proven against
+      DeepSeek with one built-in tool (`ACTION: now` → observation → "Today is August 13, 2026",
+      616 prompt · 85 output · 3785 ms). The 8B run needs a local Ollama.*
 - [ ] Eval suite: NLT vs native on the same fixtures, ≥3 models, results committed to `evals/`
 - [ ] NLT ≥ native on the smallest model tested — if not, stop and investigate before proceeding
-- [ ] Unknown pinned slug fails **at load**, naming slug and provider
-- [ ] Budget honoured; a manifest pinning 40 tools fails naming the cap
-- [ ] Write reservation holds: 20 read + 6 write pinned yields ≥6 write tools in the catalogue
-- [ ] Malformed model output triggers exactly one repair, then an honest `tool.repair` failure — no loop
-- [ ] Parser unit tests ≥25 cases: multi-block, missing END, wrong case, bullets, embedded `>>>`
+- [x] Unknown pinned slug fails **at load**, naming slug and provider — and the manifest field and
+      the nearest available match
+- [x] Budget honoured; over-pinning is refused naming the cap, before any provider is consulted
+- [x] Write reservation holds: 20 read + 6 write yields ≥6 write tools in the catalogue
+- [x] Malformed model output triggers exactly one repair, then an honest `tool_repair_failed` — the
+      turn ends at 2 steps rather than spending the step budget on the same broken block
+- [x] Parser unit tests: 47 cases across multi-block, missing END, wrong case, bullets, numbered
+      lists, backticked slugs, embedded `>>>`, wrapping fences, CRLF, and repeated keys
 - [ ] Composio path uses zero MCP transport — grep proves it
 
+**Progress.** The core tool layer is complete and verified: `types`, `registry` (resolution, budget,
+loud failure), `dialect/nlt` (catalogue, parser, observations, repairs), `coerce`, `execute`, the two
+built-in tools, the step loop, context slot 1, and the three `tool.*` events. 540 tests under Bun and
+361 under Node, boot unchanged at 62.5 ms with the new `tools` phase at 0.51 ms.
+
+Still outstanding: `dialect/native.ts` (refused at load until it exists, rather than quietly served by
+NLT), `packages/tools-composio` with its resolution cache, the CLI's tool-call rows, and
+`scripts/eval-tools.ts` with its fixtures.
+
+**Known defect, found by the live run.** The plain CLI writes `model.chunk` deltas straight to stdout,
+so a tool call's raw `ACTION:`/`END` lines appear in the reply and run into the answer that follows it
+(`ENDToday is August 13, 2026.`). The fix is not a filter in the CLI: the same problem belongs to the
+server's SSE consumers and Phase 12's client, and a second parser for display would drift from the one
+that decides what actually runs. What it wants is the existing line-at-a-time parser exposed as an
+incremental consumer, so one implementation both executes and displays. Holding a partial line only
+while it could still become an `ACTION:` keeps streaming latency at zero mid-line.
+
 **Non-goals.** Tool search. Phases. MCP provider.
+
+**Recorded deviations**
+
+- **`tools.local` and `tools.pinned` resolve against different providers.** `local` names built-ins
+  and is never sent to a remote provider — asking Composio to resolve `now` invites it to answer with
+  something else. The local provider is consulted first for both, so a provider tool cannot shadow a
+  built-in, and a genuine clash is a load failure rather than a silent winner.
+- **`memory_write` is a stub whose observation says so.** Memory is files plus FTS5 and arrives with
+  its own phase; the stub exists so a *mutating* tool can be exercised end to end — serial execution,
+  the write reservation, the trace-retention rule. It reports `NOT SAVED` and tells the model not to
+  claim otherwise, because a stub reporting success teaches the agent to tell the person their note
+  was saved, which is worse than not having the tool.
+- **Observations are capped at `observationMaxTokens` with a visible head-and-tail cut.** Not S1
+  compaction: there is no artifact file and no pointer yet, so the marker names the character count it
+  removed. Without any cap a single large observation can exceed the whole window and take the history
+  with it.
+- **`AgentCreateOptions` replaces `ResolveRolesOptions` at `Agent.create`, which stays synchronous.**
+  Resolution is asynchronous because a provider is consulted, so `Runtime` builds the registry in its
+  own boot phase and hands it over. Making `Agent.create` async would have pushed a provider await
+  into every embedder's construction path for no gain.
+- **The `tool.repair` event fires on both attempts.** The wire spec now says so. It means "this step's
+  calls could not be used", and two in a row is the signal that a catalogue needs work — suppressing
+  the second would hide exactly the case worth seeing.
 
 ---
 

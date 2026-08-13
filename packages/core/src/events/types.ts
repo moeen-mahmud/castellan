@@ -89,6 +89,26 @@ export interface EventDataMap {
         finishReason: string
         latencyMs: number
     }
+    /**
+     * A tool is about to run. `argsHash` rather than the arguments themselves: arguments carry
+     * whatever the conversation carried, and an event stream is the wrong place to copy it to.
+     */
+    "tool.call": { slug: string; callId: string; argsHash: string; mutating: boolean }
+    "tool.result": {
+        slug: string
+        callId: string
+        ok: boolean
+        latencyMs: number
+        /** Of the observation before any truncation, so a cut is visible as a size, not a guess. */
+        bytes: number
+        truncated: boolean
+    }
+    /**
+     * A step's tool calls could not be used as written. The first occurrence is followed by one
+     * correction request; a second in a row ends the turn with `tool_repair_failed` rather than
+     * asking again. Two of these back to back is the signal that a catalogue needs work.
+     */
+    "tool.repair": { slugs: string[]; errors: string[] }
     "turn.end": {
         reason: TurnEndReason
         steps: number

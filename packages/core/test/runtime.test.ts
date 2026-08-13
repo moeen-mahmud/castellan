@@ -74,7 +74,7 @@ describe("boot", () => {
         // Boot events fired during create; read the report the runtime kept.
         expect(runtime.boot.bootMs).toBeGreaterThanOrEqual(0)
         expect(runtime.boot.processMs).toBeGreaterThan(0)
-        expect(Object.keys(runtime.boot.phases)).toEqual(["manifest", "store", "agents"])
+        expect(Object.keys(runtime.boot.phases)).toEqual(["manifest", "store", "tools", "agents"])
 
         runtime.bus.on("*", (event) => events.push(event))
         await runtime.stop()

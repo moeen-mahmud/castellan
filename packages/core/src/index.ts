@@ -29,6 +29,7 @@ export {
     type ErrorDetail,
     HarnessError,
     ModelError,
+    ToolError,
 } from "./errors.ts"
 export { EventBus, type EventBusOptions, type EventHandler } from "./events/bus.ts"
 export type {
@@ -42,7 +43,13 @@ export type {
 } from "./events/types.ts"
 export { newStepId, newTurnId } from "./loop/ids.ts"
 export { runStep, type StepInput, type StepResult } from "./loop/step.ts"
-export { runTurn, type TurnInput, type TurnLimits, type TurnResult } from "./loop/turn.ts"
+export {
+    runTurn,
+    type ToolRuntime,
+    type TurnInput,
+    type TurnLimits,
+    type TurnResult,
+} from "./loop/turn.ts"
 export {
     type EnvSource,
     envReferencesIn,
@@ -113,7 +120,13 @@ export {
     resolveRoles,
 } from "./model/roles.ts"
 export { parseSSE, type SSEEvent } from "./model/sse.ts"
-export { Agent, type AgentDescription, type AgentSendOptions } from "./runtime/agent.ts"
+export { nearest } from "./nearest.ts"
+export {
+    Agent,
+    type AgentCreateOptions,
+    type AgentDescription,
+    type AgentSendOptions,
+} from "./runtime/agent.ts"
 export {
     type AgentSource,
     type BootReport,
@@ -165,4 +178,47 @@ export type {
     TurnStatus,
     TurnStore,
 } from "./store/store.ts"
+export {
+    type Coercion,
+    type CoercionFailure,
+    type CoercionSuccess,
+    coerceArgs,
+} from "./tools/coerce.ts"
+export type { DialectId, ParsedOutput, ToolDialect } from "./tools/dialect/dialect.ts"
+export { nltDialect, parseNlt, renderNltEntry } from "./tools/dialect/nlt.ts"
+export {
+    batch,
+    type ExecuteInput,
+    type ExecuteOutcome,
+    executeIntents,
+    hashArgs,
+    planIntents,
+} from "./tools/execute.ts"
+export {
+    LOCAL_PROVIDER_ID,
+    LOCAL_TOOL_SLUGS,
+    localProvider,
+    toolContext,
+} from "./tools/local.ts"
+export {
+    applyBudget,
+    DEFAULT_TOOL_BUDGET,
+    type DroppedTool,
+    type RegistryOptions,
+    type ToolBudget,
+    ToolRegistry,
+} from "./tools/registry.ts"
+export type {
+    FieldError,
+    JsonSchemaNode,
+    JsonType,
+    Tool,
+    ToolContext,
+    ToolHandler,
+    ToolIntent,
+    ToolParameters,
+    ToolProvider,
+    ToolResult,
+    ToolSpec,
+} from "./tools/types.ts"
 export { VERSION } from "./version.ts"

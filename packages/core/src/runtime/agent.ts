@@ -16,12 +16,22 @@ import { readFileSync } from "node:fs"
 import { isAbsolute, resolve } from "node:path"
 import type { EventBus } from "../events/bus.ts"
 import { newTurnId } from "../loop/ids.ts"
-import { runTurn, type TurnResult } from "../loop/turn.ts"
+import { runTurn, type ToolRuntime, type TurnResult } from "../loop/turn.ts"
 import type { LoadedManifest } from "../manifest/load.ts"
 import type { AgentManifest } from "../manifest/schema.ts"
 import type { ChatMessage } from "../model/provider.ts"
 import { type ResolvedRoles, type ResolveRolesOptions, resolveRoles } from "../model/roles.ts"
 import type { SessionSummary, Store, TurnRecord } from "../store/store.ts"
+import { nltDialect } from "../tools/dialect/nlt.ts"
+import { ToolRegistry } from "../tools/registry.ts"
+
+export interface AgentCreateOptions extends ResolveRolesOptions {
+    /**
+     * The resolved catalogue. Built by `Runtime` rather than here because resolution is
+     * asynchronous — a provider is consulted, and `Agent.create` is not the place to await one.
+     */
+    readonly tools?: ToolRegistry
+}
 
 export interface AgentSendOptions {
     readonly sessionKey?: string
@@ -38,6 +48,10 @@ export interface AgentDescription {
     readonly window: number
     readonly identityTokensApprox: number
     readonly contextFiles: readonly string[]
+    readonly dialect: string
+    readonly tools: readonly string[]
+    /** Slot 1's cost. Paid on every turn, so it is worth being able to see it. */
+    readonly catalogueTokens: number
 }
 
 export class Agent {
@@ -49,8 +63,11 @@ export class Agent {
     /** Concatenated `context.files`. Byte-stable for the lifetime of the agent. */
     readonly identity: string
     readonly store: Store
+    /** Resolved once, at load. Never searched, never extended at runtime. */
+    readonly tools: ToolRegistry
 
     #bus: EventBus
+    #toolRuntime: ToolRuntime | undefined
 
     private constructor(init: {
         loaded: LoadedManifest
@@ -58,6 +75,7 @@ export class Agent {
         identity: string
         bus: EventBus
         store: Store
+        tools: ToolRegistry
     }) {
         this.id = init.loaded.manifest.id
         this.manifest = init.loaded.manifest
@@ -67,17 +85,40 @@ export class Agent {
         this.identity = init.identity
         this.#bus = init.bus
         this.store = init.store
+        this.tools = init.tools
+
+        // The catalogue is rendered here, once, for the same reason the identity files are read
+        // here: slot 1 is half of the cache-stable prefix. Rendering it per turn — or letting its
+        // order depend on anything that varies — silently stops prompt caching working, and the only
+        // symptom is the bill.
+        const dialect = nltDialect
+        this.#toolRuntime =
+            init.tools.size === 0
+                ? undefined
+                : {
+                      registry: init.tools,
+                      dialect,
+                      blocks: dialect.renderCatalogue(init.tools.specs()),
+                      observationMaxTokens: this.manifest.context.observationMaxTokens,
+                  }
     }
 
     static create(
         loaded: LoadedManifest,
         bus: EventBus,
         store: Store,
-        options: ResolveRolesOptions = {},
+        options: AgentCreateOptions = {},
     ): Agent {
         const identity = readIdentity(loaded)
         const roles = resolveRoles(loaded.manifest, options)
-        return new Agent({ loaded, roles, identity, bus, store })
+        return new Agent({
+            loaded,
+            roles,
+            identity,
+            bus,
+            store,
+            tools: options.tools ?? ToolRegistry.empty(),
+        })
     }
 
     /** Default session key for a surface with no natural one, such as the REPL. */
@@ -137,7 +178,10 @@ export class Agent {
             limits: {
                 maxSteps: this.manifest.limits.maxSteps,
                 turnTimeoutMs: this.manifest.limits.turnTimeoutMs,
+                toolTimeoutMs: this.manifest.limits.toolTimeoutMs,
+                maxParallelTools: this.manifest.limits.maxParallelTools,
             },
+            ...(this.#toolRuntime === undefined ? {} : { tools: this.#toolRuntime }),
             bus: this.#bus,
             source,
             ...(options.signal === undefined ? {} : { signal: options.signal }),
@@ -178,6 +222,12 @@ export class Agent {
             window: this.window,
             identityTokensApprox: Math.ceil(this.identity.length / 3.8),
             contextFiles: this.manifest.context.files,
+            dialect: this.#toolRuntime?.dialect.id ?? this.manifest.tools.dialect,
+            tools: this.tools.specs().map((spec) => spec.slug),
+            catalogueTokens: (this.#toolRuntime?.blocks ?? []).reduce(
+                (sum, block) => sum + block.tokens,
+                0,
+            ),
         }
     }
 }

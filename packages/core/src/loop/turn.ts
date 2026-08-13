@@ -13,18 +13,38 @@
  */
 
 import { assembleContext, slotReport } from "../context/assemble.ts"
+import type { ContextBlock } from "../context/blocks.ts"
 import { estimateMessageTokens } from "../context/tokens.ts"
-import { type ErrorDetail, HarnessError } from "../errors.ts"
+import { type ErrorDetail, HarnessError, toolRepairFailed } from "../errors.ts"
 import type { EventBus } from "../events/bus.ts"
 import type { TurnEndReason } from "../events/types.ts"
 import type { ChatMessage } from "../model/provider.ts"
 import { type ResolvedRole, requestParamsFor } from "../model/roles.ts"
+import type { ToolDialect } from "../tools/dialect/dialect.ts"
+import { executeIntents } from "../tools/execute.ts"
+import type { ToolRegistry } from "../tools/registry.ts"
 import { newStepId, newTurnId } from "./ids.ts"
 import { runStep } from "./step.ts"
 
 export interface TurnLimits {
     readonly maxSteps: number
     readonly turnTimeoutMs: number
+    readonly toolTimeoutMs: number
+    readonly maxParallelTools: number
+}
+
+/**
+ * Everything the step loop needs to run tools. Absent, or with an empty catalogue, the loop behaves
+ * exactly as it did before tools existed: the first reply is the answer.
+ */
+export interface ToolRuntime {
+    readonly registry: ToolRegistry
+    readonly dialect: ToolDialect
+    /** Slot 1, rendered once at agent load. Byte-stable, or prompt caching stops working. */
+    readonly blocks: readonly ContextBlock[]
+    readonly observationMaxTokens: number
+    /** Injected so a tool that reads the clock is testable. */
+    readonly now?: () => Date
 }
 
 export interface TurnInput {
@@ -37,6 +57,7 @@ export interface TurnInput {
     readonly window: number
     readonly reserveOutput: number
     readonly limits: TurnLimits
+    readonly tools?: ToolRuntime
     readonly bus: EventBus
     /** Where the turn came from, for the `turn.start` event: `repl`, `api`, `schedule`, … */
     readonly source: string
@@ -109,6 +130,8 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     let outputTokens = 0
     let reason: TurnEndReason = "final"
     let error: TurnResult["error"]
+    /** Consecutive repair attempts. Reset by any step whose calls were usable. */
+    let repairs = 0
 
     input.bus.emit(
         "turn.start",
@@ -116,14 +139,26 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
         context,
     )
 
+    // Built during the loop rather than after it: with tools, what gets persisted is a trace of
+    // several messages, and reconstructing it from the final state afterwards loses the order.
+    const trace: ChatMessage[] = [{ role: "user", content: input.input }]
+    /** Prose from the current step that no history message carries yet. */
+    let pendingProse = ""
+    /** True when the last step asked for more work, so exhausting the step cap is a failure. */
+    let pendingWork = false
+    /** A mutating tool succeeded. Its effect happened, whatever the turn's outcome turns out to be. */
+    let sideEffects = false
+
     try {
         const history: ChatMessage[] = [...input.history]
+        const tools = input.tools
 
         while (steps < input.limits.maxSteps) {
             if (link.signal.aborted) break
 
             const assembled = assembleContext({
                 identity: input.identity,
+                ...(tools === undefined ? {} : { toolBlocks: tools.blocks }),
                 history,
                 input: input.input,
                 window: input.window,
@@ -151,10 +186,23 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
                 signal: link.signal,
             })
 
-            text += step.text
             reasoning += step.reasoning
             promptTokens = step.promptTokens
             outputTokens += step.outputTokens
+            pendingWork = false
+
+            // With no catalogue there is nothing to look for, and running a parser over the reply
+            // could only ever find a false positive in the model's prose.
+            const parsed =
+                tools === undefined || tools.registry.size === 0
+                    ? { intents: [], text: step.text }
+                    : tools.dialect.parse(step.text)
+
+            // The reply the person reads is the prose *outside* the blocks, accumulated across
+            // steps: "let me check the calendar" is narration they should see, and the block that
+            // follows it is not.
+            if (parsed.text !== "") text = text === "" ? parsed.text : `${text}\n\n${parsed.text}`
+            pendingProse = parsed.text
 
             if (step.aborted) break
 
@@ -163,7 +211,11 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
             // prevent. It happens for real: on a reasoning model, reasoning tokens are billed to
             // the output budget, so a `max_tokens` that does not cover the thinking returns no
             // content at all. Measured against deepseek-v4-pro with max_tokens=16.
-            if (step.finishReason === "length" && text.trim() === "") {
+            if (
+                step.finishReason === "length" &&
+                text.trim() === "" &&
+                parsed.intents.length === 0
+            ) {
                 reason = "error"
                 const detail: ErrorDetail = {
                     code: "empty_reply_output_exhausted",
@@ -179,16 +231,83 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
                 break
             }
 
-            // With no tool dialect there is nothing to continue for: the first reply is the answer.
-            // Phase 3 replaces this with `parse → intents ? continue : final`.
-            break
+            // No tool call means this reply is the answer. The overwhelming majority of steps.
+            if (tools === undefined || parsed.intents.length === 0) break
+
+            // The *raw* output, blocks and all, so the next model call sees the call it made rather
+            // than a cleaned-up version of it that no longer explains the observation below.
+            const call: ChatMessage = { role: "assistant", content: step.text }
+            history.push(call)
+            trace.push(call)
+            pendingProse = ""
+
+            const outcome = await executeIntents({
+                registry: tools.registry,
+                intents: parsed.intents,
+                context: {
+                    agentId: input.agentId,
+                    sessionKey: input.sessionKey,
+                    turnId,
+                    signal: link.signal,
+                    now: tools.now ?? (() => new Date()),
+                },
+                bus: input.bus,
+                eventContext: stepContext,
+                timeoutMs: input.limits.toolTimeoutMs,
+                maxParallel: input.limits.maxParallelTools,
+                observationMaxTokens: tools.observationMaxTokens,
+            })
+
+            if (outcome.results.some((result) => result.ok)) {
+                sideEffects ||= outcome.results.some(
+                    (result) => result.ok && tools.registry.resolve(result.slug).spec.mutating,
+                )
+            }
+
+            if (outcome.repair.length > 0) {
+                // One repair, and only one. A second identical failure is a catalogue or routing
+                // problem that another attempt cannot fix, and looping on it spends the whole step
+                // budget producing the same broken block.
+                if (repairs > 0) {
+                    reason = "error"
+                    const detail = toolRepairFailed(
+                        outcome.repair.map((field) => ({
+                            code: "tool_arguments_invalid",
+                            message: `${field.field} ${field.message}`,
+                            hint: field.hint,
+                            field: field.field,
+                        })),
+                    ).toDetail()
+                    error = detail
+                    input.bus.emit("agent.warning", detail, context)
+                    break
+                }
+                repairs += 1
+                const repairMessage = tools.dialect.renderRepair(outcome.repair)
+                history.push(repairMessage)
+                trace.push(repairMessage)
+                pendingWork = true
+                continue
+            }
+
+            repairs = 0
+            const observation = tools.dialect.renderObservation(outcome.results)
+            history.push(observation)
+            trace.push(observation)
+            pendingWork = true
         }
 
         if (link.signal.aborted) {
             reason = link.cause() ?? "stopped"
-        } else if (reason === "final" && steps >= input.limits.maxSteps && text === "") {
+        } else if (
+            reason === "final" &&
+            steps >= input.limits.maxSteps &&
+            (pendingWork || text === "")
+        ) {
             // Guarded on `reason` so a diagnosis already made inside the loop — an exhausted
-            // output budget, say — is not overwritten by the coarser one.
+            // output budget, say — is not overwritten by the coarser one. `pendingWork` is the
+            // honest test with tools in play: the model was mid-task and ran out of steps, which is
+            // a failure however much narration it produced along the way.
             reason = "max_steps"
         }
     } catch (caught) {
@@ -221,15 +340,18 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
 
     const durationMs = Math.round(performance.now() - started)
 
+    if (pendingProse !== "") trace.push({ role: "assistant", content: pendingProse })
+
     // Partial content is kept on an explicit stop and on a timeout, both of which are decisions
     // someone made. It is never persisted for a disconnect, which cannot reach this code at all.
-    const appended: ChatMessage[] =
-        reason === "error"
-            ? []
-            : [
-                  { role: "user", content: input.input },
-                  ...(text === "" ? [] : ([{ role: "assistant", content: text }] as ChatMessage[])),
-              ]
+    //
+    // A failed turn normally appends nothing: a half-answer in the history is something the next
+    // turn would be conditioned on as though it were said. **Tool side effects are the exception.**
+    // If a mutating tool succeeded, that happened — the email left, the row was written — and
+    // discarding the record would let the next turn cheerfully do it again. So a turn that both
+    // acted and failed keeps its trace, and the failure itself is on the turn row and in the pinned
+    // error slot next turn.
+    const appended: ChatMessage[] = reason !== "error" || sideEffects ? trace : []
 
     input.bus.emit(
         "turn.end",

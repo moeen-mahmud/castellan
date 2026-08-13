@@ -22,6 +22,7 @@ import type { FetchLike } from "../model/provider.ts"
 import { TurnStreams } from "../store/buffer.ts"
 import { SqliteStore } from "../store/sqlite/store.ts"
 import type { Store } from "../store/store.ts"
+import { ToolRegistry } from "../tools/registry.ts"
 import { Agent } from "./agent.ts"
 
 export type AgentSource = string | Record<string, unknown>
@@ -160,11 +161,27 @@ export class Runtime {
             reaped: [...reaped],
         })
 
-        // 3. Agents: identity files, capability resolution, provider construction. Still no network
+        // 3. Tools: resolve the catalogue from the manifest. Local tools resolve from memory, so
+        //    this touches nothing. A network provider resolves from its on-disk cache here and
+        //    refreshes after readiness — hard rule 4 has no exception for "just this one call".
+        const registries = await markAsync("tools", () =>
+            Promise.all(
+                loaded.map((entry: LoadedManifest) =>
+                    ToolRegistry.create({
+                        pinned: entry.manifest.tools.pinned,
+                        local: entry.manifest.tools.local,
+                        budget: entry.manifest.tools.budget,
+                    }),
+                ),
+            ),
+        )
+
+        // 4. Agents: identity files, capability resolution, provider construction. Still no network
         //    — constructing a provider allocates no socket.
         const agents = mark("agents", () =>
-            loaded.map((entry: LoadedManifest) =>
+            loaded.map((entry: LoadedManifest, index) =>
                 Agent.create(entry, bus, store, {
+                    ...(registries[index] === undefined ? {} : { tools: registries[index] }),
                     // The manifest's live env, not the ambient one: it layers the real environment
                     // over any `.env` beside the manifest, which is what the load-time key check
                     // validated against. Passing `process.env` here instead is how `validate` and
@@ -195,9 +212,22 @@ export class Runtime {
                 )
             }
             runtime.#agents.set(agent.id, agent)
+
+            // Whatever the budget trimmed, and whatever tool arrived without negative guidance, is
+            // said out loud here. A catalogue quietly smaller than the manifest asked for is the
+            // exact failure the loud resolution path exists to prevent.
+            for (const warning of agent.tools.warnings) {
+                bus.emit("agent.warning", warning, { agentId: agent.id })
+            }
+
             bus.emit(
                 "agent.loaded",
-                { tools: 0, skills: 0, schedules: 0, model: agent.manifest.model.main.id },
+                {
+                    tools: agent.tools.size,
+                    skills: 0,
+                    schedules: 0,
+                    model: agent.manifest.model.main.id,
+                },
                 { agentId: agent.id },
             )
         }

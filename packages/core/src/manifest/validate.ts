@@ -314,15 +314,33 @@ function validateSupportedSections(raw: Record<string, unknown>): ErrorDetail[] 
     const tools = raw.tools
     if (tools !== null && typeof tools === "object" && !Array.isArray(tools)) {
         const toolKeys = tools as Record<string, unknown>
-        for (const key of ["provider", "pinned", "local", "search"] as const) {
+
+        for (const key of ["provider", "providerConfig", "search"] as const) {
             const value = toolKeys[key]
             if (value === undefined || value === null) continue
             if (Array.isArray(value) && value.length === 0) continue
+            if (typeof value === "object" && Object.keys(value).length === 0) continue
+            if (key === "search" && (value as { enabled?: unknown }).enabled !== true) continue
             found.push({
                 code: "not_implemented_yet",
-                message: `This build does not implement tools, but the manifest sets tools.${key}.`,
-                hint: "Tools and the NLT dialect arrive in Phase 3. tools.dialect may be set now — it is recorded and validated — but no tool is resolved or executed yet.",
+                message: `This build does not implement tools.${key}.`,
+                hint:
+                    key === "search"
+                        ? "Runtime tool search stays off in v1 by design: search-then-execute is two-hop reasoning, which is where small models fail. Pin the tools the agent needs instead."
+                        : "Tool providers arrive with the Composio package. Built-in tools work now — name them in tools.local.",
                 field: `tools.${key}`,
+            })
+        }
+
+        // Refused rather than quietly served by NLT: a manifest asking for native function calling
+        // and getting a different dialect would make every eval number in this repo unreadable.
+        if (toolKeys.dialect === "native") {
+            found.push({
+                code: "not_implemented_yet",
+                message:
+                    "This build implements the nlt dialect only, but the manifest asks for native.",
+                hint: "Remove the line to use nlt, which is the default and the better choice on small models. Native function calling arrives with the dialect comparison evals.",
+                field: "tools.dialect",
             })
         }
     }

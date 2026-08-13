@@ -60,6 +60,10 @@ OpenClaw as consumed by VelaOps; those are cited as `[VO]`.
 | 4.5 | **Phase-scoped tool visibility in core**, not a plugin | The strongest published small-model lever: constraining the tool space per workflow phase took local models from 2/10 to 10/10 on a SWE-bench subset with no model change. Too central to be optional. |
 | 4.6 | Composio accessed via its **SDK/HTTP directly, not MCP** | `[VO]` The `composio-proxy` sidecar exists solely because Composio's MCP 405s the GET stream leg and stalls past 120s. Both are transport properties. Going direct deletes the sidecar, the held-open SSE, and the `mcp.update()` rebind bug. |
 | 4.7 | MCP supported as **one tool provider among several**, never the substrate | MCP is a fine integration protocol and a poor internal architecture. |
+| 4.8 | A step's tool calls are **all-or-nothing** | A step may carry several blocks. Executing the good ones and repairing the bad one means the model rewrites the whole step, and the mutating call that already succeeded runs again. No idempotency key exists at this layer, so partial execution cannot be made safe. |
+| 4.9 | **One repair, counted consecutively**, then an honest failure | Two identical failures is a catalogue or routing problem that a third attempt cannot fix. Counted consecutively rather than per turn, so a long turn that recovers is not punished for a stumble at step two. |
+| 4.10 | A turn that **acted and then failed keeps its trace** | The general rule is that a failed turn appends nothing, so a half-answer is not treated as something said. Side effects are the exception: the email left, the row was written, and discarding the record lets the next turn cheerfully do it again. |
+| 4.11 | A tool with no `whenNotToUse` renders a **visible placeholder**, and the registry warns | Provider descriptions rarely carry negative guidance. Fabricating a line would put words the tool's author never wrote in front of the model; dropping it silently would remove the single cheapest routing-accuracy lever without saying so. |
 
 ## 5. Context and memory
 

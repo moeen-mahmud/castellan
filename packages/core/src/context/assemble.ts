@@ -17,6 +17,15 @@ import { estimateMessageTokens, estimateTokens } from "./tokens.ts"
 export interface AssembleInput {
     /** Concatenated `context.files`, read once at agent load. Must be byte-stable per turn. */
     readonly identity: string
+    /**
+     * Slot 1: the dialect preamble and tool catalogue, rendered once at agent load.
+     *
+     * Rendered at load rather than here, and for the same reason identity is read at load: slots 0
+     * and 1 are the cache-stable prefix, and a catalogue that varies per turn — re-sorted, or with a
+     * timestamp in it — silently stops prompt caching working, with no error and no symptom beyond
+     * the bill.
+     */
+    readonly toolBlocks?: readonly ContextBlock[]
     /** Oldest first. */
     readonly history: readonly ChatMessage[]
     readonly input: string
@@ -56,6 +65,7 @@ export function assembleContext(input: AssembleInput): AssembledContext {
     if (input.identity.trim() !== "") {
         pinned.push(block(SLOT.identity, "system", input.identity, true, "identity"))
     }
+    for (const toolBlock of input.toolBlocks ?? []) pinned.push(toolBlock)
     const inputBlock = block(SLOT.input, "user", input.input, true, "input")
     pinned.push(inputBlock)
     if (input.lastError !== undefined && input.lastError !== "") {
@@ -87,8 +97,11 @@ export function assembleContext(input: AssembleInput): AssembledContext {
         block(SLOT.history, message.role, message.content, false, "history"),
     )
 
+    // Slot order, not insertion order: 0 and 1 lead so the cached prefix is the same bytes every
+    // turn, and the pinned tail follows the history it applies to.
     const blocks = [
         ...pinned.filter((b) => b.slot === SLOT.identity),
+        ...pinned.filter((b) => b.slot === SLOT.tools),
         ...historyBlocks,
         ...pinned.filter((b) => b.slot === SLOT.input || b.slot === SLOT.error),
     ]

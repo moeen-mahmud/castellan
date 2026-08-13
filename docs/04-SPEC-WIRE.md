@@ -202,9 +202,9 @@ interface Event {
 | `model.call` | request sent | `role`, `model`, `promptTokens`, `cached` |
 | `model.chunk` | streaming | `delta` — suppressed unless subscriber opted in |
 | `model.result` | response done | `outputTokens`, `finishReason`, `latencyMs`, `costUsd?` |
-| `tool.call` | before execute | `slug`, `argsHash`, `mutating` |
-| `tool.result` | after execute | `slug`, `ok`, `latencyMs`, `bytes`, `truncated` |
-| `tool.repair` | coercion failed | `slug`, `errors[]` |
+| `tool.call` | before execute | `slug`, `callId`, `argsHash`, `mutating` |
+| `tool.result` | after execute | `slug`, `callId`, `ok`, `latencyMs`, `bytes`, `truncated` |
+| `tool.repair` | step unusable | `slugs[]`, `errors[]` |
 | `handoff.start` | delegation | `to`, `task` |
 | `handoff.result` | returned | `to`, `ok`, `steps`, `tokens` |
 | `delivery.sent` | outbox success | `channelId`, `providerMessageId` |
@@ -212,6 +212,15 @@ interface Event {
 | `schedule.fired` | timer | `scheduleId`, `kind`, `drift Ms` |
 | `turn.end` | complete | `reason`, `steps`, `tokens`, `durationMs` |
 | `error` | anything uncaught | `code`, `message`, `hint`, `stack?` |
+
+`callId` identifies a call within its step; the envelope's `stepId` makes it unique. Arguments
+themselves never appear on the wire — `argsHash` is a stable hash over them, because arguments carry
+whatever the conversation carried and an event stream is the wrong place to copy it to.
+
+`tool.repair` fires whenever a step's calls cannot be used as written, which includes a slug the
+model invented and a field that failed coercion. The first occurrence is followed by one correction
+request; a second in a row ends the turn with `tool_repair_failed` rather than asking again, so two
+of these back to back is the signal that a catalogue needs work rather than that a model does.
 
 `turn.end.reason`: `final` \| `max_steps` \| `stopped` \| `timeout` \| `error`.
 Hitting `max_steps` is reported honestly rather than dressed up as a normal completion.

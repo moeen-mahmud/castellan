@@ -9,6 +9,8 @@
  * envelope and must not change once published.
  */
 
+import { nearest } from "./nearest.ts"
+
 export interface ErrorDetail {
     /** Stable, machine-readable. Snake case. */
     readonly code: string
@@ -245,6 +247,110 @@ export function turnTimeout(turnId: string, ms: number): AbortedError {
         message: `Turn ${turnId} exceeded limits.turnTimeoutMs (${ms} ms).`,
         hint: "Raise limits.turnTimeoutMs, which must exceed any upstream timeout on the model endpoint.",
         field: "limits.turnTimeoutMs",
+    })
+}
+
+// ─── Tools ───────────────────────────────────────────────────────────────────────────────
+
+/** Anything wrong with resolving, coercing, or running a tool. */
+export class ToolError extends HarnessError {}
+
+export interface UnknownToolInit {
+    slug: string
+    /** Providers actually consulted, so the message does not blame one that was never asked. */
+    providers: readonly string[]
+    available: readonly string[]
+    field: string
+    alsoMissing?: readonly string[]
+}
+
+/**
+ * A pinned slug nothing could resolve. Fails the load, by design.
+ *
+ * Dropping it instead is the failure this replaces: the agent boots reporting itself healthy, the
+ * model is told about a tool that does not exist or never hears about one it needs, and the symptom
+ * arrives days later as "it just replies instead of doing the thing".
+ */
+export function unknownTool(init: UnknownToolInit): ConfigError {
+    const suggestion = nearest(init.slug, init.available)
+    const others =
+        init.alsoMissing === undefined || init.alsoMissing.length === 0
+            ? ""
+            : ` Also unresolved: ${init.alsoMissing.join(", ")}.`
+
+    return new ConfigError({
+        code: "unknown_tool",
+        message: `No provider resolved the tool "${init.slug}". Consulted: ${init.providers.length === 0 ? "none" : init.providers.join(", ")}.${others}`,
+        hint:
+            suggestion !== undefined
+                ? `Did you mean "${suggestion}"? Slugs are resolved once at load, so a typo here can only ever fail — it is never a tool that appears later.`
+                : `Check the slug against the provider's own catalogue. ${init.available.length === 0 ? "No provider offered a list of what it has." : `Available: ${init.available.slice(0, 12).join(", ")}${init.available.length > 12 ? ", …" : ""}.`}`,
+        field: init.field,
+    })
+}
+
+/** The registry was asked for a slug it does not hold. Never returns undefined instead. */
+export function unknownToolAtRuntime(slug: string, known: readonly string[]): ToolError {
+    return new ToolError({
+        code: "unknown_tool_at_runtime",
+        message: `The tool "${slug}" is not in this agent's catalogue.`,
+        hint: `The catalogue is fixed at load and holds: ${known.length === 0 ? "no tools" : known.join(", ")}. A model inventing a slug is handled as a repair; reaching this error means something in the harness asked for a tool it never resolved.`,
+    })
+}
+
+export function toolBudgetExceeded(requested: number, max: number): ConfigError {
+    return new ConfigError({
+        code: "tool_budget_exceeded",
+        message: `The manifest pins ${requested} tools but tools.budget.max is ${max}.`,
+        hint: "Raise tools.budget.max or pin fewer tools. It is refused rather than trimmed because only the author can say which ones matter — and a catalogue silently cut to twenty is how write tools disappear.",
+        field: "tools.budget.max",
+    })
+}
+
+export function toolSlugCollision(slug: string, providers: readonly string[]): ConfigError {
+    return new ConfigError({
+        code: "tool_slug_collision",
+        message: `Two providers both resolved the tool "${slug}": ${providers.join(" and ")}.`,
+        hint: "Slugs are how the model names a tool, so one name cannot mean two things. Unpin one of them, or ask the provider for a namespaced slug.",
+        field: "tools.pinned",
+    })
+}
+
+export function toolTimedOut(slug: string, ms: number): ToolError {
+    return new ToolError({
+        code: "tool_timeout",
+        message: `The tool "${slug}" did not finish within limits.toolTimeoutMs (${ms} ms).`,
+        hint: "Raise limits.toolTimeoutMs if the tool is genuinely slow. Note that the call is abandoned rather than killed: a handler that ignores its abort signal keeps running, and any side effect it goes on to have still happens.",
+        field: "limits.toolTimeoutMs",
+    })
+}
+
+/** A handler threw. Wrapped rather than propagated, so the model sees it and can react. */
+export function toolFailed(slug: string, cause: unknown): ToolError {
+    const message = cause instanceof Error ? cause.message : String(cause)
+    return new ToolError({
+        code: cause instanceof HarnessError ? cause.code : "tool_failed",
+        message: `The tool "${slug}" failed: ${message}`,
+        hint:
+            cause instanceof HarnessError
+                ? cause.hint
+                : "This is the tool's own failure, passed through. The observation the model sees carries this same text, so it can explain or retry with different arguments.",
+        cause,
+    })
+}
+
+/**
+ * The model could not produce a usable call even after the one repair.
+ *
+ * There is deliberately no second repair. Two failed attempts at the same block is a routing or
+ * catalogue problem, and a loop that keeps asking burns the budget while producing the same output.
+ */
+export function toolRepairFailed(errors: readonly ErrorDetail[]): ToolError {
+    return new ToolError({
+        code: "tool_repair_failed",
+        message: `The model's tool call could not be used, and the corrected attempt failed the same way: ${errors.map((error) => error.message).join(" ")}`,
+        hint: "Usually the catalogue rather than the model: check that the tool's field descriptions say what a valid value looks like, and that its 'do not use when' line rules out the case being asked for. One repair is attempted, never two.",
+        details: [...errors],
     })
 }
 

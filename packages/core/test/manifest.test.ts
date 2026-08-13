@@ -540,7 +540,7 @@ channels:
         expect(allDetails(error)[0]?.hint).toContain("Phase 4")
     })
 
-    test("pinning tools is refused, naming the phase that implements them", () => {
+    test("naming a tool provider is refused — built-in tools are what this build resolves", () => {
         const error = expectFailure({
             "agent.yaml": manifestYaml(`id: t
 model:
@@ -549,16 +549,34 @@ model:
     baseUrl: https://api.example.com/v1
     apiKeyEnv: MODEL_API_KEY
 tools:
-  pinned:
-    - GMAIL_SEND_EMAIL
+  provider: composio
 `),
         })
         expect(codes(error)).toContain("not_implemented_yet")
-        expect(allDetails(error)[0]?.hint).toContain("Phase 3")
+        expect(allDetails(error)[0]?.field).toBe("tools.provider")
     })
 
-    test("setting the dialect alone is accepted — it is recorded and validated now", () => {
-        const loaded = load({
+    test("enabling runtime tool search is refused, and says why it is off by design", () => {
+        const error = expectFailure({
+            "agent.yaml": manifestYaml(`id: t
+model:
+  main:
+    id: gpt-4o-mini
+    baseUrl: https://api.example.com/v1
+    apiKeyEnv: MODEL_API_KEY
+tools:
+  search:
+    enabled: true
+`),
+        })
+        expect(codes(error)).toContain("not_implemented_yet")
+        expect(allDetails(error)[0]?.hint).toContain("two-hop")
+    })
+
+    test("the native dialect is refused rather than quietly served by nlt", () => {
+        // Silently substituting a dialect would make every dialect comparison in evals/ unreadable,
+        // and the manifest spec is explicit that the dialect is config, never inference.
+        const error = expectFailure({
             "agent.yaml": manifestYaml(`id: t
 model:
   main:
@@ -569,7 +587,26 @@ tools:
   dialect: native
 `),
         })
-        expect(loaded.manifest.tools.dialect).toBe("native")
+        expect(codes(error)).toContain("not_implemented_yet")
+        expect(allDetails(error)[0]?.field).toBe("tools.dialect")
+    })
+
+    test("pinning and the nlt dialect load — slugs are resolved at agent load, not here", () => {
+        const loaded = load({
+            "agent.yaml": manifestYaml(`id: t
+model:
+  main:
+    id: gpt-4o-mini
+    baseUrl: https://api.example.com/v1
+    apiKeyEnv: MODEL_API_KEY
+tools:
+  dialect: nlt
+  local:
+    - now
+`),
+        })
+        expect(loaded.manifest.tools.dialect).toBe("nlt")
+        expect(loaded.manifest.tools.local).toEqual(["now"])
     })
 })
 
