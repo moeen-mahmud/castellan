@@ -111,12 +111,17 @@ export function planIntents(
     for (const intent of intents) {
         if (!registry.has(intent.slug)) {
             const known = registry.specs().map((spec) => spec.slug)
+            // Dialect-neutral wording, and the field is the bare slug. This used to read
+            // `ACTION: <slug>` with a hint about ACTION blocks — correct under NLT and nonsense under
+            // native, where it would tell the model to fix a block it never wrote. The dialect owns
+            // how a repair is *phrased for its protocol*; this layer says only what is wrong, and the
+            // bare slug is what `native` matches its per-call messages against.
             repair.push({
-                field: `ACTION: ${intent.slug}`,
+                field: intent.slug,
                 message: "is not a tool that exists.",
                 hint:
                     known.length === 0
-                        ? "No tools are available in this conversation. Reply without an ACTION block."
+                        ? "No tools are available in this conversation. Reply without calling a tool."
                         : `Use one of these exactly as written: ${known.join(", ")}.`,
             })
             continue

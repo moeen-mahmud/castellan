@@ -24,7 +24,7 @@ The manifest never changes between providers. Only the environment does:
 | OpenAI | `https://api.openai.com/v1` | `gpt-4o-mini` | required |
 | Anthropic compat | `https://api.anthropic.com/v1` | `claude-sonnet-4-20250514` | required |
 | DeepSeek | `https://api.deepseek.com/v1` | `deepseek-chat` / `deepseek-reasoner` | required |
-| Ollama, local | `http://localhost:11434/v1` | `qwen3:8b` | none — delete `apiKeyEnv` |
+| Ollama, local | `http://localhost:11434/v1` | `qwen3.5:9b` | none — delete `apiKeyEnv` |
 
 `baseUrl` ends at the version segment. The runtime appends `/chat/completions` itself, and
 including it in `baseUrl` is refused at load rather than producing a 404 later.

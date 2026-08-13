@@ -16,7 +16,7 @@
  *   OPENAI_API_KEY=...      [OPENAI_MODEL=gpt-4o-mini]
  *   ANTHROPIC_API_KEY=...   [ANTHROPIC_MODEL=claude-sonnet-4-20250514]
  *   DEEPSEEK_API_KEY=...     [DEEPSEEK_MODEL=deepseek-v4-flash]
- *   OLLAMA_BASE_URL=http://localhost:11434/v1   [OLLAMA_MODEL=qwen3:8b]
+ *   OLLAMA_BASE_URL=http://localhost:11434/v1   [OLLAMA_MODEL=qwen3.5:9b]
  *
  * Add `--mock` to include the local mock endpoint from `scripts/mock-endpoint.ts`, which proves
  * the transport without proving portability.
@@ -55,7 +55,7 @@ const targets: Target[] = [
     },
     {
         label: "Ollama (local)",
-        modelId: env.OLLAMA_MODEL ?? "qwen3:8b",
+        modelId: env.OLLAMA_MODEL ?? "qwen3.5:9b",
         baseUrl: env.OLLAMA_BASE_URL ?? "http://localhost:11434/v1",
         required: true,
     },

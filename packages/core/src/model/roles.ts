@@ -44,6 +44,7 @@ function buildRole(
         field: `model.${configuredAs}`,
         ...(config.apiKeyEnv === undefined ? {} : { apiKeyEnv: config.apiKeyEnv }),
         ...(config.headers === undefined ? {} : { headers: config.headers }),
+        ...(config.streamUsage === undefined ? {} : { streamUsage: config.streamUsage }),
         ...(options.env === undefined ? {} : { env: options.env }),
         ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
         ...(options.onRetry === undefined ? {} : { onRetry: options.onRetry }),

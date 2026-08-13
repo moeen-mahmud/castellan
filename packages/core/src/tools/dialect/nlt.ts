@@ -26,7 +26,7 @@ import type { ContextBlock } from "../../context/blocks.ts"
 import { SLOT } from "../../context/blocks.ts"
 import { estimateMessageTokens } from "../../context/tokens.ts"
 import type { JsonSchemaNode, ToolIntent, ToolResult, ToolSpec } from "../types.ts"
-import type { ParsedOutput, ToolDialect } from "./dialect.ts"
+import type { ParsedOutput, StreamFilter, ToolDialect } from "./dialect.ts"
 
 /** Opens a multi-line value. */
 const HEREDOC_OPEN = "<<<"
@@ -88,15 +88,8 @@ function closeBlock(state: ParseState): void {
     state.openKey = undefined
 }
 
-/**
- * Split a model's output into invocation blocks and reply text.
- *
- * Exported for the parser tests, which are the ones that matter here: this function is the entire
- * surface between a model's prose habits and the executor.
- */
-export function parseNlt(output: string): ParsedOutput {
-    const lines = output.split(/\r\n|\r|\n/)
-    const state: ParseState = {
+function newState(): ParseState {
+    return {
         block: undefined,
         openKey: undefined,
         heredocKey: undefined,
@@ -105,102 +98,125 @@ export function parseNlt(output: string): ParsedOutput {
         text: [],
         blocks: [],
     }
+}
 
-    for (let index = 0; index < lines.length; index += 1) {
-        const line = lines[index] ?? ""
-        const trimmed = line.trim()
+/**
+ * Consume one complete line.
+ *
+ * The whole grammar lives here, and both callers drive it: `parseNlt` feeds it every line at once,
+ * the stream filter feeds it lines as they arrive. That is deliberate. A separate line classifier for
+ * display would be a second parser, and a second parser drifts — the version deciding what the person
+ * sees would eventually disagree with the version deciding what actually runs.
+ *
+ * `fenceIsDecoration` resolves the grammar's one lookahead: whether a fence is about to wrap a block.
+ * A whole-output parse answers it by looking ahead; the filter answers it by holding the fence for one
+ * line, which is why that is the only place streaming ever waits.
+ */
+function consumeLine(state: ParseState, line: string, fenceIsDecoration: () => boolean): void {
+    const trimmed = line.trim()
 
-        // Inside a heredoc almost nothing is special: this is the one place where the model's own
-        // formatting has to survive byte for byte, so only a lone terminator ends it.
-        if (state.heredocKey !== undefined) {
-            if (trimmed === HEREDOC_CLOSE) {
-                closeHeredoc(state)
-                continue
-            }
-            // A forgotten `>>>` would otherwise swallow the rest of the output into one field.
-            if (END_LINE.test(trimmed)) {
-                closeBlock(state)
-                state.justClosed = true
-                continue
-            }
-            if (ACTION_LINE.test(line)) {
-                closeBlock(state)
-                const match = ACTION_LINE.exec(line)
-                const slug = cleanSlug(match?.[1] ?? "")
-                if (slug !== "") state.block = { slug, fields: new Map() }
-                continue
-            }
-            state.heredocLines.push(line)
-            continue
+    // Inside a heredoc almost nothing is special: this is the one place where the model's own
+    // formatting has to survive byte for byte, so only a lone terminator ends it.
+    if (state.heredocKey !== undefined) {
+        if (trimmed === HEREDOC_CLOSE) {
+            closeHeredoc(state)
+            return
         }
-
-        const action = ACTION_LINE.exec(line)
-        if (action !== null) {
-            const slug = cleanSlug(action[1] ?? "")
-            closeBlock(state)
-            if (slug === "") continue
-            state.block = { slug, fields: new Map() }
-            continue
-        }
-
-        if (state.block === undefined) {
-            // A fence that wraps a block belongs to the block, not to the reply — so the one just
-            // before an ACTION and the one just after an END are dropped. A fence anywhere else is
-            // the model writing markdown at the person, and eating it would mangle their reply.
-            if (
-                FENCE_LINE.test(line) &&
-                (state.justClosed || nextMeaningfulIsAction(lines, index))
-            ) {
-                state.justClosed = false
-                continue
-            }
-            state.text.push(line)
-            if (trimmed !== "") state.justClosed = false
-            continue
-        }
-
-        if (trimmed === "") {
-            // Ends continuation without ending the block: models put blank lines between fields,
-            // and gluing whatever follows onto the last value is how prose ends up in an argument.
-            state.openKey = undefined
-            continue
-        }
-
+        // A forgotten `>>>` would otherwise swallow the rest of the output into one field.
         if (END_LINE.test(trimmed)) {
             closeBlock(state)
             state.justClosed = true
-            continue
+            return
         }
-
-        if (FENCE_LINE.test(line)) continue
-
-        const keyed = KEY_LINE.exec(line)
-        if (keyed !== null) {
-            const key = (keyed[1] ?? "").trim()
-            const value = (keyed[2] ?? "").trim()
-            if (value === HEREDOC_OPEN) {
-                state.heredocKey = key
-                state.heredocLines = []
-                state.openKey = undefined
-            } else {
-                push(state.block, key, value)
-                state.openKey = key
-            }
-            continue
+        if (ACTION_LINE.test(line)) {
+            closeBlock(state)
+            const match = ACTION_LINE.exec(line)
+            const slug = cleanSlug(match?.[1] ?? "")
+            if (slug !== "") state.block = { slug, fields: new Map() }
+            return
         }
+        state.heredocLines.push(line)
+        return
+    }
 
-        if (state.openKey !== undefined) {
-            const values = state.block.fields.get(state.openKey)
-            const last = values?.[values.length - 1]
-            if (values !== undefined && last !== undefined) {
-                values[values.length - 1] = last === "" ? trimmed : `${last}\n${trimmed}`
-            }
-            continue
-        }
-
-        // A block with no END, followed by prose. The prose is the reply.
+    const action = ACTION_LINE.exec(line)
+    if (action !== null) {
+        const slug = cleanSlug(action[1] ?? "")
         closeBlock(state)
+        if (slug === "") return
+        state.block = { slug, fields: new Map() }
+        return
+    }
+
+    if (state.block === undefined) {
+        // A fence that wraps a block belongs to the block, not to the reply — so the one just
+        // before an ACTION and the one just after an END are dropped. A fence anywhere else is
+        // the model writing markdown at the person, and eating it would mangle their reply.
+        if (FENCE_LINE.test(line) && (state.justClosed || fenceIsDecoration())) {
+            state.justClosed = false
+            return
+        }
         state.text.push(line)
+        if (trimmed !== "") state.justClosed = false
+        return
+    }
+
+    if (trimmed === "") {
+        // Ends continuation without ending the block: models put blank lines between fields,
+        // and gluing whatever follows onto the last value is how prose ends up in an argument.
+        state.openKey = undefined
+        return
+    }
+
+    if (END_LINE.test(trimmed)) {
+        closeBlock(state)
+        state.justClosed = true
+        return
+    }
+
+    if (FENCE_LINE.test(line)) return
+
+    const keyed = KEY_LINE.exec(line)
+    if (keyed !== null) {
+        const key = (keyed[1] ?? "").trim()
+        const value = (keyed[2] ?? "").trim()
+        if (value === HEREDOC_OPEN) {
+            state.heredocKey = key
+            state.heredocLines = []
+            state.openKey = undefined
+        } else {
+            push(state.block, key, value)
+            state.openKey = key
+        }
+        return
+    }
+
+    if (state.openKey !== undefined) {
+        const values = state.block.fields.get(state.openKey)
+        const last = values?.[values.length - 1]
+        if (values !== undefined && last !== undefined) {
+            values[values.length - 1] = last === "" ? trimmed : `${last}\n${trimmed}`
+        }
+        return
+    }
+
+    // A block with no END, followed by prose. The prose is the reply.
+    closeBlock(state)
+    state.text.push(line)
+}
+
+/**
+ * Split a model's output into invocation blocks and reply text.
+ *
+ * Exported for the parser tests, which are the ones that matter here: this function is the entire
+ * surface between a model's prose habits and the executor.
+ */
+export function parseNlt(output: string): ParsedOutput {
+    const lines = output.split(/\r\n|\r|\n/)
+    const state = newState()
+
+    for (let index = 0; index < lines.length; index += 1) {
+        consumeLine(state, lines[index] ?? "", () => nextMeaningfulIsAction(lines, index))
     }
 
     closeBlock(state)
@@ -221,6 +237,161 @@ export function parseNlt(output: string): ParsedOutput {
     return { intents, text: state.text.join("\n").trim() }
 }
 
+/**
+ * Could this partial line still turn into something the parser would swallow?
+ *
+ * The answer decides how long streaming waits. `ACTION` and a fence are the only line starts that get
+ * removed, so a partial is held only while it remains a plausible prefix of one — at most six
+ * characters, and nothing at all once the line has diverged. Mid-line prose never waits.
+ */
+function mightBecomeStructure(partial: string): boolean {
+    // A bullet or list marker that has not yet been followed by anything could still precede ACTION.
+    if (/^\s*(?:[-*+]|\d+[.)]?)?\s*$/.test(partial)) return true
+
+    const head = partial.replace(/^\s*(?:[-*+]\s+|\d+[.)]\s+)?/, "").toLowerCase()
+    if ("action:".startsWith(head) || head.startsWith("action:")) return true
+    return /^`{1,3}[\w+-]*$/.test(head)
+}
+
+/**
+ * Strip one trailing carriage return.
+ *
+ * Deltas are split on `\n`, so CRLF leaves the `\r` at the end of the line. A lone `\r` as a line
+ * terminator is deliberately not handled here: no `/chat/completions` endpoint sends one, and guessing
+ * would mean buffering every line to find out.
+ */
+function stripCr(line: string): string {
+    return line.endsWith("\r") ? line.slice(0, -1) : line
+}
+
+export function createNltStreamFilter(): StreamFilter {
+    // Reassigned at every step boundary: `parse` runs per step, so an unterminated block does not
+    // continue into the next one. What persists across steps is the whitespace bookkeeping below,
+    // which is what makes the reply read as one message.
+    let state = newState()
+    /** Characters since the last newline, carriage return included. */
+    let partial = ""
+    /** How much of the visible partial has been handed back, so nothing is emitted twice. */
+    let emitted = 0
+    /** A fence awaiting the next line, which is the only thing that can classify it. */
+    let heldFence: string | undefined
+    /** Whitespace held back: interior once more text follows, trailing if nothing does. */
+    let pending = ""
+    let started = false
+
+    /**
+     * Whitespace is never emitted on its own.
+     *
+     * `parse` trims the finished reply, and a stream cannot un-emit — so blank lines and indentation
+     * wait here until non-blank text proves they were interior. What is still waiting at the end was
+     * trailing, and is dropped. Without this the screen ends with a blank line the transcript does
+     * not have, and the two disagree about what was said.
+     */
+    const emit = (text: string): string => {
+        if (text === "") return ""
+        if (text.trim() === "") {
+            pending += text
+            return ""
+        }
+        const out = pending + text
+        pending = ""
+        if (started) return out
+        started = true
+        return out.replace(/^\s+/, "")
+    }
+
+    /** Feed one complete line. Returns the part of it that belongs to the person, or undefined. */
+    const consume = (line: string, next: string | undefined): string | undefined => {
+        const before = state.text.length
+        consumeLine(state, line, () => next !== undefined && ACTION_LINE.test(next))
+        // The line reached the reply iff the parser pushed it as text. Anything else was structure.
+        return state.text.length > before ? line : undefined
+    }
+
+    /** A consumed line, minus whatever of it already streamed, plus its line break. */
+    const show = (line: string, next: string | undefined, alreadyEmitted: number): string => {
+        const kept = consume(line, next)
+        if (kept === undefined) return ""
+        return emit(kept.slice(alreadyEmitted)) + emit("\n")
+    }
+
+    const flushHeldFence = (next: string | undefined): string => {
+        if (heldFence === undefined) return ""
+        const fence = heldFence
+        heldFence = undefined
+        return show(fence, next, 0)
+    }
+
+    return {
+        push(delta) {
+            let out = ""
+            partial += delta
+
+            let newline = partial.indexOf("\n")
+            while (newline !== -1) {
+                const line = stripCr(partial.slice(0, newline))
+                partial = partial.slice(newline + 1)
+
+                out += flushHeldFence(line)
+
+                // A fence cannot be classified until the next line is known — it is decoration if a
+                // block follows it, and the person's own markdown otherwise.
+                if (state.block === undefined && FENCE_LINE.test(line) && !state.justClosed) {
+                    heldFence = line
+                } else {
+                    out += show(line, undefined, emitted)
+                }
+
+                emitted = 0
+                newline = partial.indexOf("\n")
+            }
+
+            // Emit the incomplete line eagerly, unless it could still become structure — inside a
+            // block nothing is emitted at all, which is what keeps the protocol off the screen. A
+            // trailing carriage return waits for the newline it belongs to.
+            const visible = stripCr(partial)
+            if (
+                state.block === undefined &&
+                heldFence === undefined &&
+                !mightBecomeStructure(visible)
+            ) {
+                out += emit(visible.slice(emitted))
+                emitted = visible.length
+            }
+
+            return out
+        },
+
+        endStep() {
+            const out = flush()
+            // Assigned, not appended: the loop joins each step's *trimmed* prose, so a line break
+            // left over from the end of this step is replaced by the paragraph break rather than
+            // added to it. Queued rather than emitted, because the break belongs to the reply only
+            // if the next step has something to say.
+            pending = "\n\n"
+            state = newState()
+            return out
+        },
+
+        end: flush,
+    }
+
+    /** Release the unterminated final line, if the parser calls it prose. */
+    function flush(): string {
+        let out = flushHeldFence(undefined)
+        const visible = stripCr(partial)
+        if (visible !== "") {
+            // No newline: the last line of a step ends where the step ends.
+            const kept = consume(visible, undefined)
+            if (kept !== undefined) out += emit(kept.slice(emitted))
+        }
+        partial = ""
+        emitted = 0
+        heldFence = undefined
+        return out
+    }
+}
+
 /** Is the next non-blank line an ACTION? Decides whether a fence is decoration or content. */
 function nextMeaningfulIsAction(lines: readonly string[], from: number): boolean {
     for (let i = from + 1; i < lines.length; i += 1) {
@@ -231,16 +402,34 @@ function nextMeaningfulIsAction(lines: readonly string[], from: number): boolean
     return false
 }
 
+/**
+ * The example is concrete, and that is the whole point of it.
+ *
+ * It used to read `ACTION: tool_name` / `field: value`, which a large model reads as metasyntax and a
+ * small one reads as instruction. Measured on qwen3.5:9b: it wrote `field: title` / `value: Renew my
+ * passport` — perfect reasoning about *which* tool and *which* arguments, encoded through the
+ * placeholder words as though they were the format. NLT accuracy was 27% against native's 92%, and
+ * every one of those failures was this. `evals/tools/README.md` carries the before and after.
+ *
+ * So the example uses a tool that does not exist in any catalogue this ships with, with field names
+ * that look like field names. The disclaimer after it is phrased positively — "take them from the list
+ * below" rather than "these are not your tools" — because a model that mishandles metasyntax is not
+ * the model to hand a negation to.
+ */
 const PREAMBLE = `# Tools
 
 To use a tool, write an ACTION block. Start each line at the left margin, exactly like this:
 
-ACTION: tool_name
-field: value
+ACTION: weather_lookup
+city: Lisbon
+units: celsius
 END
 
+That block is an example of the shape only. Your own tools are listed below — take the tool name and
+every field name from that list, spelled exactly as it is written there.
+
 Rules for a block:
-- One field per line, written as \`name: value\`.
+- One field per line, written as \`name: value\`, where \`name\` is one of that tool's own field names.
 - For a value spanning several lines, open it with \`${HEREDOC_OPEN}\` and close it with \`${HEREDOC_CLOSE}\` alone on its own line.
 - Finish every block with \`END\` alone on its own line.
 - Several blocks are allowed. They run in the order you write them.
@@ -341,27 +530,43 @@ export const nltDialect: ToolDialect = {
         return [block(`${PREAMBLE}\n\n## Available tools\n\n${entries}`)]
     },
 
-    parse: parseNlt,
+    // The whole protocol is in the text, so the request carries no `tools` key at all and a
+    // text-dialect body is byte-for-byte what it was before native existed.
+    requestTools: () => undefined,
+
+    // `parseNlt` keeps its string signature: it is a text parser, and giving it the envelope would
+    // imply it might read the other half. It never does.
+    parse: (output) => parseNlt(output.text),
+
+    createStreamFilter: createNltStreamFilter,
+
+    // The *raw* text, blocks and all, so the next call sees the call it made rather than a
+    // cleaned-up version that no longer explains the observation following it.
+    renderCall: (output) => ({ role: "assistant", content: output.text }),
 
     renderObservation(results) {
         const body = results.map(renderObservationText).join("\n\n")
-        return {
-            role: "user",
-            content: `${body}\n\nContinue. Write another ACTION block if more is needed, or reply to the person if the task is done.`,
-        }
+        return [
+            {
+                role: "user",
+                content: `${body}\n\nContinue. Write another ACTION block if more is needed, or reply to the person if the task is done.`,
+            },
+        ]
     },
 
     renderRepair(errors) {
         const lines = errors.map((error) => `- ${error.field}: ${error.message} ${error.hint}`)
-        return {
-            role: "user",
-            content: [
-                "That ACTION block could not be used:",
-                "",
-                ...lines,
-                "",
-                "Write the block again, corrected. This is the only retry — if you cannot fill a required field, say so in a plain reply instead of guessing.",
-            ].join("\n"),
-        }
+        return [
+            {
+                role: "user",
+                content: [
+                    "That ACTION block could not be used:",
+                    "",
+                    ...lines,
+                    "",
+                    "Write the block again, corrected. This is the only retry — if you cannot fill a required field, say so in a plain reply instead of guessing.",
+                ].join("\n"),
+            },
+        ]
     },
 }

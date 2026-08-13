@@ -19,7 +19,14 @@
 
 import { apiKeyMissing, modelHttpError, modelStreamMalformed, modelUnreachable } from "../errors.ts"
 import type { EnvSource } from "../manifest/env.ts"
-import type { ChatChunk, ChatRequest, FetchLike, ModelProvider } from "./provider.ts"
+import type {
+    ChatChunk,
+    ChatMessage,
+    ChatRequest,
+    FetchLike,
+    ModelProvider,
+    ToolCallRequest,
+} from "./provider.ts"
 import { parseSSE } from "./sse.ts"
 
 export interface RetryPolicy {
@@ -59,13 +66,93 @@ export interface ChatCompletionsConfig {
     readonly field?: string
 }
 
+interface WireToolCall {
+    index?: unknown
+    id?: unknown
+    function?: { name?: unknown; arguments?: unknown }
+}
+
+interface WireDelta {
+    content?: unknown
+    reasoning_content?: unknown
+    reasoning?: unknown
+    tool_calls?: WireToolCall[]
+}
+
 interface DeltaShape {
     choices?: {
-        delta?: { content?: unknown; reasoning_content?: unknown; reasoning?: unknown }
-        message?: { content?: unknown; reasoning_content?: unknown; reasoning?: unknown }
+        delta?: WireDelta
+        message?: WireDelta
         finish_reason?: unknown
     }[]
     usage?: { prompt_tokens?: unknown; completion_tokens?: unknown }
+}
+
+/**
+ * A `ChatMessage` in the shape the API expects.
+ *
+ * **This function is why tool calling works at all, and its absence would be silent.** The body used
+ * to be built with `messages: request.messages`, which was correct only because a message was
+ * exactly `{role, content}` — both already wire names. The moment a message carries `toolCalls`, that
+ * shortcut sends a field OpenAI has never heard of: the request succeeds, the model simply never
+ * sees the call it made, and the symptom is an agent that repeats itself. So the mapping is explicit
+ * and in one place.
+ */
+function wireMessage(message: ChatMessage): Record<string, unknown> {
+    const calls = message.toolCalls ?? []
+    return {
+        role: message.role,
+        // `null` rather than `""` beside tool calls: the API documents null for a message that is
+        // only a call, and some compat endpoints treat an empty string as a malformed turn.
+        content: message.content === "" && calls.length > 0 ? null : message.content,
+        ...(message.toolCallId === undefined ? {} : { tool_call_id: message.toolCallId }),
+        ...(calls.length === 0
+            ? {}
+            : {
+                  tool_calls: calls.map((call) => ({
+                      id: call.id,
+                      type: "function",
+                      function: { name: call.name, arguments: call.arguments },
+                  })),
+              }),
+    }
+}
+
+/**
+ * Reassembles streamed `tool_calls` fragments.
+ *
+ * A streamed call arrives as pieces keyed by `index`: the id and name usually on the first fragment,
+ * the arguments accumulated across many. Keyed by index rather than by arrival order because two
+ * calls in one step interleave.
+ */
+class ToolCallBuffer {
+    #calls = new Map<number, { id: string; name: string; args: string }>()
+
+    add(entries: readonly WireToolCall[]): void {
+        for (const [position, entry] of entries.entries()) {
+            // A non-streaming response carries no `index`; position in the array is the identity.
+            const index = asNumber(entry.index) ?? position
+            const existing = this.#calls.get(index) ?? { id: "", name: "", args: "" }
+            this.#calls.set(index, {
+                id: asString(entry.id) ?? existing.id,
+                name: asString(entry.function?.name) ?? existing.name,
+                args: existing.args + (asStringLoose(entry.function?.arguments) ?? ""),
+            })
+        }
+    }
+
+    /** In index order, because a step's calls run in the order the model asked for them. */
+    drain(): readonly ToolCallRequest[] {
+        const ordered = [...this.#calls.entries()].sort(([a], [b]) => a - b)
+        this.#calls.clear()
+        return ordered.map(([index, call]) => ({
+            // A synthesised id keeps the observation answerable even from an endpoint that omits
+            // one. Dropping the call instead would lose work the model actually asked for.
+            id: call.id === "" ? `call_${index}` : call.id,
+            name: call.name,
+            arguments: call.args,
+        }))
+    }
 }
 
 /**
@@ -89,6 +176,17 @@ function endpointUrl(baseUrl: string): string {
 
 function asString(value: unknown): string | undefined {
     return typeof value === "string" && value !== "" ? value : undefined
+}
+
+/**
+ * As `asString`, but an empty string is a value rather than an absence.
+ *
+ * Needed for argument fragments only. `asString` treats `""` as missing, which is right for a
+ * content delta and wrong here: a tool taking no arguments streams `arguments: ""`, and reading that
+ * as "no fragment yet" leaves the call looking incomplete.
+ */
+function asStringLoose(value: unknown): string | undefined {
+    return typeof value === "string" ? value : undefined
 }
 
 function asNumber(value: unknown): number | undefined {
@@ -130,7 +228,7 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
     })
 }
 
-function* chunksFromPayload(payload: DeltaShape): Generator<ChatChunk> {
+function* chunksFromPayload(payload: DeltaShape, calls: ToolCallBuffer): Generator<ChatChunk> {
     const choice = payload.choices?.[0]
 
     const delta = choice?.delta ?? choice?.message
@@ -139,6 +237,9 @@ function* chunksFromPayload(payload: DeltaShape): Generator<ChatChunk> {
 
     const text = asString(delta?.content)
     if (text !== undefined) yield { type: "text", delta: text }
+
+    // Buffered, not yielded: a fragment is not a call. The buffer is drained once the stream ends.
+    if (delta?.tool_calls !== undefined) calls.add(delta.tool_calls)
 
     const usage = payload.usage
     if (usage !== undefined) {
@@ -186,8 +287,22 @@ export function createChatCompletionsProvider(config: ChatCompletionsConfig): Mo
     async function* chat(request: ChatRequest, signal: AbortSignal): AsyncIterable<ChatChunk> {
         const body = JSON.stringify({
             model: request.model,
-            messages: request.messages,
+            messages: request.messages.map(wireMessage),
             stream: true,
+            // Absent entirely under NLT, so a text-dialect request is byte-for-byte what Phase 1
+            // sent. An endpoint that has never seen a `tools` key is not asked to ignore one.
+            ...(request.tools === undefined || request.tools.length === 0
+                ? {}
+                : {
+                      tools: request.tools.map((tool) => ({
+                          type: "function",
+                          function: {
+                              name: tool.name,
+                              description: tool.description,
+                              parameters: tool.parameters,
+                          },
+                      })),
+                  }),
             ...(config.streamUsage === true ? { stream_options: { include_usage: true } } : {}),
             ...(request.temperature === undefined ? {} : { temperature: request.temperature }),
             ...(request.topP === undefined ? {} : { top_p: request.topP }),
@@ -250,6 +365,19 @@ export function createChatCompletionsProvider(config: ChatCompletionsConfig): Mo
         if (signal.aborted) return
 
         const contentType = response.headers.get("content-type") ?? ""
+        const calls = new ToolCallBuffer()
+
+        /**
+         * Whatever tool calls arrived, once no more can.
+         *
+         * Every exit from the read loop below goes through this, including the `[DONE]` sentinel and
+         * a stream that simply ends. A `return` that skipped it would drop a call the model made —
+         * the turn would then read as a plain reply, which is the quiet-wrong-answer shape rather
+         * than a failure anyone would notice.
+         */
+        function* flush(): Generator<ChatChunk> {
+            for (const call of calls.drain()) yield { type: "tool_call", call }
+        }
 
         // A server that ignored `stream: true` and answered with one JSON document.
         if (!contentType.includes("text/event-stream")) {
@@ -260,18 +388,24 @@ export function createChatCompletionsProvider(config: ChatCompletionsConfig): Mo
             } catch (cause) {
                 throw modelStreamMalformed(text, cause)
             }
-            yield* chunksFromPayload(payload)
+            yield* chunksFromPayload(payload, calls)
+            yield* flush()
             return
         }
 
         if (response.body === null) return
 
         for await (const event of parseSSE(iterateBody(response.body))) {
+            // An aborted turn drops what it had: a partially-streamed call is not a call, and
+            // executing half a JSON document is worse than reporting the cancellation.
             if (signal.aborted) return
 
             const data = event.data.trim()
             if (data === "") continue
-            if (data === "[DONE]") return
+            if (data === "[DONE]") {
+                yield* flush()
+                return
+            }
 
             let payload: DeltaShape
             try {
@@ -280,8 +414,10 @@ export function createChatCompletionsProvider(config: ChatCompletionsConfig): Mo
                 throw modelStreamMalformed(data, cause)
             }
 
-            yield* chunksFromPayload(payload)
+            yield* chunksFromPayload(payload, calls)
         }
+
+        yield* flush()
     }
 
     return { id: config.id ?? "chat-completions", chat }

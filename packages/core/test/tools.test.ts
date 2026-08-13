@@ -7,6 +7,9 @@
  * of them surface days later as "the agent just talks instead of doing the thing".
  */
 
+import { mkdtempSync, readFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { EventBus } from "../src/events/bus.ts"
 import type { AnyEvent } from "../src/events/types.ts"
 import { coerceArgs } from "../src/tools/coerce.ts"
@@ -427,14 +430,22 @@ function intent(slug: string, args: Record<string, unknown> = {}, callId = "c1")
 async function runTools(
     registry: ToolRegistry,
     intents: readonly ToolIntent[],
-    over: { timeoutMs?: number; maxParallel?: number; observationMaxTokens?: number } = {},
+    over: {
+        timeoutMs?: number
+        maxParallel?: number
+        observationMaxTokens?: number
+        dir?: string
+    } = {},
 ) {
     const bus = new EventBus({ runtimeId: "rt_test" })
     const events = capture(bus)
     const outcome = await executeIntents({
         registry,
         intents,
-        context: toolContext({ now: () => new Date("2026-08-13T09:00:00Z") }),
+        context: toolContext({
+            now: () => new Date("2026-08-13T09:00:00Z"),
+            ...(over.dir === undefined ? {} : { dir: over.dir }),
+        }),
         bus,
         eventContext: { agentId: "a", sessionKey: "s", turnId: "t" },
         timeoutMs: over.timeoutMs ?? 1000,
@@ -460,13 +471,36 @@ describe("execution", () => {
         expect(outcome.results[0]?.output).toContain("(UTC)")
     })
 
-    test("the memory stub says plainly that nothing was written", async () => {
-        // A stub reporting success would teach the agent to tell the person their note was saved,
-        // which is the one outcome worse than not having the tool.
+    test("memory_write puts the note on disk, under the agent's own directory", async () => {
+        // It used to report "NOT SAVED", which was truthful and a trap: a real model asked to save
+        // something retried until the step budget ran out. A mutating tool that can never succeed is
+        // a loop, so this one genuinely writes.
+        const dir = mkdtempSync(join(tmpdir(), "memory-tool-"))
         const registry = await ToolRegistry.create({ local: ["memory_write"] })
-        const { outcome } = await runTools(registry, [intent("memory_write", { text: "hi" })])
+        const { outcome } = await runTools(
+            registry,
+            [intent("memory_write", { text: "prefers metric units", tags: ["prefs"] })],
+            { dir },
+        )
+
         expect(outcome.results[0]?.ok).toBe(true)
-        expect(outcome.results[0]?.output).toContain("NOT SAVED")
+        expect(outcome.results[0]?.output).toContain("memory/notes.md")
+
+        const written = readFileSync(join(dir, "memory", "notes.md"), "utf8")
+        expect(written).toContain("prefers metric units")
+        expect(written).toContain("2026-08-13")
+        expect(written).toContain("prefs")
+    })
+
+    test("a second note appends rather than replacing the first", async () => {
+        const dir = mkdtempSync(join(tmpdir(), "memory-tool-"))
+        const registry = await ToolRegistry.create({ local: ["memory_write"] })
+        await runTools(registry, [intent("memory_write", { text: "first" })], { dir })
+        await runTools(registry, [intent("memory_write", { text: "second" })], { dir })
+
+        const written = readFileSync(join(dir, "memory", "notes.md"), "utf8")
+        expect(written).toContain("first")
+        expect(written).toContain("second")
     })
 
     test("emits tool.call then tool.result, with a hash rather than the arguments", async () => {
@@ -491,7 +525,10 @@ describe("execution", () => {
         const registry = await ToolRegistry.create({ local: ["now"] })
         const { outcome } = await runTools(registry, [intent("send_email")])
         expect(outcome.results).toEqual([])
-        expect(outcome.repair[0]?.field).toBe("ACTION: send_email")
+        // The bare slug, not `ACTION: send_email`. This layer says what is wrong; the dialect says how
+        // to phrase it for its own protocol — and under `native` the slug is what the per-call repair
+        // messages are matched against.
+        expect(outcome.repair[0]?.field).toBe("send_email")
         expect(outcome.repair[0]?.hint).toContain("now")
     })
 

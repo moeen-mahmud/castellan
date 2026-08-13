@@ -22,6 +22,7 @@ ability to review it.
 **Goal.** An empty monorepo that builds, lints, tests, and refuses bad commits.
 
 **Deliverables**
+
 - Bun workspace root; `packages/core` with a stub export
 - `biome.json`, `tsconfig.base.json`, strict TS, no `any`
 - `bun test` wired; one trivial passing test
@@ -35,6 +36,7 @@ ability to review it.
 **Files.** Root config, `packages/core/src/{index,brand}.ts`, `.github/workflows/ci.yml`, `scripts/`
 
 **Acceptance**
+
 - [x] `bun install && bun run build && bun test && bun run lint` clean
 - [x] CI green — run `31617213199` on `cc11c22`: `bun` ✓, `node (22)` ✓, `node (24)` ✓. The Node
       legs carry `continue-on-error`, so their steps were inspected individually rather than
@@ -52,6 +54,7 @@ ability to review it.
 endpoint. No tools, no channels, no storage.
 
 **Deliverables**
+
 - `manifest/schema.ts` — full zod schema per `02-SPEC-MANIFEST.md`
 - `manifest/load.ts` — YAML, `$ref`, `${ENV}` expansion, `.env`
 - `manifest/validate.ts` — validation rules 1–4, 10–11, each with field path and hint
@@ -67,8 +70,12 @@ endpoint. No tools, no channels, no storage.
 **Files.** `packages/core/src/{manifest,model,context,loop,events,runtime}/`, `packages/cli/`
 
 **Acceptance**
+
 - [x] `castellan run examples/minimal/agent.yaml` reaches a prompt and answers, streaming tokens
-- [ ] Works against **three** endpoints unchanged: OpenAI, an Anthropic-compat base URL, and a local Ollama — `bun run verify:endpoints` written; needs keys and Ollama
+- [ ] Works against **three** endpoints unchanged: OpenAI, an Anthropic-compat base URL, and a local
+      Ollama — `bun run verify:endpoints` reports **Ollama ok** (qwen3.5:9b, 11,817 ms) and DeepSeek ok
+      on both models, from one unchanged manifest shape. OpenAI and Anthropic are still skipped for want
+      of keys, and the script exits 1 rather than calling two of three a pass
 - [x] `castellan validate` on a manifest with a literal API key fails naming the field
 - [x] Missing `${ENV}` fails at load naming the variable — not later as an auth error
 - [x] Ctrl-C mid-stream cancels within 100 ms, no unhandled rejection — measured 4 ms via real SIGINT
@@ -78,6 +85,7 @@ endpoint. No tools, no channels, no storage.
 **Non-goals.** Tools, storage, channels, skills, memory, compaction.
 
 **Recorded deviations**
+
 - A manifest configuring an unimplemented section (`channels`, `skills`, `memory`, `phases`,
   `schedules`, `plugins`, `delivery`, `tools.pinned`/`provider`/`local`/`search`) is **refused
   at load** naming the phase that implements it, rather than parsed and ignored. Silently
@@ -96,6 +104,7 @@ endpoint. No tools, no channels, no storage.
 **Goal.** Conversations persist. Turns are detached and reattachable.
 
 **Deliverables**
+
 - `store/store.ts` interface
 - `store/sqlite/driver.ts` — `bun:sqlite` / `node:sqlite` adapter, the only conditional in the tree
 - Migrations 001: `sessions`, `messages`, `turns`, `kv`
@@ -107,6 +116,7 @@ endpoint. No tools, no channels, no storage.
 **Files.** `packages/core/src/store/`, `loop/turn.ts` (persistence), `packages/cli/`
 
 **Acceptance**
+
 - [x] REPL restarts, history intact — two separate `node …/dist/index.js run` processes against
       DeepSeek: the first was told "my favourite number is 41", the second answered `41` from the
       persisted history alone
@@ -168,6 +178,7 @@ ships a CLI command. Doing this now makes each of their CLI deliverables one lin
 retrofit across nine commands.
 
 **Deliverables**
+
 - `lib/commands.ts` — the command and flag table; one source for parsing, `--help`, and error hints
 - `lib/args.ts` — pure parser: unknown flags, missing values and bad numbers all refused
 - `lib/help.ts` — help rendered *from* the table, so the two cannot drift
@@ -184,6 +195,7 @@ retrofit across nine commands.
 **Files.** `packages/cli/src/**`, `packages/cli/test/**`
 
 **Acceptance**
+
 - [x] Rich path renders at a terminal — driven through a pty with injected keystrokes against the
       real DeepSeek endpoint: banner, streaming live pane, `● replying 1.1s`, then the reply
       committed with `153 prompt · 12 output · 1299 ms` and the prompt back
@@ -256,6 +268,7 @@ Phase 3 or later. Any change to `packages/core`.
 **Goal.** The agent uses tools. NLT is the default and demonstrably works on a small model.
 
 **Deliverables**
+
 - `tools/registry.ts` — resolution, budget with `reserveWrite`, loud failure on unknown slug
 - `tools/dialect/dialect.ts`, `nlt.ts`, `native.ts`
 - NLT catalogue renderer (prose, mandatory `whenNotToUse`)
@@ -271,11 +284,18 @@ Phase 3 or later. Any change to `packages/core`.
 **Files.** `packages/core/src/tools/`, `packages/tools-composio/`, `scripts/eval-tools.ts`
 
 **Acceptance**
-- [ ] Agent completes a two-tool task end to end on an 8B-class model — *the loop is proven against
-      DeepSeek with one built-in tool (`ACTION: now` → observation → "Today is August 13, 2026",
-      616 prompt · 85 output · 3785 ms). The 8B run needs a local Ollama.*
-- [ ] Eval suite: NLT vs native on the same fixtures, ≥3 models, results committed to `evals/`
-- [ ] NLT ≥ native on the smallest model tested — if not, stop and investigate before proceeding
+
+- [x] Agent completes a two-tool task end to end on an 8B-class model — **qwen3.5:9b (9.7B) via local
+      Ollama**: `now` (ok, 24 ms) → observation → `memory_write` (ok, 8 ms) → observation → the reply,
+      with the note on disk. Turn `final`, 3 steps, 680 prompt · 377 output · 27,092 ms, and the whole
+      six-message trace persisted. Also proven against DeepSeek
+- [x] Eval suite: NLT vs native on the same fixtures, ≥3 models, results committed to `evals/` — 37
+      fixtures across six groups × 2 dialects × **qwen3.5:9b (9.7B, local Ollama), deepseek-chat,
+      deepseek-reasoner**, one call per fixture, temperature 0, nothing executed. `evals/tools/`
+- [x] NLT ≥ native on the smallest model tested — **NLT 94.6% vs native 91.9% on qwen3.5:9b, PASS**,
+      and NLT ahead on all three: +2.7pp, +13.5pp (deepseek-chat), +5.4pp (deepseek-reasoner). Prompt
+      tokens −22.0% to −23.1%. Read the two caveats in Recorded deviations before quoting any of it:
+      the qwen margin is **one fixture**, and the critical-error claim did not reproduce
 - [x] Unknown pinned slug fails **at load**, naming slug and provider — and the manifest field and
       the nearest available match
 - [x] Budget honoured; over-pinning is refused naming the cap, before any provider is consulted
@@ -286,22 +306,19 @@ Phase 3 or later. Any change to `packages/core`.
       lists, backticked slugs, embedded `>>>`, wrapping fences, CRLF, and repeated keys
 - [ ] Composio path uses zero MCP transport — grep proves it
 
-**Progress.** The core tool layer is complete and verified: `types`, `registry` (resolution, budget,
-loud failure), `dialect/nlt` (catalogue, parser, observations, repairs), `coerce`, `execute`, the two
-built-in tools, the step loop, context slot 1, and the three `tool.*` events. 540 tests under Bun and
-361 under Node, boot unchanged at 62.5 ms with the new `tools` phase at 0.51 ms.
+**Progress.** The core tool layer and both CLI surfaces are complete and verified: `types`, `registry`
+(resolution, budget, loud failure), `dialect/nlt` (catalogue, parser, stream filter, observations,
+repairs), `coerce`, `execute`, the two built-in tools, the step loop, context slot 1, the three
+`tool.*` events, and tool rows in the plain writer and the Ink transcript. `dialect/native` and the eval
+harness are in too. 701 tests under Bun and 490 under Node, boot unchanged at 68.8 ms against a 1000 ms
+budget, with the `tools` phase at 0.53 ms.
 
-Still outstanding: `dialect/native.ts` (refused at load until it exists, rather than quietly served by
-NLT), `packages/tools-composio` with its resolution cache, the CLI's tool-call rows, and
-`scripts/eval-tools.ts` with its fixtures.
+Verified live against DeepSeek, at a pty and through a pipe: one tool, two parallel calls in one step,
+a two-tool chain across steps, tool rows on both paths, and zero occurrences of `ACTION` in either
+path's output.
 
-**Known defect, found by the live run.** The plain CLI writes `model.chunk` deltas straight to stdout,
-so a tool call's raw `ACTION:`/`END` lines appear in the reply and run into the answer that follows it
-(`ENDToday is August 13, 2026.`). The fix is not a filter in the CLI: the same problem belongs to the
-server's SSE consumers and Phase 12's client, and a second parser for display would drift from the one
-that decides what actually runs. What it wants is the existing line-at-a-time parser exposed as an
-incremental consumer, so one implementation both executes and displays. Holding a partial line only
-while it could still become an `ACTION:` keeps streaming latency at zero mid-line.
+Still outstanding: `packages/tools-composio` with its resolution cache. That is the whole of what remains
+in this phase.
 
 **Non-goals.** Tool search. Phases. MCP provider.
 
@@ -327,6 +344,124 @@ while it could still become an `ACTION:` keeps streaming latency at zero mid-lin
 - **The `tool.repair` event fires on both attempts.** The wire spec now says so. It means "this step's
   calls could not be used", and two in a row is the signal that a catalogue needs work — suppressing
   the second would hide exactly the case worth seeing.
+- **`memory_write` writes a file; it is not a stub.** The plan called for a stub, and the first one
+  reported "NOT SAVED — this build has no memory store". Truthful, and a trap: measured against
+  DeepSeek, a model asked to save a note called it three times and never replied, ending in an honest
+  `max_steps` failure. A mutating tool that cannot succeed is a loop. It now appends to
+  `<agent dir>/memory/notes.md`, which is where `memory.dir` already points, so the memory phase indexes
+  what is there rather than a second location. Write-only until then — a missing half, not a lie.
+  `ToolContext` gained `dir` for it: a tool touching the filesystem resolves against the agent's own
+  directory, never `process.cwd()`, which belongs to whoever launched the process.
+- **The stream filter is a dialect method, and `parse` was refactored to share its grammar.** Both drive
+  one line-at-a-time consumer, so the text shown and the text executed cannot disagree; the property is
+  asserted directly at three chunk sizes. `endStep()` exists because a step's output ends without a
+  newline and the loop joins each step's prose with a blank line — leaving either to the consumer means
+  every consumer reinvents them and they diverge.
+- **A tool call renders as two rows, not one that updates.** The call is committed when it starts, so an
+  eight-second tool does not look like a stalled model, and the result arrives as its own row. Ink's
+  `<Static>` has already written the first one, and editing a written node silently does nothing.
+- **`TurnStatus` gained `working`.** During a tool call the model is producing no tokens, so `streaming`
+  — rendered as "replying" — would have been a straightforward lie in the status bar.
+- **Tool rows are suppressed for `--input`.** A one-shot run prints the answer and nothing else, because
+  something is parsing it. Same rule the banner and the stats line already follow.
+- **The dialect seam widened; `native` could not be an added file.** `parse(text)` was enough while
+  every dialect lived in the text. Native's protocol lives in the wire envelope, so a dialect now
+  receives a `StepOutput` — text *and* structured calls — and decides which half carries the protocol.
+  Three renderers became dialect methods for the same reason: `renderCall` (NLT replays raw text,
+  native replays the calls), `renderObservation` and `renderRepair` (both return *lists*, because
+  native needs one `tool` message per call, each naming the id it answers). The last is forced rather
+  than chosen — an assistant turn whose `tool_calls` were not all answered is rejected outright, which
+  is also why `renderRepair` is driven by the step's calls rather than by its parsed intents: the call
+  whose arguments would not parse never became an intent, and it is the one a repair is usually about.
+- **`ParsedOutput.malformed` exists because native has a failure NLT cannot have.** A truncated
+  `arguments` document is not JSON and no tolerance recovers it. Reporting it as an empty argument set
+  would mean a tool with no required fields *runs*, with no arguments, having been asked for something
+  else — a wrong action taken silently. It short-circuits execution the same way a bad NLT block does,
+  and emits `tool.repair` from the loop, since `executeIntents` never ran to emit it.
+- **`ContextBlock` gained an optional verbatim `message`.** `{role, content}` stopped being a complete
+  description of a message. History was projected through blocks and back, which silently stripped
+  `toolCalls` and `toolCallId` — so from the second step of every native turn the observation answered
+  a call no message contained. Harness-composed blocks leave it unset and fall back as before.
+- **Migration 2 adds `tool_calls` and `tool_call_id` to `messages`.** Found live rather than reasoned
+  about: the table allowed the `tool` role from migration 1 but had nowhere to put the ids, so a
+  resumed native session read back an assistant turn with **empty content and no calls** and a `tool`
+  message naming nothing. qwen3.5:9b via Ollama accepted that orphaned trace and answered anyway,
+  which is the worse outcome — a strict endpoint would have said so. Verified upgrading a live v1
+  database in place. `MESSAGE_COLUMNS` is now one shared fragment because the five message SELECTs
+  drifting apart is how the columns came to be dropped on the way *out*.
+- **A native-illegal slug is refused at load, and `dialect: native` is refused on a model without
+  `nativeTools`.** Function names are `[A-Za-z0-9_-]{1,64}`; `gmail.send` is legal under NLT and not
+  here, and rewriting is lossy both ways. The capability check replaces a 400 on the first turn — or,
+  on an endpoint that ignores an unknown `tools` key, an agent that never calls a tool and never says
+  why. Overridable via `model.main.capabilities.nativeTools`.
+- **`planIntents`' unknown-slug repair is now dialect-neutral.** It read `field: "ACTION: <slug>"` with
+  a hint about ACTION blocks — correct under NLT and nonsense under native, where it would tell the
+  model to fix a block it never wrote. The field is the bare slug, which is also what native matches
+  its per-call repair messages against.
+- **In-session CLI commands are a table, and both renderers dispatch through it.** The outer `--help`
+  has been generated from `COMMANDS` since Phase 2.5; the in-session help was a string in a component
+  and had drifted both ways. `/help` was advertised by the banner and **unhandled on the plain path**,
+  where it went to the model as a prompt — a billed call answering a question about the CLI. Five
+  working key chords were undocumented. Key bindings cannot be generated from a table, since
+  `keyToIntent` is a function, so the loop is closed by tests from both ends. `/tools` is new and is
+  Phase 3's surface for a catalogue that is otherwise invisible: dialect, slugs, read/write, and the
+  per-turn token cost. A lone unknown `/word` is refused naming the nearest match; anything with a
+  space or a second slash is prose and goes to the model, because `/etc/passwd is world-readable` is a
+  real message. One behaviour change: a piped `/exit` now stops the run instead of being skipped,
+  which was the only place the piped path disagreed with the terminal about what a typed line meant.
+- **`model.<role>.streamUsage` is a new manifest field, and a `qwen3.5*` capability row corrects the
+  generic `qwen*` one.** Both came out of the first local run. Ollama reports *no* token usage in a
+  streamed response unless asked with `stream_options`, so local token figures were the estimator's:
+  measured against qwen3.5:9b, the estimate was 764 prompt · 57 output where the endpoint reports
+  680 · 377. The output figure is out by 6.6× because reasoning is billed to the output budget and the
+  estimator only sees the visible reply — which also settles the capability question, since the shipped
+  `qwen*` row claimed `thinking: "none"` and this model streams reasoning in a `reasoning` delta field.
+  It is now `thinking: "deepseek"`, the "separate field, nothing to replay" protocol. Both matter before
+  the eval: a token comparison built on the estimator would have been measuring the estimator.
+- **The NLT preamble's format example is concrete, and the first full sweep existed to find that out.**
+  It read `ACTION: tool_name` / `field: value` under "exactly like this". qwen3.5:9b wrote
+  `field: title` / `value: Renew my passport` — its reasoning names `task_create`, `title` and
+  `priority: urgent` correctly, and then encodes all of it through the placeholder words. NLT scored
+  **27.0% against native's 91.9%** on the same fixtures, 100% on `abstain` (the one group that needs no
+  block) and 0% on `discriminate`, `arguments` and `chain`. Every one of the 25 failures was this.
+  The example now uses a tool present in no catalogue, with field names that look like field names, and
+  a positively-phrased disclaimer — a model that mishandles metasyntax is not the model to hand a
+  negation to. Two tests close it: the rendered catalogue is parsed by `parseNlt` and must contain
+  exactly one block, and that block's field names must not be `field` or `value`. The wider lesson is
+  the asymmetry, not the typo: NLT's protocol is prose the model imitates and native's is a schema the
+  API enforces, so *any* preamble defect surfaces as a dialect difference and reads as a finding about
+  the dialect.
+- **A failing eval must be diagnosable from the committed artifact.** Two reporting defects nearly
+  buried the above. `score()` recorded `repair[0].message`, and a `FieldError.message` is a fragment
+  written to follow its field name — so twenty-five distinct failures all printed as
+  "is not a field of this tool.", with no field, looking like one inexplicable class. And nothing stored
+  the model's output, so separating a parser defect from a model failure meant re-running a live
+  endpoint and hoping it answered the same way. `Attempt.raw` now keeps text and calls on every
+  non-`correct` outcome, and notes carry every field error with its field.
+- **The eval reproduces NLT's accuracy and token claims, and does not reproduce its critical-error
+  claim.** Decision 4.1 borrows three numbers from a published replication. Two hold here: NLT is ahead
+  on all three models (+2.7pp on qwen3.5:9b, +13.5pp on deepseek-chat, +5.4pp on deepseek-reasoner) and
+  costs 22.0–23.1% fewer prompt tokens against a published −25%. The third — **93% fewer critical
+  errors** — does not: the only critical error in the whole sweep, `restraint-draft-not-send` firing
+  `file_write` on qwen3.5:9b, fired under *both* dialects, for a critical rate of 2.7% each and 0.0% on
+  both DeepSeek models. 37 fixtures with one critical error between them cannot measure a 93% reduction;
+  the honest statement is that this suite has no power on that claim, not that the claim is refuted.
+  Where NLT's margin is unambiguous is `restraint` — +80pp on deepseek-chat, +40pp on deepseek-reasoner,
+  +20pp on qwen — which is the group about *not* acting, and the one closest to what a critical error is.
+- **The qwen gate margin is one fixture, and single-pass numbers on a reasoning model move.** NLT 35/37
+  against native 34/37 is a pass on the recorded criterion and a thin one. The run also produced its own
+  measure of the noise: the preamble fix changed nothing native sends, and native's prompt-token totals
+  are byte-identical across the two sweeps (61409 / 58907 / 61830) — yet deepseek-reasoner's native score
+  moved 30/37 → 33/37 on that identical input, because a reasoning model is not deterministic at
+  temperature 0. qwen and deepseek-chat were stable across both runs, so the gate model is the steady
+  one, but a three-pass median on qwen is what would settle a one-fixture margin. `--repeats 3` exists
+  for it.
+- **`scripts/eval-tools.ts` refuses an unknown flag.** It accepted `--only` and `--groups` silently, so
+  a run intended as one model and one group swept all three models and all 37 fixtures, took seven times
+  as long, and reported a scope nobody asked for — hard rule 8, in the tool built to check the project's
+  central claim. The gate also no longer speaks for Phase 3 on a narrowed run: a `--tasks` subset that
+  regresses still exits non-zero, as `SUBSET REGRESSION`, but the Phase 3 wording is reserved for the
+  full fixture set so a subset cannot be quoted as the decision.
 
 ---
 
@@ -335,6 +470,7 @@ while it could still become an `ACTION:` keeps streaming latency at zero mid-lin
 **Goal.** Telegram works. The HTTP API works. Delivery is idempotent.
 
 **Deliverables**
+
 - `channels/channel.ts`, `inbox.ts` (normalisation, `allowFrom`), `outbox.ts`
 - Migration 002: `outbox` with idempotency keys, retry, backoff
 - `packages/channel-telegram` — raw Bot API, long-poll and webhook, chunking at 4096, typing indicator
@@ -345,6 +481,7 @@ while it could still become an `ACTION:` keeps streaming latency at zero mid-lin
 **Files.** `packages/core/src/channels/`, `packages/channel-telegram/`, `packages/server/`
 
 **Acceptance**
+
 - [ ] Real Telegram bot: message in, agent replies, typing indicator shows
 - [ ] Both long-poll and webhook modes verified
 - [ ] Message over 4096 chars chunks correctly, order preserved
@@ -364,6 +501,7 @@ while it could still become an `ACTION:` keeps streaming latency at zero mid-lin
 **Goal.** agentskills.io-compliant skills, harness-side selection, script execution.
 
 **Deliverables**
+
 - `skills/index.ts` — frontmatter-only scan, `.castellan/skills.idx.json` cache with mtime check
 - `skills/select.ts` — BM25 over name + description + `when_not_to_use`, threshold, `maxActive`
 - `skills/load.ts` — body into slot 2, cache breakpoint B
@@ -376,6 +514,7 @@ while it could still become an `ACTION:` keeps streaming latency at zero mid-lin
 **Files.** `packages/core/src/skills/`, `examples/*/skills/`, `packages/cli/`
 
 **Acceptance**
+
 - [ ] 50 skills index in under 50 ms cold, under 5 ms cached
 - [ ] Selection picks the right skill on ≥20 fixture inputs; below-threshold inputs select none
 - [ ] Active skill's scripts appear in the catalogue; inactive ones do not
@@ -394,6 +533,7 @@ while it could still become an `ACTION:` keeps streaming latency at zero mid-lin
 **Goal.** The agent remembers across sessions without an embedding model.
 
 **Deliverables**
+
 - `memory/retriever.ts` interface
 - `memory/fts5.ts` — FTS5 over memory markdown + message history, BM25 with recency boost
 - `memory/writer.ts` — real `memory_write` appending to `memory/YYYY-MM-DD.md`
@@ -404,6 +544,7 @@ while it could still become an `ACTION:` keeps streaming latency at zero mid-lin
 **Files.** `packages/core/src/memory/`, migration 003
 
 **Acceptance**
+
 - [ ] Fact stated in session A is recalled in session B
 - [ ] `memory_write` produces valid dated markdown, human-readable and diffable
 - [ ] Index rebuild after external file edit
@@ -421,6 +562,7 @@ while it could still become an `ACTION:` keeps streaming latency at zero mid-lin
 **Goal.** Long sessions degrade gracefully. Phase-scoped tools work.
 
 **Deliverables**
+
 - `context/budget.ts` — `prompt_tokens` anchor + local estimator
 - `context/compaction/ladder.ts` + `stages.ts` — S1–S5
 - Artifact store for trimmed observations; pointer format the agent can re-read
@@ -432,6 +574,7 @@ while it could still become an `ACTION:` keeps streaming latency at zero mid-lin
 **Files.** `packages/core/src/context/`, `loop/phases.ts`, migration 004
 
 **Acceptance**
+
 - [ ] 200-turn synthetic session never exceeds the window and never hard-fails
 - [ ] Each stage fires at its threshold in order; `compaction.stage` reports before/after
 - [ ] Pinned blocks survive every stage including S5
@@ -450,6 +593,7 @@ while it could still become an `ACTION:` keeps streaming latency at zero mid-lin
 **Goal.** Cron, interval, and one-shot schedules that survive restart.
 
 **Deliverables**
+
 - `schedule/kinds.ts` — cron (5/6 field), every (duration), at (ISO, ≤10y), lossless round-trip
 - `schedule/scheduler.ts` — single timer to nearest due across all agents
 - Migration 005: `schedules`
@@ -461,6 +605,7 @@ while it could still become an `ACTION:` keeps streaming latency at zero mid-lin
 **Files.** `packages/core/src/schedule/`, `packages/server/`, `packages/cli/`
 
 **Acceptance**
+
 - [ ] All three kinds fire correctly; timezone honoured
 - [ ] Restart preserves schedules; missed fires handled per policy (skip, not stampede)
 - [ ] Missing delivery target rejected at write with the documented error
@@ -479,6 +624,7 @@ while it could still become an `ACTION:` keeps streaming latency at zero mid-lin
 **Goal.** The plugin API is real, proven by refactoring first-party packages onto it.
 
 **Deliverables**
+
 - `plugins/plugin.ts`, `loader.ts`, `middleware.ts`, `permissions.ts`
 - Version gating; 200 ms setup budget with `plugin.slow`
 - Middleware composition, all four wrap points
@@ -491,6 +637,7 @@ while it could still become an `ACTION:` keeps streaming latency at zero mid-lin
 **Files.** `packages/core/src/plugins/`, `packages/channel-whatsapp/`, refactors
 
 **Acceptance**
+
 - [ ] Telegram and Composio use zero private core APIs — enforced by an export-surface test
 - [ ] A plugin with a mismatched `castellanApi` refuses to load naming both versions
 - [ ] Middleware ordering matches manifest order; a short-circuit returns a well-formed result
@@ -510,6 +657,7 @@ while it could still become an `ACTION:` keeps streaming latency at zero mid-lin
 **Goal.** A supervisor delegates to members with isolated context and typed results.
 
 **Deliverables**
+
 - `team/handoff.ts` — envelope, artifact validation against declared JSON Schema
 - `team/supervisor.ts`
 - `handoff` local tool, supervisor only
@@ -520,6 +668,7 @@ while it could still become an `ACTION:` keeps streaming latency at zero mid-lin
 **Files.** `packages/core/src/team/`, `manifest/schema.ts`, `examples/team/`
 
 **Acceptance**
+
 - [ ] Supervisor delegates to two members; both return validated artifacts
 - [ ] Parent context contains the artifact and **not** the sub-agent transcript — asserted on token counts
 - [ ] Schema-violating artifact is a typed failure the supervisor can handle, not an exception
@@ -536,6 +685,7 @@ while it could still become an `ACTION:` keeps streaming latency at zero mid-lin
 **Goal.** v0.1.0, deployable, with the boot claim enforced.
 
 **Deliverables**
+
 - `docker/Dockerfile` on `oven/bun` slim, non-root, healthcheck
 - `scripts/bench-boot.ts` with per-step breakdown
 - CI gate failing above 1200 ms
@@ -545,6 +695,7 @@ while it could still become an `ACTION:` keeps streaming latency at zero mid-lin
 - v0.1.0 tagged
 
 **Acceptance**
+
 - [ ] Image under 150 MB
 - [ ] Container start → `/v1/ready` 200 under 2 s including container overhead
 - [ ] In-process boot under 1000 ms; CI enforces 1200 ms
@@ -563,6 +714,7 @@ while it could still become an `ACTION:` keeps streaming latency at zero mid-lin
 unchanged.
 
 **Deliverables**
+
 - `packages/compat-openclaw` — WS RPC on 18789, `x-openclaw-scopes`, `auth.token`, TUI client id, subscribe, terminal phase `result`
 - `/healthz`
 - `openclaw.json` → `agent.yaml` translation incl. `modelByChannel`, `delivery`, `deliveryTargets`
@@ -573,6 +725,7 @@ unchanged.
 - Compatibility test suite recorded against a live OpenClaw gateway
 
 **Acceptance**
+
 - [ ] A VelaOps agent container with `runtime: castellan` boots and serves chat with **zero** engine changes
 - [ ] Telegram and WhatsApp work through the existing wiring
 - [ ] `boot-progress.ts` renders the stepper correctly

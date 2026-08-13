@@ -212,6 +212,28 @@ export const CAPABILITY_REGISTRY: readonly CapabilityEntry[] = [
     },
 
     // ── Open weights, typically local via Ollama or vLLM ───────────────────────────────────
+    //
+    // More specific patterns first: `patternSpecificity` decides, but reading order should match.
+    {
+        // qwen3.5 reasons, and the generic `qwen*` row below says it does not. Measured through
+        // Ollama's OpenAI-compatible endpoint: reasoning arrives in a `reasoning` delta field,
+        // separately from `content`, which is the `deepseek` protocol — separate field, nothing to
+        // replay. Left as `none` it would be the "model's scratchpad delivered as the reply" case
+        // the fourth enum value exists to prevent, and the empty-reply-at-`length` diagnosis would
+        // name the wrong cause.
+        pattern: "qwen3.5*",
+        capabilities: {
+            nativeTools: true,
+            strictSchema: false,
+            thinking: "deepseek",
+            promptCache: "none",
+            parallelToolCalls: false,
+            contextWindow: 32_768,
+            maxOutput: 8192,
+        },
+        note: "Served locally by Ollama, which reports no token usage unless model.<role>.streamUsage is set — token figures come from the estimator until it is. Reasoning is billed to the output budget, so context.reserveOutput must cover reasoning plus the reply.",
+        verified: "2026-08-13 against qwen3.5:9b on localhost:11434/v1",
+    },
     {
         pattern: "qwen*",
         capabilities: {
@@ -415,7 +437,7 @@ function candidateIds(modelId: string): string[] {
     const slash = modelId.lastIndexOf("/")
     const bare = slash === -1 ? undefined : modelId.slice(slash + 1)
     const colon = modelId.indexOf(":")
-    // Ollama tags: `qwen3:8b`.
+    // Ollama tags: `qwen3.5:9b`.
     const untagged = colon === -1 ? undefined : modelId.slice(0, colon)
     const candidates = [modelId, bare, untagged]
     if (bare !== undefined) {

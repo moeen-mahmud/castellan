@@ -1,5 +1,5 @@
 import { createChatCompletionsProvider } from "../src/model/chat-completions.ts"
-import type { ChatChunk } from "../src/model/provider.ts"
+import type { ChatChunk, ChatRequest } from "../src/model/provider.ts"
 import { describe, expect, sleep, test } from "./_harness.ts"
 
 /**
@@ -40,7 +40,7 @@ function textOf(chunks: ChatChunk[]): string {
         .join("")
 }
 
-const REQUEST = { model: "m", messages: [{ role: "user" as const, content: "hi" }] }
+const REQUEST: ChatRequest = { model: "m", messages: [{ role: "user", content: "hi" }] }
 
 describe("request shape", () => {
     test("the endpoint path is appended to baseUrl", async () => {
@@ -413,5 +413,221 @@ describe("cancellation", () => {
         }
 
         expect(chunks.length).toBe(2)
+    })
+})
+
+// ─── native tool calling on the wire ─────────────────────────────────────────────────────
+
+/**
+ * Two things here are worth more than the rest of this file put together, because both fail
+ * *silently*: the message mapping, and the fragment reassembly.
+ *
+ * The body used to be built with `messages: request.messages`, correct only for as long as a message
+ * was exactly `{role, content}`. A camelCase `toolCalls` on the wire is a field the API has never
+ * heard of — the request succeeds, the model simply never sees the call it made, and the symptom is
+ * an agent that repeats itself with no error anywhere.
+ */
+
+function toolCallFrame(entries: unknown[]): string {
+    return `data: ${JSON.stringify({ choices: [{ delta: { tool_calls: entries } }] })}\n\n`
+}
+
+function callsOf(chunks: ChatChunk[]) {
+    return chunks
+        .filter((c): c is Extract<ChatChunk, { type: "tool_call" }> => c.type === "tool_call")
+        .map((c) => c.call)
+}
+
+async function capture(
+    frames: string[],
+    request = REQUEST,
+): Promise<{ body: Record<string, unknown>; chunks: ChatChunk[] }> {
+    let body: Record<string, unknown> = {}
+    const provider = createChatCompletionsProvider({
+        baseUrl: "https://api.example.com/v1",
+        fetch: async (_url, init) => {
+            body = JSON.parse(String(init?.body)) as Record<string, unknown>
+            return sseResponse(frames)
+        },
+    })
+    const chunks = await drain(provider.chat(request, new AbortController().signal))
+    return { body, chunks }
+}
+
+describe("the tools request parameter", () => {
+    test("absent entirely when no tools are given — a text-dialect body is unchanged", async () => {
+        const { body } = await capture([delta("hi"), "data: [DONE]\n\n"])
+        expect("tools" in body).toBe(false)
+    })
+
+    test("wrapped in the function envelope the API expects", async () => {
+        const { body } = await capture([delta("hi"), "data: [DONE]\n\n"], {
+            ...REQUEST,
+            tools: [{ name: "now", description: "the time", parameters: { type: "object" } }],
+        })
+        expect(body.tools).toEqual([
+            {
+                type: "function",
+                function: { name: "now", description: "the time", parameters: { type: "object" } },
+            },
+        ])
+    })
+})
+
+describe("messages on the wire use wire names", () => {
+    test("an assistant message's calls are sent as tool_calls, not toolCalls", async () => {
+        const { body } = await capture([delta("hi"), "data: [DONE]\n\n"], {
+            model: "m",
+            messages: [
+                {
+                    role: "assistant",
+                    content: "",
+                    toolCalls: [{ id: "c1", name: "now", arguments: "{}" }],
+                },
+            ],
+        })
+        const [message] = body.messages as Record<string, unknown>[]
+        expect(message?.tool_calls).toEqual([
+            { id: "c1", type: "function", function: { name: "now", arguments: "{}" } },
+        ])
+        expect("toolCalls" in (message ?? {})).toBe(false)
+    })
+
+    test("content is null beside a call, since some endpoints reject an empty string there", async () => {
+        const { body } = await capture([delta("hi"), "data: [DONE]\n\n"], {
+            model: "m",
+            messages: [
+                {
+                    role: "assistant",
+                    content: "",
+                    toolCalls: [{ id: "c1", name: "now", arguments: "{}" }],
+                },
+            ],
+        })
+        expect((body.messages as Record<string, unknown>[])[0]?.content).toBe(null)
+    })
+
+    test("a tool message names the call it answers", async () => {
+        const { body } = await capture([delta("hi"), "data: [DONE]\n\n"], {
+            model: "m",
+            messages: [{ role: "tool", content: "09:00", toolCallId: "c1" }],
+        })
+        const [message] = body.messages as Record<string, unknown>[]
+        expect(message?.role).toBe("tool")
+        expect(message?.tool_call_id).toBe("c1")
+    })
+
+    test("an ordinary message is exactly what it always was", async () => {
+        const { body } = await capture([delta("hi"), "data: [DONE]\n\n"])
+        expect(body.messages).toEqual([{ role: "user", content: "hi" }])
+    })
+})
+
+describe("reassembling streamed tool_calls", () => {
+    test("arguments arrive in fragments and are joined in order", async () => {
+        const { chunks } = await capture([
+            toolCallFrame([{ index: 0, id: "call_1", function: { name: "now", arguments: "" } }]),
+            toolCallFrame([{ index: 0, function: { arguments: '{"time' } }]),
+            toolCallFrame([{ index: 0, function: { arguments: 'zone":"UTC"}' } }]),
+            "data: [DONE]\n\n",
+        ])
+        expect(callsOf(chunks)).toEqual([
+            { id: "call_1", name: "now", arguments: '{"timezone":"UTC"}' },
+        ])
+    })
+
+    test("two interleaved calls stay separate, and come back in index order", async () => {
+        // Keyed by index rather than arrival, which is the whole reason a buffer exists.
+        const { chunks } = await capture([
+            toolCallFrame([
+                { index: 0, id: "a", function: { name: "now", arguments: "{}" } },
+                { index: 1, id: "b", function: { name: "send", arguments: "" } },
+            ]),
+            toolCallFrame([{ index: 1, function: { arguments: '{"to":"x"}' } }]),
+            "data: [DONE]\n\n",
+        ])
+        expect(callsOf(chunks)).toEqual([
+            { id: "a", name: "now", arguments: "{}" },
+            { id: "b", name: "send", arguments: '{"to":"x"}' },
+        ])
+    })
+
+    test("a call is emitted once complete, never as fragments", async () => {
+        const { chunks } = await capture([
+            toolCallFrame([{ index: 0, id: "a", function: { name: "now", arguments: "{" } }]),
+            toolCallFrame([{ index: 0, function: { arguments: "}" } }]),
+            "data: [DONE]\n\n",
+        ])
+        // Three frames, one chunk. Half a JSON document is of no use to any consumer.
+        expect(callsOf(chunks).length).toBe(1)
+    })
+
+    test("a stream that just ends still yields its calls", async () => {
+        // No `[DONE]`. Some endpoints simply close the body, and a flush that only ran on the
+        // sentinel would drop the call and report the turn as a plain reply.
+        const { chunks } = await capture([
+            toolCallFrame([{ index: 0, id: "a", function: { name: "now", arguments: "{}" } }]),
+        ])
+        expect(callsOf(chunks).length).toBe(1)
+    })
+
+    test("a non-streaming JSON reply carries complete calls, with no index", async () => {
+        let body: Record<string, unknown> = {}
+        const provider = createChatCompletionsProvider({
+            baseUrl: "https://api.example.com/v1",
+            fetch: async (_url, init) => {
+                body = JSON.parse(String(init?.body)) as Record<string, unknown>
+                return new Response(
+                    JSON.stringify({
+                        choices: [
+                            {
+                                message: {
+                                    content: "",
+                                    tool_calls: [
+                                        {
+                                            id: "a",
+                                            function: { name: "now", arguments: "{}" },
+                                        },
+                                    ],
+                                },
+                            },
+                        ],
+                    }),
+                    { headers: { "content-type": "application/json" } },
+                )
+            },
+        })
+        const chunks = await drain(provider.chat(REQUEST, new AbortController().signal))
+        expect(body.model).toBe("m")
+        expect(callsOf(chunks)).toEqual([{ id: "a", name: "now", arguments: "{}" }])
+    })
+
+    test("an endpoint that omits the id gets a synthesised one rather than losing the call", async () => {
+        const { chunks } = await capture([
+            toolCallFrame([{ index: 0, function: { name: "now", arguments: "{}" } }]),
+            "data: [DONE]\n\n",
+        ])
+        expect(callsOf(chunks)[0]?.id).toBe("call_0")
+    })
+
+    test("a cancelled stream drops a half-arrived call rather than executing half a document", async () => {
+        const controller = new AbortController()
+        const provider = createChatCompletionsProvider({
+            baseUrl: "https://api.example.com/v1",
+            fetch: async () =>
+                sseResponse([
+                    toolCallFrame([
+                        { index: 0, id: "a", function: { name: "now", arguments: '{"t' } },
+                    ]),
+                    delta("x"),
+                    "data: [DONE]\n\n",
+                ]),
+        })
+        const chunks: ChatChunk[] = []
+        for await (const chunk of provider.chat(REQUEST, controller.signal)) {
+            chunks.push(chunk)
+            controller.abort()
+        }
+        expect(callsOf(chunks)).toEqual([])
     })
 })

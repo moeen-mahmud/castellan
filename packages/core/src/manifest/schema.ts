@@ -46,6 +46,15 @@ export const ModelRoleSchema = z
         topP: z.number().min(0).max(1).optional(),
         maxTokens: z.number().int().positive().optional(),
         headers: z.record(z.string(), z.string()).optional(),
+        /**
+         * Ask the endpoint to report token usage in a streamed response.
+         *
+         * `stream_options` is an OpenAI extension, so it is off by default: an endpoint that does
+         * not know it may reject the request outright. Measured: Ollama honours it and reports
+         * nothing without it, so a local model's token counts come from the estimator until this is
+         * set — which matters the moment a number is being compared rather than displayed.
+         */
+        streamUsage: z.boolean().optional(),
         capabilities: ModelCapabilitiesSchema.optional(),
     })
     .strict()

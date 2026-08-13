@@ -13,6 +13,8 @@
  * the fix is structural placement rather than a stronger prompt.
  */
 
+import type { ChatMessage } from "../model/provider.ts"
+
 export const SLOT = {
     /** system: identity, from `context.files`. Pinned, cache breakpoint A. */
     identity: 0,
@@ -37,11 +39,24 @@ export type SlotNumber = (typeof SLOT)[SlotName]
 
 export interface ContextBlock {
     readonly slot: SlotNumber
-    readonly role: "system" | "user" | "assistant"
+    readonly role: ChatMessage["role"]
     readonly content: string
     /** Pinned blocks are never dropped or summarised by compaction. */
     readonly pinned: boolean
     readonly tokens: number
     /** Human-facing label for `GET /v1/agents/:id/context`. */
     readonly label: string
+    /**
+     * The verbatim message, when this block *is* one — history blocks, and nothing else.
+     *
+     * Present because `{role, content}` is a lossy description of a message and stopped being a
+     * complete one when native tool calling arrived. A `tool` observation carries the id of the call
+     * it answers, and an assistant turn carries the calls it made; rebuilding a message from a block's
+     * two fields drops both. The endpoint's reply to that is a rejected turn at best, and at worst a
+     * model that never sees the call it just made and repeats itself.
+     *
+     * Blocks the harness composes — identity, catalogue, the input line — have no message of their
+     * own and leave this unset. The projection falls back to `{role, content}` for them.
+     */
+    readonly message?: ChatMessage
 }

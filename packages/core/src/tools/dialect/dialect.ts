@@ -12,16 +12,73 @@
  */
 
 import type { ContextBlock } from "../../context/blocks.ts"
-import type { ChatMessage } from "../../model/provider.ts"
+import type { ChatMessage, ToolCallRequest, ToolDefinition } from "../../model/provider.ts"
 import type { FieldError, ToolIntent, ToolResult, ToolSpec } from "../types.ts"
 
 export type DialectId = "nlt" | "native"
+
+/**
+ * What one model call produced, before a dialect has interpreted it.
+ *
+ * Both halves, always, because *which* half carries the protocol is exactly what a dialect decides.
+ * Under NLT the call is text and `calls` is empty; under `native` the call is in `calls` and the text
+ * is only prose. Handing a dialect one half would mean the loop had already guessed.
+ */
+export interface StepOutput {
+    readonly text: string
+    readonly calls: readonly ToolCallRequest[]
+}
 
 export interface ParsedOutput {
     /** In the order the model wrote them. Empty means the step's text is the final reply. */
     readonly intents: readonly ToolIntent[]
     /** Everything outside the invocation blocks — what the user sees. */
     readonly text: string
+    /**
+     * The output could not be read at all — present only where that is possible.
+     *
+     * NLT never sets it: its parser is tolerant by construction and reports what was written, leaving
+     * every judgement to coercion. `native` can, because a truncated `arguments` document is not JSON
+     * and no amount of tolerance recovers it. It exists rather than being folded into "no arguments"
+     * because a tool with no required fields would then run, with no arguments, having been asked for
+     * something else entirely — a wrong action taken silently.
+     */
+    readonly malformed?: readonly FieldError[]
+}
+
+/**
+ * Turns a stream of model deltas into a stream of text safe to show a person.
+ *
+ * Needed because with a line-oriented dialect the invocation *is* text: printing `model.chunk`
+ * deltas straight through leaks `ACTION:` and `END` into the reply and runs them into the answer that
+ * follows. Every consumer has the problem — the CLI, the server's SSE clients, a TUI — so it belongs
+ * here rather than in any one of them.
+ *
+ * Stateful and single-use: one per turn, or the block it was halfway through leaks into the next.
+ */
+export interface StreamFilter {
+    /** Text to show now, possibly empty. Never contains part of an invocation block. */
+    push(delta: string): string
+    /**
+     * One step finished; the next is about to start.
+     *
+     * Two things happen here that a caller would otherwise have to reinvent. A step's output ends
+     * without a line break, so a filter carried straight across the boundary glues the next step's
+     * first word onto this one's `END`. And the loop joins each step's prose with a blank line, so
+     * that break is queued here — and held, so it appears only if the next step actually speaks.
+     */
+    endStep(): string
+    /** The turn is over. Whatever was held back and turned out to be prose after all. */
+    end(): string
+}
+
+/** For a dialect with no in-band protocol, and for an agent with no tools. Holds nothing back. */
+export function passThroughFilter(): StreamFilter {
+    return {
+        push: (delta) => delta,
+        endStep: () => "",
+        end: () => "",
+    }
 }
 
 export interface ToolDialect {
@@ -29,11 +86,44 @@ export interface ToolDialect {
     /**
      * Slot 1 of the context, pinned and inside cache breakpoint A. Must be byte-stable for a
      * given catalogue: anything varying per turn here silently destroys prompt caching.
+     *
+     * Empty under `native`, where the catalogue travels in the request instead. See `wireTokens`.
      */
     renderCatalogue(specs: readonly ToolSpec[]): readonly ContextBlock[]
-    parse(output: string): ParsedOutput
-    /** One message carrying every result from a step, in call order. */
-    renderObservation(results: readonly ToolResult[]): ChatMessage
-    /** The single repair prompt. There is never a second one. */
-    renderRepair(errors: readonly FieldError[]): ChatMessage
+    /**
+     * The request's `tools` parameter, or `undefined` for a dialect whose protocol is text.
+     *
+     * The other half of "one schema, two renderings": the same `ToolSpec` becomes prose here or a
+     * wire schema there, and never two hand-written descriptions that can disagree.
+     */
+    requestTools(specs: readonly ToolSpec[]): readonly ToolDefinition[] | undefined
+    parse(output: StepOutput): ParsedOutput
+    /** One per turn. Built on the same grammar as `parse`, so the two cannot disagree. */
+    createStreamFilter(): StreamFilter
+    /**
+     * The assistant message recording what the model just did, for the next call to read back.
+     *
+     * A dialect method rather than a line in the loop because the two answers differ in kind: NLT
+     * replays the raw text, blocks and all, since that text *is* the call. `native` replays the
+     * prose plus the structured calls, and dropping them would leave the following `tool` messages
+     * answering calls no message in the history contains — which most endpoints reject outright.
+     */
+    renderCall(output: StepOutput): ChatMessage
+    /**
+     * A step's results, in call order.
+     *
+     * A list rather than one message because `native` requires one `tool` message per call, each
+     * naming the id it answers. NLT returns a single message: one per result would repeat the
+     * "continue or reply" instruction after every observation.
+     */
+    renderObservation(results: readonly ToolResult[]): readonly ChatMessage[]
+    /**
+     * The single repair prompt. There is never a second one.
+     *
+     * Takes the step's output, not the parsed intents. Under `native` every call the assistant message
+     * announced must be answered before the next assistant turn — an unanswered `tool_calls` entry is
+     * a protocol error — and the calls that need answering include the ones too malformed to become
+     * intents at all. Those are precisely the calls a repair is most often about.
+     */
+    renderRepair(errors: readonly FieldError[], output: StepOutput): readonly ChatMessage[]
 }

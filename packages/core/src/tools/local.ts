@@ -10,9 +10,20 @@
  * that reliably degrades a small model.
  */
 
+import { appendFile, mkdir } from "node:fs/promises"
+import { join } from "node:path"
 import type { Tool, ToolContext, ToolProvider } from "./types.ts"
 
 export const LOCAL_PROVIDER_ID = "local"
+
+/**
+ * Where a note goes, relative to the agent's directory.
+ *
+ * Matches `memory.dir`'s default so that the memory subsystem, when it arrives, indexes what is
+ * already here rather than a second location nobody looks at.
+ */
+export const MEMORY_DIR = "memory"
+export const MEMORY_FILE = "notes.md"
 
 const now: Tool = {
     spec: {
@@ -86,12 +97,17 @@ function isoInZone(at: Date, zone: string): string {
 }
 
 /**
- * A deliberate stand-in.
+ * Writes a note to a file, and nothing more.
  *
- * Memory is files plus FTS5 and arrives with its own phase; this exists so that a mutating tool can
- * be exercised end to end before then. Its observation says plainly that nothing was written,
- * because a stub that reports success teaches the agent to tell the person their note was saved —
- * which is the one outcome worse than not having the tool at all.
+ * The first version of this returned "NOT SAVED — this build has no memory store", which was
+ * truthful and a trap: asked to save something, a real model retried until the step budget ran out.
+ * Measured against DeepSeek — three attempts, no reply, an honest `max_steps` failure. A mutating
+ * tool that can never succeed is not a mutating tool, it is a loop.
+ *
+ * So it appends to a markdown file under the agent's own directory, which is exactly where the
+ * memory subsystem will look: files are canonical for memory, and the retriever indexes this
+ * directory when it lands. Write-only until then. That is a missing half, not a lie — the note is
+ * genuinely on disk, and the observation says where.
  */
 const memoryWrite: Tool = {
     spec: {
@@ -113,13 +129,18 @@ const memoryWrite: Tool = {
             required: ["text"],
         },
     },
-    handler(args) {
-        const text = typeof args.text === "string" ? args.text : ""
-        return [
-            "NOT SAVED. This build has no memory store, so the note was discarded.",
-            `The note was: ${text}`,
-            "Do not call this tool again for the same note, and do not tell the person it was saved.",
-        ].join("\n")
+    async handler(args, context) {
+        const text = typeof args.text === "string" ? args.text.trim() : ""
+        const tags = Array.isArray(args.tags) ? args.tags.map((tag) => String(tag)) : []
+        const dir = join(context.dir, MEMORY_DIR)
+        const file = join(dir, MEMORY_FILE)
+
+        await mkdir(dir, { recursive: true })
+        const stamped = context.now().toISOString()
+        const labels = tags.length === 0 ? "" : ` _(${tags.join(", ")})_`
+        await appendFile(file, `\n- **${stamped}**${labels} ${text}\n`, "utf8")
+
+        return `Saved to ${MEMORY_DIR}/${MEMORY_FILE}.`
     },
 }
 
@@ -151,6 +172,7 @@ export function toolContext(overrides: Partial<ToolContext> = {}): ToolContext {
         agentId: overrides.agentId ?? "agent",
         sessionKey: overrides.sessionKey ?? "local:default",
         turnId: overrides.turnId ?? "t_none",
+        dir: overrides.dir ?? process.cwd(),
         signal: overrides.signal ?? new AbortController().signal,
         now: overrides.now ?? (() => new Date()),
     }

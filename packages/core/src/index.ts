@@ -111,6 +111,8 @@ export type {
     ChatRequest,
     FetchLike,
     ModelProvider,
+    ToolCallRequest,
+    ToolDefinition,
 } from "./model/provider.ts"
 export {
     type ResolvedRole,
@@ -184,8 +186,26 @@ export {
     type CoercionSuccess,
     coerceArgs,
 } from "./tools/coerce.ts"
-export type { DialectId, ParsedOutput, ToolDialect } from "./tools/dialect/dialect.ts"
-export { nltDialect, parseNlt, renderNltEntry } from "./tools/dialect/nlt.ts"
+export {
+    type DialectId,
+    type ParsedOutput,
+    passThroughFilter,
+    type StepOutput,
+    type StreamFilter,
+    type ToolDialect,
+} from "./tools/dialect/dialect.ts"
+export {
+    nativeDialect,
+    nativeWireTokens,
+    parseNative,
+    renderNativeDescription,
+} from "./tools/dialect/native.ts"
+export {
+    createNltStreamFilter,
+    nltDialect,
+    parseNlt,
+    renderNltEntry,
+} from "./tools/dialect/nlt.ts"
 export {
     batch,
     type ExecuteInput,
@@ -198,6 +218,8 @@ export {
     LOCAL_PROVIDER_ID,
     LOCAL_TOOL_SLUGS,
     localProvider,
+    MEMORY_DIR,
+    MEMORY_FILE,
     toolContext,
 } from "./tools/local.ts"
 export {

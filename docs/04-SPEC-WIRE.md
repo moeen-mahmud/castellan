@@ -94,6 +94,12 @@ POST   /v1/agents/:id/sessions/:key/phase    → { phase }
 `DELETE` clears conversation state only. Memory markdown is a file artifact and is never
 deleted by an API call.
 
+A message in the `messages` listing carries `role`, `content`, and — under the `native` tool
+dialect only — `toolCalls` on an assistant turn that asked for tools, and `toolCallId` on a `tool`
+message saying which call it answers. Both are absent under `nlt`, where the invocation is the
+content. They are part of the message rather than decoration: a client reconstructing a prompt from
+this listing and dropping them would produce a trace an endpoint rejects.
+
 ### Schedules
 
 ```

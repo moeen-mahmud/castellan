@@ -331,21 +331,35 @@ function validateSupportedSections(raw: Record<string, unknown>): ErrorDetail[] 
                 field: `tools.${key}`,
             })
         }
-
-        // Refused rather than quietly served by NLT: a manifest asking for native function calling
-        // and getting a different dialect would make every eval number in this repo unreadable.
-        if (toolKeys.dialect === "native") {
-            found.push({
-                code: "not_implemented_yet",
-                message:
-                    "This build implements the nlt dialect only, but the manifest asks for native.",
-                hint: "Remove the line to use nlt, which is the default and the better choice on small models. Native function calling arrives with the dialect comparison evals.",
-                field: "tools.dialect",
-            })
-        }
     }
 
     return found
+}
+
+/**
+ * `tools.dialect: native` against a model that has no native tool calling.
+ *
+ * The capability registry already knows this, and the alternative to checking it is a 400 from the
+ * endpoint on the first turn — or worse, on an endpoint that accepts an unknown `tools` key and
+ * ignores it, an agent that simply never calls a tool and never says why. Refusing at load names the
+ * model and the one-line fix.
+ *
+ * It reads `capabilities.nativeTools`, which an author can override in the manifest — so declaring
+ * support for a model the registry does not know about is a supported move, not a fight.
+ */
+function validateDialectSupport(
+    manifest: AgentManifest,
+    capabilities: { readonly nativeTools: boolean },
+): ErrorDetail[] {
+    if (manifest.tools.dialect !== "native" || capabilities.nativeTools) return []
+    return [
+        {
+            code: "native_tools_unsupported",
+            message: `tools.dialect is native, but ${manifest.model.main.id} is not known to support native tool calling.`,
+            hint: "Use the nlt dialect — it needs nothing from the endpoint, and on models this size it is the better choice anyway (+24 to +43pp on small models). If this model does support tool calling and the capability table is simply out of date, set model.main.capabilities.nativeTools: true and say so in a pull request.",
+            field: "tools.dialect",
+        },
+    ]
 }
 
 export interface ValidateOptions {
@@ -353,6 +367,8 @@ export interface ValidateOptions {
     dir: string
     /** The window after capability resolution, used by rule 11. */
     resolvedWindow: number
+    /** Resolved capabilities for `model.main`, used by the dialect-support rule. */
+    capabilities: { readonly nativeTools: boolean }
     /** Environment to check `apiKeyEnv` presence against. */
     env: Record<string, string | undefined>
     /** The document as written, for checks that must not see schema defaults. */
@@ -368,6 +384,7 @@ export function validateManifest(manifest: AgentManifest, options: ValidateOptio
         ...validateContextFiles(manifest, options.dir),
         ...validateBaseUrls(manifest),
         ...validateApiKeyEnv(manifest, options.env),
+        ...validateDialectSupport(manifest, options.capabilities),
         ...validateSupportedSections(options.raw),
     ]
 }

@@ -22,10 +22,17 @@ import {
     Runtime as RuntimeClass,
     VERSION,
 } from "@castellan/core"
-import { EXIT_FAILURE, EXIT_OK, EXIT_WORDS, PROMPT, RESET_WORD } from "#lib/const"
+import { EXIT_FAILURE, EXIT_OK, PROMPT } from "#lib/const"
 import { flushOutput, markTerminalDirty, onExit } from "#lib/exit"
 import { resolveModeFromProcess } from "#lib/output"
 import type { RunOptions } from "#lib/schema"
+import {
+    resolveSessionCommand,
+    sessionHelpText,
+    toolsReport,
+    toolsView,
+    unknownCommandText,
+} from "#lib/session-commands"
 import { seed } from "#transcript"
 
 /** Opening lines: what is loaded, what session, and whether the last turn finished. */
@@ -44,7 +51,9 @@ async function bannerLines(
     const lines = [
         `${BRAND.name} ${VERSION} · ${described.id} · ${described.model} · window ${described.window}`,
         `session ${sessionKey} · ${resumed} message(s) · store ${storeLocation}`,
-        `ready in ${bootMs.toFixed(0)} ms · /exit to quit · /reset clears · /help for keys`,
+        // Points at `/help` rather than listing commands: the list belongs to the table that
+        // implements them, and a banner enumerating a subset is the drift this change removed.
+        `ready in ${bootMs.toFixed(0)} ms · /help for commands and keys · /exit to leave`,
     ]
 
     // Naming a reaped turn is the point of reaping it: the previous run died mid-generation, and the
@@ -137,32 +146,116 @@ async function runRich(wired: Wired): Promise<number> {
 /** Line-oriented, and byte-identical whether stdout is a terminal or a pipe. */
 async function runPlain(wired: Wired): Promise<number> {
     const { agent, runtime, sessionKey, quiet } = wired
-    const write = (text: string) => void process.stdout.write(text)
+
+    let atLineStart = true
+    const write = (text: string) => {
+        if (text === "") return
+        process.stdout.write(text)
+        atLineStart = text.endsWith("\n")
+    }
+    /** A line of its own, whatever the reply was part-way through writing. */
+    const row = (text: string) => {
+        if (!atLineStart) write("\n")
+        write(`${text}\n`)
+    }
 
     if (wired.banner.length > 0) write(`${wired.banner.join("\n")}\n\n`)
+
+    // A one-shot run prints the answer and nothing else, because something is parsing it. Tool rows
+    // are for a person watching, so they follow the same rule as the banner and the stats line.
+    const showRows = !quiet && wired.once === undefined
 
     // Streaming goes through the bus rather than a callback: the CLI is a subscriber like any other,
     // which is what keeps the server and the CLI from needing different cores.
     let streaming = false
     let lastKind: "text" | "reasoning" | undefined
-    const unsubscribe = runtime.bus.on("model.chunk", (event: AnyEvent) => {
-        if (event.type !== "model.chunk") return
-        const { delta, kind } = event.data
-        if (kind === "reasoning" && wired.showReasoning !== true) return
 
-        // A reasoning model streams its scratchpad and then its answer with no separator of its own,
-        // so the two run together mid-sentence. The label is worth two lines: the whole point of
-        // showing reasoning is being able to tell it apart from the reply.
-        if (kind !== lastKind) {
-            if (lastKind !== undefined) write("\n\n")
-            if (wired.showReasoning === true) {
-                write(kind === "reasoning" ? "· reasoning ·\n" : "· reply ·\n")
-            }
-            lastKind = kind
-        }
+    // With a line-oriented dialect the invocation *is* text, so raw deltas would put `ACTION:` and
+    // `END` in front of the person and run them into the answer. The filter comes from the agent
+    // rather than being chosen here: which dialect is in play is config, and one place decides it.
+    // One per turn, told where the steps end — it owns the paragraph break between them.
+    let filter = agent.streamFilter()
+
+    const show = (text: string) => {
+        if (text === "") return
+        write(text)
         streaming = true
-        write(delta)
-    })
+    }
+
+    const subscriptions = [
+        runtime.bus.on("model.result", () => show(filter.endStep())),
+
+        runtime.bus.on("model.chunk", (event: AnyEvent) => {
+            if (event.type !== "model.chunk") return
+            const { delta, kind } = event.data
+            if (kind === "reasoning" && wired.showReasoning !== true) return
+
+            // A reasoning model streams its scratchpad and then its answer with no separator of its
+            // own, so the two run together mid-sentence. The label is worth two lines: the whole
+            // point of showing reasoning is being able to tell it apart from the reply.
+            if (kind !== lastKind) {
+                if (lastKind !== undefined) write("\n\n")
+                if (wired.showReasoning === true) {
+                    write(kind === "reasoning" ? "· reasoning ·\n" : "· reply ·\n")
+                }
+                lastKind = kind
+            }
+
+            // Reasoning is not parsed for tool calls, so it is not filtered for them either.
+            if (kind === "reasoning") {
+                write(delta)
+                streaming = true
+                return
+            }
+            show(filter.push(delta))
+        }),
+
+        runtime.bus.on("tool.result", (event: AnyEvent) => {
+            if (event.type !== "tool.result" || !showRows) return
+            const { slug, ok, latencyMs, truncated } = event.data
+            row(
+                `  · ${slug} — ${ok ? "ok" : "failed"} · ${latencyMs} ms${truncated ? " · observation trimmed" : ""}`,
+            )
+        }),
+
+        runtime.bus.on("tool.repair", (event: AnyEvent) => {
+            if (event.type !== "tool.repair" || !showRows) return
+            // Worth a line of its own: a silent repair looks like a slow turn.
+            row(`  · ${event.data.slugs.join(", ")} — could not be used, asking again`)
+        }),
+    ]
+    const unsubscribe = () => {
+        for (const off of subscriptions) off()
+    }
+
+    /**
+     * A typed line that was a command rather than a prompt.
+     *
+     * Shared by both input branches, and driven by the same table the rich path uses. Before this,
+     * the banner advertised `/help` and this path had no case for it, so it went to the model as a
+     * prompt — a billed call answering a question about the CLI it knows nothing about.
+     */
+    const dispatch = async (trimmed: string): Promise<"exit" | "handled" | "prompt"> => {
+        const command = resolveSessionCommand(trimmed)
+        if (command === undefined) return "prompt"
+        switch (command.kind) {
+            case "exit":
+                return "exit"
+            case "help":
+                row(sessionHelpText())
+                return "handled"
+            case "tools":
+                row(toolsReport(toolsView(agent)))
+                return "handled"
+            case "reset":
+                await agent.clearSession(sessionKey)
+                row("session cleared — memory files on disk are untouched")
+                return "handled"
+            case "unknown":
+                row(unknownCommandText(command))
+                return "handled"
+        }
+    }
 
     let controller: AbortController | undefined
     let cancelledAt = 0
@@ -186,6 +279,7 @@ async function runPlain(wired: Wired): Promise<number> {
         controller = new AbortController()
         streaming = false
         lastKind = undefined
+        filter = agent.streamFilter()
 
         const result = await agent.send(input, {
             sessionKey,
@@ -194,8 +288,10 @@ async function runPlain(wired: Wired): Promise<number> {
         })
         controller = undefined
 
-        if (streaming) write("\n")
-        else if (result.text !== "") write(`${result.text}\n`)
+        // The filter withholds a trailing line break, since it cannot know whether more follows.
+        show(filter.end())
+        if (streaming && !atLineStart) write("\n")
+        else if (!streaming && result.text !== "") write(`${result.text}\n`)
 
         if (result.reason === "stopped") {
             const elapsed = cancelledAt === 0 ? 0 : performance.now() - cancelledAt
@@ -237,7 +333,13 @@ async function runPlain(wired: Wired): Promise<number> {
             reader = rl
             for await (const line of rl) {
                 const trimmed = line.trim()
-                if (trimmed === "" || EXIT_WORDS.includes(trimmed)) continue
+                if (trimmed === "") continue
+                // Commands work in a pipe too. A script that pipes `/exit` means it — this branch
+                // used to skip the word and keep reading, which is the one place the piped path
+                // disagreed with the terminal about what a typed line meant.
+                const outcome = await dispatch(trimmed)
+                if (outcome === "exit") break
+                if (outcome === "handled") continue
                 await runOne(trimmed)
             }
             return exitCode
@@ -267,14 +369,14 @@ async function runPlain(wired: Wired): Promise<number> {
         for await (const line of rl) {
             const trimmed = line.trim()
 
-            if (EXIT_WORDS.includes(trimmed)) break
             if (trimmed === "") {
                 rl.prompt()
                 continue
             }
-            if (trimmed === RESET_WORD) {
-                await agent.clearSession(sessionKey)
-                write("session cleared — memory files on disk are untouched\n")
+
+            const outcome = await dispatch(trimmed)
+            if (outcome === "exit") break
+            if (outcome === "handled") {
                 rl.prompt()
                 continue
             }

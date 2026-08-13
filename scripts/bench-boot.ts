@@ -32,7 +32,7 @@ const manifestPath = resolve(ROOT, flag("manifest", "examples/minimal/agent.yaml
  * so nothing here is ever dialled — which is itself part of what this benchmark proves.
  */
 const CHILD_ENV = {
-    MODEL_ID: "qwen3:8b",
+    MODEL_ID: "qwen3.5:9b",
     MODEL_BASE_URL: "http://127.0.0.1:1/v1",
     MODEL_API_KEY: "bench-placeholder",
 }

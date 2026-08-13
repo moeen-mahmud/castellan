@@ -22,6 +22,8 @@ import type { AgentManifest } from "../manifest/schema.ts"
 import type { ChatMessage } from "../model/provider.ts"
 import { type ResolvedRoles, type ResolveRolesOptions, resolveRoles } from "../model/roles.ts"
 import type { SessionSummary, Store, TurnRecord } from "../store/store.ts"
+import { passThroughFilter, type StreamFilter } from "../tools/dialect/dialect.ts"
+import { nativeDialect, nativeWireTokens } from "../tools/dialect/native.ts"
 import { nltDialect } from "../tools/dialect/nlt.ts"
 import { ToolRegistry } from "../tools/registry.ts"
 
@@ -50,7 +52,13 @@ export interface AgentDescription {
     readonly contextFiles: readonly string[]
     readonly dialect: string
     readonly tools: readonly string[]
-    /** Slot 1's cost. Paid on every turn, so it is worth being able to see it. */
+    /**
+     * What the catalogue costs per turn, whichever channel carries it.
+     *
+     * Slot 1's blocks under NLT, plus the request's `tools` parameter under native. Summing only the
+     * blocks would report a native catalogue as free, which is the reverse of the truth — it is the
+     * same schemas, in a place the context budget cannot see.
+     */
     readonly catalogueTokens: number
 }
 
@@ -87,20 +95,33 @@ export class Agent {
         this.store = init.store
         this.tools = init.tools
 
+        // Configuration, never inference. Reading the model id to pick a dialect would mean behaviour
+        // changing silently when someone edits `model.main.id`, and a per-model difference nobody can
+        // reproduce is exactly the bug class decision 4.1's opt-in avoids.
+        const dialect = this.manifest.tools.dialect === "native" ? nativeDialect : nltDialect
+
         // The catalogue is rendered here, once, for the same reason the identity files are read
         // here: slot 1 is half of the cache-stable prefix. Rendering it per turn — or letting its
         // order depend on anything that varies — silently stops prompt caching working, and the only
         // symptom is the bill.
-        const dialect = nltDialect
-        this.#toolRuntime =
-            init.tools.size === 0
-                ? undefined
-                : {
-                      registry: init.tools,
-                      dialect,
-                      blocks: dialect.renderCatalogue(init.tools.specs()),
-                      observationMaxTokens: this.manifest.context.observationMaxTokens,
-                  }
+        //
+        // `requestTools` is built here too, and not only for symmetry: under native it is where a slug
+        // the wire format cannot carry is refused, and "at load" is the only useful place to refuse it.
+        if (init.tools.size === 0) {
+            this.#toolRuntime = undefined
+        } else {
+            const specs = init.tools.specs()
+            const requestTools = dialect.requestTools(specs)
+            this.#toolRuntime = {
+                registry: init.tools,
+                dialect,
+                dir: init.loaded.dir,
+                blocks: dialect.renderCatalogue(specs),
+                ...(requestTools === undefined ? {} : { requestTools }),
+                wireTokens: requestTools === undefined ? 0 : nativeWireTokens(requestTools),
+                observationMaxTokens: this.manifest.context.observationMaxTokens,
+            }
+        }
     }
 
     static create(
@@ -214,6 +235,18 @@ export class Agent {
         return result
     }
 
+    /**
+     * A filter for one turn's worth of streamed deltas.
+     *
+     * Every surface that shows tokens as they arrive needs this, because with a line-oriented dialect
+     * the invocation *is* text: printing deltas straight through puts `ACTION:` and `END` in front of
+     * the person and runs them into the answer. Dialect selection stays here — config, never
+     * inference — so a caller asks for a filter rather than choosing one.
+     */
+    streamFilter(): StreamFilter {
+        return this.#toolRuntime?.dialect.createStreamFilter() ?? passThroughFilter()
+    }
+
     describe(): AgentDescription {
         return {
             id: this.id,
@@ -224,10 +257,9 @@ export class Agent {
             contextFiles: this.manifest.context.files,
             dialect: this.#toolRuntime?.dialect.id ?? this.manifest.tools.dialect,
             tools: this.tools.specs().map((spec) => spec.slug),
-            catalogueTokens: (this.#toolRuntime?.blocks ?? []).reduce(
-                (sum, block) => sum + block.tokens,
-                0,
-            ),
+            catalogueTokens:
+                (this.#toolRuntime?.blocks ?? []).reduce((sum, block) => sum + block.tokens, 0) +
+                (this.#toolRuntime?.wireTokens ?? 0),
         }
     }
 }

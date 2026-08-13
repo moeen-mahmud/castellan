@@ -18,11 +18,12 @@ import { estimateMessageTokens } from "../context/tokens.ts"
 import { type ErrorDetail, HarnessError, toolRepairFailed } from "../errors.ts"
 import type { EventBus } from "../events/bus.ts"
 import type { TurnEndReason } from "../events/types.ts"
-import type { ChatMessage } from "../model/provider.ts"
+import type { ChatMessage, ToolDefinition } from "../model/provider.ts"
 import { type ResolvedRole, requestParamsFor } from "../model/roles.ts"
-import type { ToolDialect } from "../tools/dialect/dialect.ts"
+import type { ParsedOutput, StepOutput, ToolDialect } from "../tools/dialect/dialect.ts"
 import { executeIntents } from "../tools/execute.ts"
 import type { ToolRegistry } from "../tools/registry.ts"
+import type { ToolResult } from "../tools/types.ts"
 import { newStepId, newTurnId } from "./ids.ts"
 import { runStep } from "./step.ts"
 
@@ -42,6 +43,23 @@ export interface ToolRuntime {
     readonly dialect: ToolDialect
     /** Slot 1, rendered once at agent load. Byte-stable, or prompt caching stops working. */
     readonly blocks: readonly ContextBlock[]
+    /**
+     * The request's `tools` parameter, built once at agent load beside the catalogue. Present under
+     * `native`, absent under a text dialect.
+     */
+    readonly requestTools?: readonly ToolDefinition[]
+    /**
+     * What `requestTools` costs in prompt tokens, and why this field exists at all.
+     *
+     * Under NLT the catalogue is a context block, so `assembleContext` counts it and the budget is
+     * honest. Under native it is in the request body, where the assembler cannot see it — so the
+     * window handed to the assembler is reduced by this instead. Without it a turn believes it has
+     * room it does not have, and the failure arrives as a context-length rejection from the endpoint
+     * with nothing local to explain it.
+     */
+    readonly wireTokens: number
+    /** The agent's directory. A tool touching the filesystem resolves against it, not the cwd. */
+    readonly dir: string
     readonly observationMaxTokens: number
     /** Injected so a tool that reads the clock is testable. */
     readonly now?: () => Date
@@ -161,7 +179,9 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
                 ...(tools === undefined ? {} : { toolBlocks: tools.blocks }),
                 history,
                 input: input.input,
-                window: input.window,
+                // Reduced by whatever the dialect puts in the request body rather than in a block.
+                // Zero under NLT, so this is the same arithmetic it always was.
+                window: Math.max(1, input.window - (tools?.wireTokens ?? 0)),
                 reserveOutput: input.reserveOutput,
             })
 
@@ -181,6 +201,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
                 messages: assembled.messages,
                 params,
                 promptTokens: assembled.totalTokens,
+                ...(tools?.requestTools === undefined ? {} : { tools: tools.requestTools }),
                 bus: input.bus,
                 context: stepContext,
                 signal: link.signal,
@@ -193,10 +214,14 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
 
             // With no catalogue there is nothing to look for, and running a parser over the reply
             // could only ever find a false positive in the model's prose.
-            const parsed =
+            //
+            // The dialect gets both halves of what the step produced — the text and whatever the
+            // transport reported structurally — because which half carries the protocol is the
+            // dialect's decision, not this loop's.
+            const parsed: ParsedOutput =
                 tools === undefined || tools.registry.size === 0
                     ? { intents: [], text: step.text }
-                    : tools.dialect.parse(step.text)
+                    : tools.dialect.parse({ text: step.text, calls: step.calls })
 
             // The reply the person reads is the prose *outside* the blocks, accumulated across
             // steps: "let me check the calendar" is narration they should see, and the block that
@@ -231,32 +256,68 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
                 break
             }
 
-            // No tool call means this reply is the answer. The overwhelming majority of steps.
-            if (tools === undefined || parsed.intents.length === 0) break
+            const output: StepOutput = { text: step.text, calls: step.calls }
+            /** Calls the dialect could not read at all. Only `native` can produce these. */
+            const unreadable = parsed.malformed ?? []
 
-            // The *raw* output, blocks and all, so the next model call sees the call it made rather
-            // than a cleaned-up version of it that no longer explains the observation below.
-            const call: ChatMessage = { role: "assistant", content: step.text }
+            // No tool call means this reply is the answer. The overwhelming majority of steps.
+            // An unreadable call counts as work: breaking here would drop it silently and report the
+            // turn as a clean reply, which is the one outcome that must never happen.
+            if (tools === undefined || (parsed.intents.length === 0 && unreadable.length === 0)) {
+                break
+            }
+
+            // What the model just did, as its own dialect records it: the raw text under NLT, prose
+            // plus the structured calls under native. Either way the next model call sees the call it
+            // made rather than a cleaned-up version that no longer explains the observation below.
+            const call = tools.dialect.renderCall(output)
             history.push(call)
             trace.push(call)
             pendingProse = ""
 
-            const outcome = await executeIntents({
-                registry: tools.registry,
-                intents: parsed.intents,
-                context: {
-                    agentId: input.agentId,
-                    sessionKey: input.sessionKey,
-                    turnId,
-                    signal: link.signal,
-                    now: tools.now ?? (() => new Date()),
-                },
-                bus: input.bus,
-                eventContext: stepContext,
-                timeoutMs: input.limits.toolTimeoutMs,
-                maxParallel: input.limits.maxParallelTools,
-                observationMaxTokens: tools.observationMaxTokens,
-            })
+            if (unreadable.length > 0) {
+                // Emitted here because nothing was executed, so `executeIntents` — which normally
+                // owns this event — never ran. A repair that fired no event looks like a slow turn on
+                // every surface subscribed to the bus.
+                input.bus.emit(
+                    "tool.repair",
+                    {
+                        slugs: [
+                            ...new Set(
+                                step.calls
+                                    .map((entry) => entry.name.trim())
+                                    .filter((name) => name !== ""),
+                            ),
+                        ],
+                        errors: unreadable.map((error) => `${error.field}: ${error.message}`),
+                    },
+                    stepContext,
+                )
+            }
+
+            // A step is all-or-nothing, so an unreadable call stops it before anything runs.
+            // Executing the readable calls and repairing the rest would re-run a mutating call that
+            // had already succeeded, and there is no idempotency key at this layer to make that safe.
+            const outcome =
+                unreadable.length > 0
+                    ? { results: [] as readonly ToolResult[], repair: unreadable }
+                    : await executeIntents({
+                          registry: tools.registry,
+                          intents: parsed.intents,
+                          context: {
+                              agentId: input.agentId,
+                              sessionKey: input.sessionKey,
+                              turnId,
+                              dir: tools.dir,
+                              signal: link.signal,
+                              now: tools.now ?? (() => new Date()),
+                          },
+                          bus: input.bus,
+                          eventContext: stepContext,
+                          timeoutMs: input.limits.toolTimeoutMs,
+                          maxParallel: input.limits.maxParallelTools,
+                          observationMaxTokens: tools.observationMaxTokens,
+                      })
 
             if (outcome.results.some((result) => result.ok)) {
                 sideEffects ||= outcome.results.some(
@@ -283,17 +344,17 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
                     break
                 }
                 repairs += 1
-                const repairMessage = tools.dialect.renderRepair(outcome.repair)
-                history.push(repairMessage)
-                trace.push(repairMessage)
+                const repairMessages = tools.dialect.renderRepair(outcome.repair, output)
+                history.push(...repairMessages)
+                trace.push(...repairMessages)
                 pendingWork = true
                 continue
             }
 
             repairs = 0
             const observation = tools.dialect.renderObservation(outcome.results)
-            history.push(observation)
-            trace.push(observation)
+            history.push(...observation)
+            trace.push(...observation)
             pendingWork = true
         }
 

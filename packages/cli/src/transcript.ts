@@ -28,6 +28,15 @@ export type TranscriptAction =
     | { readonly kind: "event"; readonly event: AnyEvent }
     | { readonly kind: "note"; readonly text: string }
     | { readonly kind: "cancelling" }
+    /**
+     * A model delta that has already been through the dialect's stream filter.
+     *
+     * Filtering cannot happen in here: a filter is stateful and this reducer is pure. So the caller
+     * owns one per step and dispatches what is left. A caller that dispatches the raw `model.chunk`
+     * event instead still works — it just shows the invocation blocks, which is right for a dialect
+     * with no in-band protocol and wrong for NLT.
+     */
+    | { readonly kind: "delta"; readonly of: "text" | "reasoning"; readonly text: string }
 
 export const EMPTY_TRANSCRIPT: TranscriptState = {
     items: [],
@@ -63,8 +72,31 @@ export function reduce(state: TranscriptState, action: TranscriptAction): Transc
             // `turn.end`, and that is what commits the text.
             return state.status === "idle" ? state : { ...state, status: "cancelling" }
 
+        case "delta":
+            return applyDelta(state, action.of, action.text)
+
         case "event":
             return reduceEvent(state, action.event)
+    }
+}
+
+function applyDelta(
+    state: TranscriptState,
+    kind: "text" | "reasoning",
+    delta: string,
+): TranscriptState {
+    if (delta === "") return state
+    const live = state.live ?? { text: "", reasoning: "", last: undefined }
+    return {
+        ...state,
+        live: {
+            text: kind === "text" ? live.text + delta : live.text,
+            reasoning: kind === "reasoning" ? live.reasoning + delta : live.reasoning,
+            last: kind,
+        },
+        // A cancellation already asked for is not undone by another token arriving in flight; the
+        // request stands until the turn actually ends.
+        status: state.status === "cancelling" ? "cancelling" : "streaming",
     }
 }
 
@@ -77,21 +109,39 @@ function reduceEvent(state: TranscriptState, event: AnyEvent): TranscriptState {
                 status: "thinking",
             }
 
-        case "model.chunk": {
-            const { delta, kind } = event.data
-            const live = state.live ?? { text: "", reasoning: "", last: undefined }
+        case "model.chunk":
+            return applyDelta(state, event.data.kind, event.data.delta)
+
+        case "tool.call":
+            // Committed the moment the call starts, not when it returns: a tool that takes eight
+            // seconds must not leave the screen looking like a stalled model. The row is completed by
+            // `tool.result` appending its own line rather than by editing this one — `<Static>` has
+            // already written it, and editing a written node silently does nothing.
             return {
-                ...state,
-                live: {
-                    text: kind === "text" ? live.text + delta : live.text,
-                    reasoning: kind === "reasoning" ? live.reasoning + delta : live.reasoning,
-                    last: kind,
-                },
-                // A cancellation already asked for is not undone by another token arriving in
-                // flight; the request stands until the turn actually ends.
-                status: state.status === "cancelling" ? "cancelling" : "streaming",
+                ...append(
+                    state,
+                    "tool",
+                    `${event.data.slug}${event.data.mutating ? " (changes state)" : ""}`,
+                ),
+                status: state.status === "cancelling" ? "cancelling" : "working",
             }
+
+        case "tool.result": {
+            const { slug, ok, latencyMs, truncated } = event.data
+            return append(
+                state,
+                ok ? "tool" : "error",
+                `${slug} — ${ok ? "ok" : "failed"} · ${latencyMs} ms${truncated ? " · observation trimmed" : ""}`,
+            )
         }
+
+        case "tool.repair":
+            // A silent repair is indistinguishable from a slow turn, and it costs a whole step.
+            return append(
+                state,
+                "note",
+                `${event.data.slugs.join(", ")} — could not be used, asking the model again`,
+            )
 
         case "model.retry": {
             const { status, attempt, delayMs } = event.data

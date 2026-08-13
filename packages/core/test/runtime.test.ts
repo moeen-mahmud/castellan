@@ -131,7 +131,7 @@ describe("boot", () => {
 id: second
 model:
   main:
-    id: qwen3:8b
+    id: qwen3.5:9b
     baseUrl: http://localhost:11434/v1
 `,
         )
@@ -147,7 +147,7 @@ model:
                 .map((a) => a.id)
                 .sort(),
         ).toEqual(["second", "test"])
-        expect(runtime.agent("second").describe().model).toBe("qwen3:8b")
+        expect(runtime.agent("second").describe().model).toBe("qwen3.5:9b")
         await runtime.stop()
     })
 

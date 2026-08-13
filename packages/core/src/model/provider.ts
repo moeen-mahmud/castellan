@@ -13,9 +13,39 @@
  */
 export type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>
 
+/**
+ * One call the model asked for, as the transport reported it.
+ *
+ * `arguments` is the **raw JSON text**, deliberately unparsed. It mirrors the rule the NLT parser
+ * follows: report what was written, and let `coerce.ts` alone decide what it means. It also means a
+ * truncated or invalid argument document survives to the layer that can produce a useful repair,
+ * rather than becoming an exception inside the transport.
+ */
+export interface ToolCallRequest {
+    readonly id: string
+    readonly name: string
+    readonly arguments: string
+}
+
+/**
+ * A tool as the provider's `tools` parameter wants it. Used by the `native` dialect only; under NLT
+ * the catalogue is prose in the context and nothing is sent here.
+ */
+export interface ToolDefinition {
+    readonly name: string
+    readonly description: string
+    /** The tool's JSON Schema, passed through unchanged. One schema, two renderings. */
+    readonly parameters: Readonly<Record<string, unknown>>
+}
+
 export interface ChatMessage {
-    readonly role: "system" | "user" | "assistant"
+    /** `tool` carries an observation answering a specific `toolCalls` entry. Native only. */
+    readonly role: "system" | "user" | "assistant" | "tool"
     readonly content: string
+    /** Set on an assistant message that asked for tools. Native only. */
+    readonly toolCalls?: readonly ToolCallRequest[]
+    /** Set on a `tool` message: which call it answers. Native only, and required there. */
+    readonly toolCallId?: string
 }
 
 export interface ChatRequest {
@@ -24,12 +54,21 @@ export interface ChatRequest {
     readonly temperature?: number
     readonly topP?: number
     readonly maxTokens?: number
+    /** Omitted entirely under a text dialect, so the request body is unchanged from Phase 1. */
+    readonly tools?: readonly ToolDefinition[]
 }
 
 /** Streamed output. `text` accumulates into the reply; `reasoning` is kept separate. */
 export type ChatChunk =
     | { readonly type: "text"; readonly delta: string }
     | { readonly type: "reasoning"; readonly delta: string }
+    /**
+     * One complete call. Emitted once the whole call has arrived, not per fragment: a streamed
+     * `tool_calls` entry is delivered as index-keyed pieces of a JSON document, and half of one is
+     * of no use to any consumer. The reassembly stays in the transport, which is the layer that
+     * owns wire quirks.
+     */
+    | { readonly type: "tool_call"; readonly call: ToolCallRequest }
     | {
           readonly type: "usage"
           readonly promptTokens: number

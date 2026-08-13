@@ -25,7 +25,7 @@ export interface EnvFacts {
 
 // ─── transcript ──────────────────────────────────────────────────────────────────────────
 
-export type TranscriptRole = "user" | "assistant" | "reasoning" | "note" | "error"
+export type TranscriptRole = "user" | "assistant" | "reasoning" | "note" | "error" | "tool"
 
 /**
  * A finished line of conversation.
@@ -60,7 +60,8 @@ export interface LiveTurn {
     readonly last: "text" | "reasoning" | undefined
 }
 
-export type TurnStatus = "idle" | "thinking" | "streaming" | "cancelling"
+/** `working` is a tool running: the model is not producing tokens, so `streaming` would mislead. */
+export type TurnStatus = "idle" | "thinking" | "streaming" | "working" | "cancelling"
 
 export interface TranscriptState {
     /** Append-only. Never reordered, never edited. */

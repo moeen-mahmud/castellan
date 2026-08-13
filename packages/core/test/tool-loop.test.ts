@@ -18,7 +18,10 @@ import { describe, expect, test } from "./_harness.ts"
 
 const ENV = { MODEL_API_KEY: "test-key" }
 
-function workspace(toolsSection = "  local:\n    - now\n    - memory_write\n"): string {
+function workspace(
+    toolsSection = "  local:\n    - now\n    - memory_write\n",
+    dialect: "nlt" | "native" = "nlt",
+): string {
     const dir = mkdtempSync(join(tmpdir(), "tool-loop-"))
     writeFileSync(
         join(dir, "agent.yaml"),
@@ -35,7 +38,7 @@ context:
   files:
     - IDENTITY.md
 tools:
-  dialect: nlt
+  dialect: ${dialect}
 ${toolsSection}limits:
   maxSteps: 4
   turnTimeoutMs: 5000
@@ -172,7 +175,7 @@ describe("the catalogue in context", () => {
         const system = requests[0]?.messages.filter((message) => message.role === "system") ?? []
         expect(system.length).toBe(2)
         expect(system[0]?.content).toContain("test fixture")
-        expect(system[1]?.content).toContain("ACTION: tool_name")
+        expect(system[1]?.content).toContain("ACTION: weather_lookup")
         expect(system[1]?.content).toContain("### now")
         await runtime.stop()
     })
@@ -274,6 +277,278 @@ describe("the step cap", () => {
         const { result, runtime } = await run(["Working on it.\nACTION: now\nEND"])
         expect(result.steps).toBe(4)
         expect(result.reason).toBe("max_steps")
+        await runtime.stop()
+    })
+})
+
+// ─── the same loop, under native ─────────────────────────────────────────────────────────
+
+/**
+ * The point of these is that the *loop* is unchanged. Everything the NLT cases above assert about
+ * ordering, all-or-nothing steps, the single repair and trace retention holds here too — only the
+ * channel the protocol travels on is different. Where a native case exists that has no NLT twin, it
+ * is because the wire format can fail in a way a tolerant text parser cannot.
+ */
+
+/** One step's worth of native output: optional prose, plus complete tool calls. */
+interface NativeStep {
+    readonly text?: string
+    readonly calls?: readonly { id: string; name: string; arguments: string }[]
+}
+
+function nativeSse(step: NativeStep): Response {
+    const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+            const encoder = new TextEncoder()
+            const frame = (delta: unknown) =>
+                controller.enqueue(
+                    encoder.encode(`data: ${JSON.stringify({ choices: [{ delta }] })}\n\n`),
+                )
+            if (step.text !== undefined && step.text !== "") frame({ content: step.text })
+            // Fragmented on purpose: a real endpoint splits the argument document, and a test that
+            // only ever sends it whole would not exercise the reassembly the loop depends on.
+            for (const [index, call] of (step.calls ?? []).entries()) {
+                frame({
+                    tool_calls: [
+                        { index, id: call.id, function: { name: call.name, arguments: "" } },
+                    ],
+                })
+                for (const piece of call.arguments.match(/.{1,4}/gs) ?? []) {
+                    frame({ tool_calls: [{ index, function: { arguments: piece } }] })
+                }
+            }
+            controller.enqueue(encoder.encode("data: [DONE]\n\n"))
+            controller.close()
+        },
+    })
+    return new Response(stream, { headers: { "content-type": "text/event-stream" } })
+}
+
+interface WireMessage {
+    role: string
+    content: string | null
+    tool_call_id?: string
+    tool_calls?: { id: string; function: { name: string; arguments: string } }[]
+}
+
+async function runNative(
+    script: readonly NativeStep[],
+    options: { toolsSection?: string } = {},
+): Promise<{
+    result: Awaited<ReturnType<import("../src/runtime/agent.ts").Agent["send"]>>
+    history: readonly { role: string; content: string }[]
+    events: AnyEvent[]
+    requests: { messages: WireMessage[]; tools?: unknown[] }[]
+    runtime: Runtime
+}> {
+    const dir = workspace(options.toolsSection, "native")
+    const requests: { messages: WireMessage[]; tools?: unknown[] }[] = []
+    let index = 0
+    const fetch: FetchLike = async (_url, init) => {
+        requests.push(JSON.parse(String(init?.body)))
+        const step = script[Math.min(index, script.length - 1)] ?? {}
+        index += 1
+        return nativeSse(step)
+    }
+
+    const runtime = await Runtime.create({ agents: [join(dir, "agent.yaml")], env: ENV, fetch })
+    const events: AnyEvent[] = []
+    runtime.bus.on("*", (event) => events.push(event))
+    const agent = runtime.agent("test")
+    const result = await agent.send("what time is it?")
+    const history = await agent.history()
+    return { result, history, events, requests, runtime }
+}
+
+describe("a native tool turn", () => {
+    test("calls the tool, observes it, and replies", async () => {
+        const { result, history, runtime } = await runNative([
+            { text: "Let me check.", calls: [{ id: "c1", name: "now", arguments: "{}" }] },
+            { text: "It is just after nine." },
+        ])
+
+        expect(result.reason).toBe("final")
+        expect(result.steps).toBe(2)
+        expect(result.text).toBe("Let me check.\n\nIt is just after nine.")
+
+        // Same four-message trace as the NLT case, with `tool` in place of the observation's `user`.
+        expect(history.map((message) => message.role)).toEqual([
+            "user",
+            "assistant",
+            "tool",
+            "assistant",
+        ])
+        await runtime.stop()
+    })
+
+    test("the catalogue goes in the request, not in the context", async () => {
+        const { requests, runtime } = await runNative([{ text: "Nine." }])
+        const [first] = requests
+        expect(first?.tools?.length).toBe(2)
+        // And no ACTION preamble anywhere in the prompt — that is NLT's channel, not this one.
+        expect(first?.messages.some((message) => (message.content ?? "").includes("ACTION"))).toBe(
+            false,
+        )
+        await runtime.stop()
+    })
+
+    test("the second request replays the call and its answer, with ids intact", async () => {
+        // The silent-failure case this guards: an assistant message whose `tool_calls` were dropped
+        // leaves the `tool` message answering nothing, and most endpoints reject that outright.
+        const { requests, runtime } = await runNative([
+            { calls: [{ id: "c1", name: "now", arguments: "{}" }] },
+            { text: "Nine." },
+        ])
+        const second = requests[1]?.messages ?? []
+        const assistant = second.find((message) => message.role === "assistant")
+        const observation = second.find((message) => message.role === "tool")
+        expect(assistant?.tool_calls?.[0]?.id).toBe("c1")
+        expect(assistant?.tool_calls?.[0]?.function.name).toBe("now")
+        expect(observation?.tool_call_id).toBe("c1")
+        await runtime.stop()
+    })
+
+    test("a call-only step sends null content, not an empty string", async () => {
+        const { requests, runtime } = await runNative([
+            { calls: [{ id: "c1", name: "now", arguments: "{}" }] },
+            { text: "Nine." },
+        ])
+        const assistant = (requests[1]?.messages ?? []).find(
+            (message) => message.role === "assistant",
+        )
+        expect(assistant?.content).toBe(null)
+        await runtime.stop()
+    })
+
+    test("two calls in one step, both answered, order preserved", async () => {
+        const { history, runtime } = await runNative([
+            {
+                calls: [
+                    { id: "c1", name: "now", arguments: "{}" },
+                    { id: "c2", name: "now", arguments: '{"format":"human"}' },
+                ],
+            },
+            { text: "Done." },
+        ])
+        expect(history.map((message) => message.role)).toEqual([
+            "user",
+            "assistant",
+            "tool",
+            "tool",
+            "assistant",
+        ])
+        await runtime.stop()
+    })
+
+    test("a fragmented argument document is reassembled before the tool runs", async () => {
+        const { events, result, runtime } = await runNative([
+            { calls: [{ id: "c1", name: "now", arguments: '{"timezone":"Europe/London"}' }] },
+            { text: "Done." },
+        ])
+        const call = events.find((event) => event.type === "tool.call")
+        expect(payload<{ slug: string }>(call).slug).toBe("now")
+        expect(result.reason).toBe("final")
+        await runtime.stop()
+    })
+})
+
+describe("native failures the wire format makes possible", () => {
+    test("unreadable arguments trigger exactly one repair, then an honest failure", async () => {
+        // `now` has no required fields, so treating a truncated document as "no arguments" would run
+        // it and report success for a call the model never made. This is the case that path exists for.
+        const { result, events, runtime } = await runNative([
+            { calls: [{ id: "c1", name: "now", arguments: '{"timezone":"Euro' }] },
+        ])
+        expect(result.reason).toBe("error")
+        expect(result.error?.code).toBe("tool_repair_failed")
+        expect(result.steps).toBe(2)
+        const repairs = events.filter((event) => event.type === "tool.repair")
+        expect(repairs.length).toBe(2)
+        await runtime.stop()
+    })
+
+    test("the repair answers every announced call, including the unreadable one", async () => {
+        // An unanswered `tool_calls` entry is a protocol error, and the broken call is the one that
+        // never became an intent — so it is the one most easily left dangling.
+        const { requests, runtime } = await runNative([
+            {
+                calls: [
+                    { id: "c1", name: "now", arguments: "{}" },
+                    { id: "c2", name: "now", arguments: "{broken" },
+                ],
+            },
+            { text: "Sorry." },
+        ])
+        const answered = (requests[1]?.messages ?? [])
+            .filter((message) => message.role === "tool")
+            .map((message) => message.tool_call_id)
+        expect(answered).toEqual(["c1", "c2"])
+        await runtime.stop()
+    })
+
+    test("nothing runs when one call in the step is unreadable", async () => {
+        // All-or-nothing, same as NLT: rewriting the step would re-run a mutating call that had
+        // already succeeded, and there is no idempotency key here.
+        const { events, runtime } = await runNative([
+            {
+                calls: [
+                    { id: "c1", name: "memory_write", arguments: '{"text":"a note"}' },
+                    { id: "c2", name: "now", arguments: "{oops" },
+                ],
+            },
+            { text: "Sorry." },
+        ])
+        expect(events.filter((event) => event.type === "tool.result").length).toBe(0)
+        await runtime.stop()
+    })
+
+    test("an invented tool name becomes a repair naming what does exist", async () => {
+        const { result, events, runtime } = await runNative([
+            { calls: [{ id: "c1", name: "send_email", arguments: "{}" }] },
+            { text: "I cannot do that." },
+        ])
+        const repair = events.find((event) => event.type === "tool.repair")
+        expect(payload<{ errors: string[] }>(repair).errors.join(" ")).toContain("send_email")
+        expect(result.reason).toBe("final")
+        await runtime.stop()
+    })
+})
+
+describe("what a native message costs", () => {
+    test("an assistant turn's argument documents are counted, not just its content", async () => {
+        // Same invisible-cost mistake as the wire catalogue, arriving by a different route: `content`
+        // is not the whole message under native, and a tool-heavy history would be undercounted.
+        const { assembleContext } = await import("../src/context/assemble.ts")
+        const big = JSON.stringify({ body: "x".repeat(4000) })
+        const withCalls = assembleContext({
+            identity: "id",
+            history: [
+                {
+                    role: "assistant",
+                    content: "",
+                    toolCalls: [{ id: "c1", name: "email_send", arguments: big }],
+                },
+            ],
+            input: "hi",
+            window: 16_384,
+            reserveOutput: 1024,
+        })
+        const withoutCalls = assembleContext({
+            identity: "id",
+            history: [{ role: "assistant", content: "" }],
+            input: "hi",
+            window: 16_384,
+            reserveOutput: 1024,
+        })
+        expect(withCalls.totalTokens).toBeGreaterThan(withoutCalls.totalTokens + 900)
+    })
+
+    test("the wire catalogue is subtracted from the window it cannot be seen in", async () => {
+        // Under native the catalogue is in the request body, so `assembleContext` never sees it. If the
+        // loop did not subtract it, a turn would believe it had room it does not.
+        const { requests, runtime } = await runNative([{ text: "Nine." }])
+        const tools = requests[0]?.tools ?? []
+        expect(tools.length).toBe(2)
         await runtime.stop()
     })
 })

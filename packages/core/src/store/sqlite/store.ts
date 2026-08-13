@@ -11,7 +11,7 @@
  * ones, so mapping is also where the two runtimes stop being distinguishable.
  */
 
-import type { ChatMessage } from "../../model/provider.ts"
+import type { ChatMessage, ToolCallRequest } from "../../model/provider.ts"
 import { parseSessionKey } from "../session-key.ts"
 import type {
     KVStore,
@@ -55,7 +55,34 @@ interface MessageRow {
     turn_id: string | null
     role: string
     content: string
+    /** JSON array of `ToolCallRequest`, or null. Native only — under NLT the call is the content. */
+    tool_calls: string | null
+    tool_call_id: string | null
     created_at: string
+}
+
+/**
+ * The message columns every read needs, as one fragment.
+ *
+ * One list rather than five, because the five queries below drifting apart is how `tool_calls` came
+ * to be dropped on the way back out in the first place: the column existed on the row type and two
+ * of the SELECTs simply did not ask for it, so a native session's history came back orphaned with
+ * nothing failing.
+ */
+const MESSAGE_COLUMNS =
+    "id, session_key, turn_id, role, content, tool_calls, tool_call_id, created_at"
+
+/** Parsed defensively: a row written by a future version must not crash a history read. */
+function toolCallsFrom(raw: string | null): readonly ToolCallRequest[] | undefined {
+    if (raw === null || raw === "") return undefined
+    try {
+        const parsed = JSON.parse(raw) as unknown
+        return Array.isArray(parsed) && parsed.length > 0
+            ? (parsed as ToolCallRequest[])
+            : undefined
+    } catch {
+        return undefined
+    }
 }
 
 interface TurnRow {
@@ -108,13 +135,33 @@ function toSummary(row: SummaryRow): SessionSummary {
 }
 
 function toMessage(row: MessageRow): StoredMessage {
+    const calls = toolCallsFrom(row.tool_calls)
     return {
         id: row.id,
         sessionKey: row.session_key,
         ...(row.turn_id === null ? {} : { turnId: row.turn_id }),
         role: row.role as ChatMessage["role"],
         content: row.content,
+        ...(calls === undefined ? {} : { toolCalls: calls }),
+        ...(row.tool_call_id === null ? {} : { toolCallId: row.tool_call_id }),
         createdAt: row.created_at,
+    }
+}
+
+/**
+ * A row as the model layer wants it: exactly a `ChatMessage`, with no store bookkeeping.
+ *
+ * Separate from `toMessage` because the two have different jobs — that one is the API surface for
+ * reading a session, this one feeds a prompt — but both must carry the tool fields, and having them
+ * in one file makes it hard for only one to be updated.
+ */
+function toChatMessage(row: MessageRow): ChatMessage {
+    const calls = toolCallsFrom(row.tool_calls)
+    return {
+        role: row.role as ChatMessage["role"],
+        content: row.content,
+        ...(calls === undefined ? {} : { toolCalls: calls }),
+        ...(row.tool_call_id === null ? {} : { toolCallId: row.tool_call_id }),
     }
 }
 
@@ -196,30 +243,29 @@ export class SqliteStore implements Store {
             turnsDelete: db.prepare("DELETE FROM turns WHERE agent_id = ? AND session_key = ?"),
 
             messageInsert: db.prepare(
-                `INSERT INTO messages (agent_id, session_key, turn_id, role, content, created_at)
-                 VALUES (?, ?, ?, ?, ?, ?)`,
+                `INSERT INTO messages
+                     (agent_id, session_key, turn_id, role, content, tool_calls, tool_call_id, created_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
             ),
-            messageById: db.prepare(
-                "SELECT id, session_key, turn_id, role, content, created_at FROM messages WHERE id = ?",
-            ),
+            messageById: db.prepare(`SELECT ${MESSAGE_COLUMNS} FROM messages WHERE id = ?`),
             historyAll: db.prepare(
-                `SELECT role, content FROM messages
+                `SELECT ${MESSAGE_COLUMNS} FROM messages
                   WHERE agent_id = ? AND session_key = ? ORDER BY id ASC`,
             ),
             historyTail: db.prepare(
-                `SELECT role, content FROM (
-                     SELECT id, role, content FROM messages
+                `SELECT * FROM (
+                     SELECT ${MESSAGE_COLUMNS} FROM messages
                       WHERE agent_id = ? AND session_key = ?
                       ORDER BY id DESC LIMIT ?
                  ) ORDER BY id ASC`,
             ),
             pageFirst: db.prepare(
-                `SELECT id, session_key, turn_id, role, content, created_at FROM messages
+                `SELECT ${MESSAGE_COLUMNS} FROM messages
                   WHERE agent_id = ? AND session_key = ?
                   ORDER BY id DESC LIMIT ?`,
             ),
             pageBefore: db.prepare(
-                `SELECT id, session_key, turn_id, role, content, created_at FROM messages
+                `SELECT ${MESSAGE_COLUMNS} FROM messages
                   WHERE agent_id = ? AND session_key = ? AND id < ?
                   ORDER BY id DESC LIMIT ?`,
             ),
@@ -332,6 +378,12 @@ export class SqliteStore implements Store {
                             turnId,
                             message.role,
                             message.content,
+                            // Serialised rather than normalised into their own table: they are read
+                            // and written only as a whole message, never queried across.
+                            message.toolCalls === undefined || message.toolCalls.length === 0
+                                ? null
+                                : JSON.stringify(message.toolCalls),
+                            message.toolCallId ?? null,
                             ts,
                         )
                         const row = q.messageById.get<MessageRow>(result.lastInsertRowid)
@@ -344,16 +396,12 @@ export class SqliteStore implements Store {
             history: async (agentId, sessionKey, limit) => {
                 const rows =
                     limit === undefined
-                        ? q.historyAll.all<{ role: string; content: string }>(agentId, sessionKey)
-                        : q.historyTail.all<{ role: string; content: string }>(
-                              agentId,
-                              sessionKey,
-                              limit,
-                          )
-                return rows.map((row) => ({
-                    role: row.role as ChatMessage["role"],
-                    content: row.content,
-                }))
+                        ? q.historyAll.all<MessageRow>(agentId, sessionKey)
+                        : q.historyTail.all<MessageRow>(agentId, sessionKey, limit)
+                // Via `toChatMessage` rather than `{role, content}`: a native assistant turn carries
+                // the calls it made and a `tool` message names the call it answers, and a history read
+                // that drops either hands the next turn an orphaned trace.
+                return rows.map(toChatMessage)
             },
             page: async (agentId, sessionKey, options) => {
                 const limit = options?.limit ?? DEFAULT_PAGE

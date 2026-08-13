@@ -25,6 +25,7 @@ const COLOUR: Record<TranscriptItem["role"], string | undefined> = {
     reasoning: "gray",
     note: "gray",
     error: "red",
+    tool: "blue",
 }
 
 const PREFIX: Record<TranscriptItem["role"], string> = {
@@ -33,6 +34,7 @@ const PREFIX: Record<TranscriptItem["role"], string> = {
     reasoning: "· reasoning · ",
     note: "· ",
     error: "✖ ",
+    tool: "  · ",
 }
 
 export function Transcript({ items, showReasoning, quiet }: TranscriptProps) {
@@ -50,7 +52,7 @@ export function Transcript({ items, showReasoning, quiet }: TranscriptProps) {
                     <Text
                         key={item.id}
                         {...(colour === undefined ? {} : { color: colour })}
-                        dimColor={item.role === "reasoning"}
+                        dimColor={item.role === "reasoning" || item.role === "tool"}
                     >
                         {PREFIX[item.role]}
                         {item.text}

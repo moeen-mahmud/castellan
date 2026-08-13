@@ -15,7 +15,7 @@
  */
 
 import type { TurnEndReason } from "../events/types.ts"
-import type { ChatMessage } from "../model/provider.ts"
+import type { ChatMessage, ToolCallRequest } from "../model/provider.ts"
 
 /**
  * A turn's lifecycle state. `running` plus the five ways a turn can end.
@@ -54,6 +54,16 @@ export interface StoredMessage {
     readonly turnId?: string
     readonly role: ChatMessage["role"]
     readonly content: string
+    /**
+     * Native tool calling's two extra facts, persisted and read back.
+     *
+     * Present only under the `native` dialect, where a message is genuinely more than `{role, content}`:
+     * an assistant turn carries the calls it made, and a `tool` observation names the call it answers.
+     * Losing either turns a resumed session's history into an orphaned trace — a 400 from a strict
+     * endpoint, and a silently confused model on a lenient one.
+     */
+    readonly toolCalls?: readonly ToolCallRequest[]
+    readonly toolCallId?: string
     readonly createdAt: string
 }
 

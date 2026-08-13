@@ -32,9 +32,9 @@ export const PROMPT = "› "
 
 // ─── commands and input ──────────────────────────────────────────────────────────────────
 
-export const EXIT_WORDS: readonly string[] = ["/exit", "/quit", ":q"]
-export const RESET_WORD = "/reset"
-export const HELP_WORD = "/help"
+// The command words themselves live in `session-commands.ts`, beside the summary that documents
+// each one and the dispatch that honours it. Three bare string constants here is how the help text
+// and the parser came to disagree in the first place.
 
 /** Lines of input history kept for the up/down arrows. */
 export const HISTORY_LIMIT = 200

@@ -67,6 +67,12 @@ export interface ToolContext {
     readonly agentId: string
     readonly sessionKey: string
     readonly turnId: string
+    /**
+     * The agent's own directory — the one its manifest sits in. A tool that touches the filesystem
+     * resolves against this, never against `process.cwd()`, which belongs to whoever launched the
+     * process and moves depending on how they did it.
+     */
+    readonly dir: string
     /** The turn's signal. A handler that ignores it will be abandoned, not killed. */
     readonly signal: AbortSignal
     readonly now: () => Date

@@ -30,6 +30,11 @@ export function useTurn(options: {
     const [state, dispatch] = useReducer(reduce, initial)
     const controller = useRef<AbortController | undefined>(undefined)
 
+    // A stream filter is stateful and the reducer is pure, so filtering happens here, on the way in.
+    // Without it the live pane shows `ACTION:` and `END` and then commits them as the reply: with a
+    // line-oriented dialect the invocation *is* text, and only the dialect knows which text.
+    const filter = useRef(agent.streamFilter())
+
     useEffect(() => {
         // One wildcard subscription rather than six by name: the reducer already ignores what it
         // does not own, and a subscription list would silently miss any event a later phase adds.
@@ -38,9 +43,34 @@ export function useTurn(options: {
             // a different peer while this prompt is open. An event with no session key is
             // runtime-wide and belongs to everyone.
             if (event.sessionKey !== undefined && event.sessionKey !== sessionKey) return
+
+            // Reasoning is never parsed for tool calls, so it is never filtered for them either.
+            if (event.type === "model.chunk") {
+                const { delta, kind } = event.data
+                if (kind === "reasoning") {
+                    dispatch({ kind: "delta", of: "reasoning", text: delta })
+                    return
+                }
+                dispatch({ kind: "delta", of: "text", text: filter.current.push(delta) })
+                return
+            }
+
+            // The filter owns the paragraph break between one step's narration and the next's, which
+            // is why it is told where a step ends rather than being replaced at each one.
+            if (event.type === "model.result") {
+                dispatch({ kind: "delta", of: "text", text: filter.current.endStep() })
+                return
+            }
+
+            if (event.type === "turn.end") {
+                // Flush before the reducer commits the reply, or the last line of it is lost.
+                dispatch({ kind: "delta", of: "text", text: filter.current.end() })
+                filter.current = agent.streamFilter()
+            }
+
             dispatch({ kind: "event", event })
         })
-    }, [bus, sessionKey])
+    }, [agent, bus, sessionKey])
 
     const send = useCallback(
         (text: string) => {

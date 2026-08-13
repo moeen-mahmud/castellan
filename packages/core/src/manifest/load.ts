@@ -225,6 +225,7 @@ export function loadManifestFromObject(
     const failures = validateManifest(manifest, {
         dir: options.dir,
         resolvedWindow: window,
+        capabilities,
         env,
         raw: expanded,
     })

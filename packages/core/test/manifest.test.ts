@@ -350,9 +350,9 @@ model:
     apiKeyEnv: MODEL_API_KEY
 `),
             },
-            { ...ENV, MODEL_ID: "qwen3:8b", MODEL_BASE_URL: "http://localhost:11434/v1" },
+            { ...ENV, MODEL_ID: "qwen3.5:9b", MODEL_BASE_URL: "http://localhost:11434/v1" },
         )
-        expect(loaded.manifest.model.main.id).toBe("qwen3:8b")
+        expect(loaded.manifest.model.main.id).toBe("qwen3.5:9b")
         expect(loaded.manifest.model.main.baseUrl).toBe("http://localhost:11434/v1")
     })
 
@@ -368,7 +368,7 @@ model:
                 "agent.yaml": manifestYaml(`id: t
 model:
   main:
-    id: qwen3:8b
+    id: qwen3.5:9b
     baseUrl: http://localhost:11434/v1
 `),
             },
@@ -573,10 +573,8 @@ tools:
         expect(allDetails(error)[0]?.hint).toContain("two-hop")
     })
 
-    test("the native dialect is refused rather than quietly served by nlt", () => {
-        // Silently substituting a dialect would make every dialect comparison in evals/ unreadable,
-        // and the manifest spec is explicit that the dialect is config, never inference.
-        const error = expectFailure({
+    test("the native dialect loads on a model known to support it", () => {
+        const loaded = load({
             "agent.yaml": manifestYaml(`id: t
 model:
   main:
@@ -587,8 +585,43 @@ tools:
   dialect: native
 `),
         })
-        expect(codes(error)).toContain("not_implemented_yet")
+        expect(loaded.manifest.tools.dialect).toBe("native")
+    })
+
+    test("the native dialect is refused on a model with no native tool calling", () => {
+        // The alternative is a 400 on the first turn — or, on an endpoint that accepts an unknown
+        // `tools` key and ignores it, an agent that simply never calls a tool and never says why.
+        // Capability resolution already knows the answer, so the refusal happens here.
+        const error = expectFailure({
+            "agent.yaml": manifestYaml(`id: t
+model:
+  main:
+    id: some-unknown-local-model
+    baseUrl: http://localhost:11434/v1
+tools:
+  dialect: native
+`),
+        })
+        expect(codes(error)).toContain("native_tools_unsupported")
         expect(allDetails(error)[0]?.field).toBe("tools.dialect")
+    })
+
+    test("an author can declare native support the capability table does not know about", () => {
+        // Not a fight with the table: an unlisted model that genuinely does support tool calling is a
+        // supported configuration, and overriding the capability is how it is stated.
+        const loaded = load({
+            "agent.yaml": manifestYaml(`id: t
+model:
+  main:
+    id: some-unknown-local-model
+    baseUrl: http://localhost:11434/v1
+    capabilities:
+      nativeTools: true
+tools:
+  dialect: native
+`),
+        })
+        expect(loaded.manifest.tools.dialect).toBe("native")
     })
 
     test("pinning and the nlt dialect load — slugs are resolved at agent load, not here", () => {

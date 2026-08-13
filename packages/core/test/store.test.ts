@@ -530,3 +530,70 @@ describe("persistence across processes", () => {
         await store.close()
     })
 })
+
+describe("native tool calls survive the round trip", () => {
+    /**
+     * The regression this locks down was found live, not reasoned about. `messages` allowed the `tool`
+     * role from migration 1 but had nowhere to put the call ids, so a resumed native session read back
+     * an assistant turn with empty content and no calls, and a `tool` message answering nothing.
+     * qwen3.5:9b via Ollama accepted that trace and replied anyway — a strict endpoint would 400, and
+     * the lenient one just quietly denied the model any record of what it had called.
+     */
+    const TRACE = [
+        { role: "user" as const, content: "what time is it?" },
+        {
+            role: "assistant" as const,
+            content: "",
+            toolCalls: [{ id: "call_1", name: "now", arguments: '{"timezone":"UTC"}' }],
+        },
+        { role: "tool" as const, content: "13:48 UTC", toolCallId: "call_1" },
+        { role: "assistant" as const, content: "It is 13:48 UTC." },
+    ]
+
+    test("history reads back exactly what was appended", async () => {
+        const store = await openMemoryStore()
+        await store.sessions.ensure("a", "local:x")
+        await store.messages.append("a", "local:x", TRACE, "t1")
+        expect(await store.messages.history("a", "local:x")).toEqual(TRACE)
+        await store.close()
+    })
+
+    test("a tail read carries them too — every SELECT, not just the full one", async () => {
+        // The failure mode being guarded: one query updated and the others not. `history` with a limit
+        // is a different statement from `history` without one.
+        const store = await openMemoryStore()
+        await store.sessions.ensure("a", "local:x")
+        await store.messages.append("a", "local:x", TRACE, "t1")
+        const tail = await store.messages.history("a", "local:x", 3)
+        expect(tail.length).toBe(3)
+        expect(tail[0]?.toolCalls?.[0]?.id).toBe("call_1")
+        expect(tail[1]?.toolCallId).toBe("call_1")
+        await store.close()
+    })
+
+    test("the paged read surfaces them as well", async () => {
+        const store = await openMemoryStore()
+        await store.sessions.ensure("a", "local:x")
+        await store.messages.append("a", "local:x", TRACE, "t1")
+        const page = await store.messages.page("a", "local:x", { limit: 10 })
+        const observation = page.messages.find((message) => message.role === "tool")
+        expect(observation?.toolCallId).toBe("call_1")
+        await store.close()
+    })
+
+    test("an NLT trace stores no tool columns at all", async () => {
+        // Both columns nullable and unused under NLT, where the call *is* the content.
+        const store = await openMemoryStore()
+        await store.sessions.ensure("a", "local:x")
+        await store.messages.append(
+            "a",
+            "local:x",
+            [{ role: "assistant", content: "ACTION: now\nEND" }],
+            "t1",
+        )
+        expect(await store.messages.history("a", "local:x")).toEqual([
+            { role: "assistant", content: "ACTION: now\nEND" },
+        ])
+        await store.close()
+    })
+})

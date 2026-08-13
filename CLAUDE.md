@@ -141,7 +141,8 @@ packages/channel-*/  Telegram, WhatsApp
 packages/tools-*/    Composio, MCP
 packages/compat-openclaw/   VelaOps bridge — quarantined, deletable
 docs/                design + plan (read these)
-evals/               committed eval results; every performance claim has a number here
+evals/               fixtures/ the shared catalogue and tasks; tools/ committed results.
+                     Every performance claim has a number here
 scripts/             bench-boot, rename-brand
 ```
 
@@ -210,3 +211,20 @@ Never claim a performance property without a number in `evals/` and a script to 
   terminal restore fires only when the rich path has dirtied the terminal.
 - **Turns are detached from the client connection.** Never cancel on disconnect. Persist
   partial content only on explicit stop.
+- **A `ChatMessage` is no longer just `{role, content}`.** Under the `native` dialect it carries
+  `toolCalls` or `toolCallId`, and every layer that copies a message must copy those too — the wire
+  mapper in `chat-completions.ts`, the `message` field on `ContextBlock`, and the store's
+  `tool_calls`/`tool_call_id` columns. Each of the three dropped them at some point during Phase 3,
+  and none of the three failed loudly: the endpoint accepts the request and the model simply never
+  sees the call it made.
+- **Both dialects must put the same guidance in front of the model.** `native`'s
+  `function.description` carries `whenToUse` and `whenNotToUse`, not just the summary. Trimming it to
+  the summary makes `evals/tools` measure the guidance and report it as a property of the dialect.
+- **A placeholder in a prompt example is an instruction to a small model.** The NLT preamble said
+  "exactly like this" and showed `field: value`; qwen3.5:9b wrote `field: title` / `value: <the value>`
+  and NLT scored 27% against native's 92% — its reasoning about which tool and which arguments was
+  correct every time. Examples in `PREAMBLE` are concrete, use a tool that exists in no catalogue, and
+  are asserted by parsing the rendered catalogue with `parseNlt` itself. This cuts the other way too:
+  because NLT's protocol is prose the model imitates and native's is a schema the API enforces, *any*
+  defect in the preamble shows up as a dialect difference. Before believing an NLT-vs-native number,
+  read what the model actually wrote — `results.json` keeps it on every non-`correct` attempt.

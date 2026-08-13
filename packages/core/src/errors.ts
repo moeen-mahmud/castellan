@@ -307,6 +307,23 @@ export function toolBudgetExceeded(requested: number, max: number): ConfigError 
     })
 }
 
+/**
+ * A slug the `native` wire format cannot carry.
+ *
+ * Refused at load rather than rewritten to something legal. A rewrite is lossy in both directions —
+ * `a.b` and `a_b` become the same name on the way out, and the model's reply names the rewritten form
+ * — so the loop would have to guess which tool was meant. Under NLT the same slug is fine, which is
+ * why this is a dialect error and not a registry one.
+ */
+export function nativeToolNameInvalid(slug: string, provider: string): ConfigError {
+    return new ConfigError({
+        code: "native_tool_name_invalid",
+        message: `The tool "${slug}" (from ${provider}) cannot be used with tools.dialect: native — a native function name may only contain letters, digits, underscores and hyphens, and must be 1-64 characters.`,
+        hint: `Either switch to the nlt dialect, which accepts this slug as written and is the default, or ask ${provider} for a slug within that grammar. It is refused rather than rewritten because a rewritten name is ambiguous on the way back — two different slugs can map onto one legal name.`,
+        field: "tools.dialect",
+    })
+}
+
 export function toolSlugCollision(slug: string, providers: readonly string[]): ConfigError {
     return new ConfigError({
         code: "tool_slug_collision",

@@ -57,6 +57,20 @@ function block(
     return { slot, role, content, pinned, tokens: estimateMessageTokens(content), label }
 }
 
+/**
+ * What one history message costs.
+ *
+ * `content` is not the whole message under the `native` dialect: an assistant turn carries the
+ * argument documents of the calls it made, and those are billed like any other tokens. Counting only
+ * the content undercounts a tool-heavy history — the same invisible-cost mistake `wireTokens` exists
+ * to correct for the catalogue, arriving here by a different route.
+ */
+function messageCost(message: ChatMessage): number {
+    const calls = message.toolCalls
+    if (calls === undefined || calls.length === 0) return estimateMessageTokens(message.content)
+    return estimateMessageTokens(message.content) + estimateTokens(JSON.stringify(calls))
+}
+
 export function assembleContext(input: AssembleInput): AssembledContext {
     const promptBudget = Math.max(1, input.window - input.reserveOutput)
 
@@ -84,7 +98,7 @@ export function assembleContext(input: AssembleInput): AssembledContext {
     for (let i = input.history.length - 1; i >= 0; i -= 1) {
         const message = input.history[i]
         if (message === undefined) continue
-        const cost = estimateMessageTokens(message.content)
+        const cost = messageCost(message)
         if (cost > remaining) {
             dropped = i + 1
             break
@@ -93,9 +107,16 @@ export function assembleContext(input: AssembleInput): AssembledContext {
         kept.unshift(message)
     }
 
-    const historyBlocks = kept.map((message) =>
-        block(SLOT.history, message.role, message.content, false, "history"),
-    )
+    // Carrying the message itself, not just its role and content. A `tool` observation names the call
+    // it answers and an assistant turn carries the calls it made; a block describes neither, so
+    // rebuilding messages from blocks alone would quietly strip both back out on the next step.
+    const historyBlocks = kept.map((message) => ({
+        ...block(SLOT.history, message.role, message.content, false, "history"),
+        // `tokens` from the same function the trimming loop used, so the reported total and the budget
+        // that produced it cannot disagree about what a message costs.
+        tokens: messageCost(message),
+        message,
+    }))
 
     // Slot order, not insertion order: 0 and 1 lead so the cached prefix is the same bytes every
     // turn, and the pinned tail follows the history it applies to.
@@ -108,7 +129,7 @@ export function assembleContext(input: AssembleInput): AssembledContext {
 
     return {
         blocks,
-        messages: blocks.map((b) => ({ role: b.role, content: b.content })),
+        messages: blocks.map((b) => b.message ?? { role: b.role, content: b.content }),
         totalTokens: blocks.reduce((sum, b) => sum + b.tokens, 0),
         promptBudget,
         droppedMessages: dropped,

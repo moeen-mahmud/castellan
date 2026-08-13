@@ -52,7 +52,7 @@ describe("gateway and tag prefixes", () => {
     })
 
     test("an Ollama tag suffix still matches", () => {
-        expect(matchCapabilities("qwen3:8b").capabilities.contextWindow).toBe(32_768)
+        expect(matchCapabilities("qwen3.5:9b").capabilities.contextWindow).toBe(32_768)
     })
 
     test("a vendor prefix and a tag together still match", () => {

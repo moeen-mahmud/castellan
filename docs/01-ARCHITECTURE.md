@@ -293,20 +293,77 @@ single highest-leverage knob for small-model reliability.
 ### Dialects
 
 ```ts
+interface StepOutput {
+  text: string
+  calls: readonly ToolCallRequest[]     // always empty under a text dialect
+}
+
 interface ToolDialect {
   id: "nlt" | "native"
   renderCatalogue(specs: readonly ToolSpec[]): readonly ContextBlock[]
-  parse(output: string): { intents: readonly ToolIntent[]; text: string }
-  renderObservation(results: readonly ToolResult[]): ChatMessage
-  renderRepair(errors: readonly FieldError[]): ChatMessage
+  requestTools(specs: readonly ToolSpec[]): readonly ToolDefinition[] | undefined
+  parse(output: StepOutput): { intents: readonly ToolIntent[]; text: string; malformed?: readonly FieldError[] }
+  createStreamFilter(): StreamFilter
+  renderCall(output: StepOutput): ChatMessage
+  renderObservation(results: readonly ToolResult[]): readonly ChatMessage[]
+  renderRepair(errors: readonly FieldError[], output: StepOutput): readonly ChatMessage[]
 }
 ```
 
-`renderObservation` takes a step's results together rather than one at a time: a step may carry
-several blocks, and one message per result triples the "continue or reply" instruction that follows
-them. `parse` takes the model's text and nothing else — it is deliberately **schema-free**, reporting
-what was written verbatim, and `coerce.ts` alone decides what that means for a given tool. That split
-is why a field-matching change cannot break block detection.
+**A dialect receives both halves of what a step produced**, because which half carries the protocol is
+the dialect's decision rather than the loop's. Under NLT the call *is* text and `calls` is empty; under
+`native` the call is in `calls` and the text is only prose. `parseNlt` keeps its `string` signature —
+it is a text parser and giving it the envelope would imply it might read the other half.
+
+NLT's parser is deliberately **schema-free**: it reports what was written verbatim and `coerce.ts`
+alone decides what that means for a given tool, which is why a field-matching change cannot break block
+detection. `malformed` exists because `native` has a failure NLT does not — a truncated `arguments`
+document is not JSON and no tolerance recovers it. It is reported as unreadable rather than as an empty
+argument set, because a tool with no required fields would otherwise *run*, with no arguments, having
+been asked for something else.
+
+The three render methods return lists and take the step's output for one forced reason: `native`
+requires one `tool` message per call, each naming the id it answers, and an assistant turn whose
+`tool_calls` were not all answered is rejected outright. `renderRepair` is driven by `output.calls`
+rather than by the parsed intents, since the call whose arguments would not parse never became an
+intent — and that is precisely the one a repair is usually about.
+
+`renderObservation` under NLT returns exactly one message however many results there were: one per
+result would repeat the "continue or reply" instruction after every observation. Under `native` that
+instruction is omitted entirely, because the protocol itself says an assistant turn follows the tool
+messages.
+
+### Streaming a dialect that lives in the text
+
+With a line-oriented dialect the invocation *is* the reply text, so a consumer that prints
+`model.chunk` deltas as they arrive shows `ACTION:` and `END` to the person and runs them into the
+answer that follows. Every streaming surface has this problem — the CLI, the server's SSE clients, a
+TUI — so the dialect supplies the fix:
+
+```ts
+interface StreamFilter {
+  push(delta: string): string   // text safe to show now
+  endStep(): string             // a step ended; the next is about to start
+  end(): string                 // the turn is over
+}
+```
+
+Three properties make it correct rather than approximate:
+
+- **It is the same grammar as `parse`.** Both drive one line-at-a-time consumer. A separate
+  classifier for display would be a second parser, and a second parser drifts — the version deciding
+  what the person sees would eventually disagree with the version deciding what runs. The property is
+  asserted directly: a filtered stream equals `parse().text`, at every chunk size.
+- **It waits only where it must.** A partial line is held while it could still become `ACTION:` or a
+  fence — at most six characters — and never mid-line. A reply is usually one long line, so
+  line-buffering would have made streaming decorative.
+- **`endStep` owns the paragraph break between steps.** A step's output ends without a newline, so a
+  filter carried straight across the boundary glues the next step's first word onto this one's `END`;
+  and the loop joins each step's trimmed prose with a blank line. Both belong to the dialect, or every
+  consumer reinvents them and they disagree.
+
+Trailing whitespace is held rather than emitted, because `parse` trims the finished reply and a stream
+cannot un-emit. What is still held at the end was trailing after all, and is dropped.
 
 **NLT** is the default. The catalogue renders as prose, not JSON schema:
 
@@ -364,6 +421,28 @@ second time. There is no idempotency key available at this layer to make the alt
 **native** uses the provider's `tools` parameter and `tool_calls` response. Opt-in only.
 Note that Anthropic's compat endpoint ignores `strict`, so schema conformance is not
 guaranteed there even in native mode — the coercion layer runs regardless.
+
+Four things about native are easy to get wrong, and three of them fail silently:
+
+- **`function.description` carries the same guidance as the NLT catalogue entry** — summary,
+  `Use when`, `Do NOT use when`, and the state-change warning. Setting it to `spec.summary` is the
+  obvious implementation and it rigs the eval: the comparison would be measuring the guidance.
+  Asserted by a test in `native.test.ts`.
+- **Messages need an explicit wire mapping.** The request body was built with `messages:
+  request.messages`, correct only while a message was exactly `{role, content}` — both already wire
+  names. A camelCase `toolCalls` reaching the endpoint is a field it has never heard of: the request
+  succeeds, the model never sees the call it made, and the agent repeats itself with no error anywhere.
+- **The store must persist the call ids.** Migration 2 adds `tool_calls` and `tool_call_id` to
+  `messages`. Without them a resumed native session reads back an assistant turn with empty content
+  and no calls, and a `tool` message answering nothing — a 400 from a strict endpoint, and a silently
+  confused model on a lenient one. Measured: qwen3.5:9b via Ollama accepted the orphaned trace.
+- **The catalogue is invisible to the context budget.** It travels in the request body, so slot 1 is
+  empty and `assembleContext` cannot see the cost. `ToolRuntime.wireTokens` is subtracted from the
+  window, and `describe().catalogueTokens` includes it — otherwise a native catalogue reports as free.
+
+A slug outside `[A-Za-z0-9_-]{1,64}` cannot be a native function name and is **refused at load**
+naming the slug and the provider. `gmail.send` is legal under NLT and illegal here; rewriting it is
+lossy in both directions, so the loop would have to guess which tool a reply meant.
 
 ---
 

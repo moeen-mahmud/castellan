@@ -1,0 +1,207 @@
+/**
+ * In-session commands, and the property that makes the help trustworthy.
+ *
+ * The last suite here is the point of the file. Command help is *generated* from the table, so it
+ * cannot drift. Key-binding help cannot be generated — `keyToIntent` is a function, and what `^C`
+ * means depends on whether a turn is running — so the loop is closed from both ends instead: every
+ * documented chord must produce a real intent, and every chord that produces one must be documented.
+ * That is what caught five working bindings the old hand-written string never mentioned.
+ */
+
+import { describe, expect, test } from "bun:test"
+import { type KeyContext, keyToIntent } from "#keymap"
+import {
+    DOCUMENTED_CTRL_LETTERS,
+    KEY_BINDINGS,
+    resolveSessionCommand,
+    SESSION_COMMANDS,
+    sessionHelpText,
+    toolsReport,
+    toolsView,
+    unknownCommandText,
+} from "#lib/session-commands"
+import type { KeyState } from "#lib/types"
+
+describe("recognising a command", () => {
+    test("every canonical word resolves to its own kind", () => {
+        for (const spec of SESSION_COMMANDS) {
+            expect(resolveSessionCommand(spec.word)).toEqual({ kind: spec.kind })
+        }
+    })
+
+    test("every alias resolves to the same kind as its word", () => {
+        for (const spec of SESSION_COMMANDS) {
+            for (const alias of spec.aliases) {
+                expect(resolveSessionCommand(alias)).toEqual({ kind: spec.kind })
+            }
+        }
+    })
+
+    test("case and surrounding whitespace do not matter", () => {
+        expect(resolveSessionCommand("  /HELP  ")).toEqual({ kind: "help" })
+        expect(resolveSessionCommand("/Tools")).toEqual({ kind: "tools" })
+    })
+})
+
+describe("what is a prompt and not a command", () => {
+    // Each of these is a thing someone genuinely says to an agent. Refusing any of them would cost
+    // a real message to save a typo.
+    test.each([
+        ["ordinary prose", "what time is it"],
+        ["an absolute path", "/etc/passwd is world-readable, is that expected?"],
+        ["a path alone", "/usr/local/bin"],
+        ["a slash inside a word", "read the and/or clause back to me"],
+        ["a command mentioned in a sentence", "what does /help print"],
+        ["nothing at all", ""],
+    ])("%s goes to the model", (_label, text) => {
+        expect(resolveSessionCommand(text)).toBeUndefined()
+    })
+})
+
+describe("a word that meant to be a command", () => {
+    test("a near miss names the nearest match", () => {
+        expect(resolveSessionCommand("/tols")).toEqual({
+            kind: "unknown",
+            word: "/tols",
+            nearest: "/tools",
+        })
+    })
+
+    test("nothing close enough suggests nothing rather than something wrong", () => {
+        // A bad suggestion is worse than none — it sends someone off to read about the wrong thing.
+        const command = resolveSessionCommand("/subscribe")
+        if (command === undefined || command.kind !== "unknown") {
+            throw new Error(`expected an unknown-command result, got ${JSON.stringify(command)}`)
+        }
+        expect(command.nearest).toBeUndefined()
+    })
+
+    test("the refusal says how to send it to the model instead", () => {
+        const text = unknownCommandText({ word: "/tols", nearest: "/tools" })
+        expect(text).toContain("/tols is not a command")
+        expect(text).toContain("/tools")
+        expect(text).toContain("/help")
+    })
+})
+
+describe("help text is generated, not written", () => {
+    test("every command word appears", () => {
+        const help = sessionHelpText()
+        for (const spec of SESSION_COMMANDS) {
+            expect(help).toContain(spec.word)
+            for (const alias of spec.aliases) expect(help).toContain(alias)
+            expect(help).toContain(spec.summary)
+        }
+    })
+
+    test("every key binding appears", () => {
+        const help = sessionHelpText()
+        for (const binding of KEY_BINDINGS) {
+            expect(help).toContain(binding.chord)
+            expect(help).toContain(binding.summary)
+        }
+    })
+})
+
+describe("/tools", () => {
+    const VIEW = {
+        dialect: "nlt",
+        catalogueTokens: 412,
+        tools: [
+            { slug: "now", mutating: false, summary: "the current date and time" },
+            { slug: "memory_write", mutating: true, summary: "append a note" },
+        ],
+    }
+
+    test("reports the dialect, the count, and what slot 1 costs every turn", () => {
+        const report = toolsReport(VIEW)
+        expect(report).toContain("dialect nlt")
+        expect(report).toContain("2 tools")
+        expect(report).toContain("412 tokens")
+    })
+
+    test("marks a mutating tool as a write", () => {
+        const lines = toolsReport(VIEW).split("\n")
+        expect(lines.find((line) => line.includes("memory_write"))).toContain("write")
+        expect(lines.find((line) => line.includes("now"))).toContain("read")
+    })
+
+    test("an agent with no tools says so, and says where they would go", () => {
+        const report = toolsReport({ dialect: "nlt", catalogueTokens: 0, tools: [] })
+        expect(report).toContain("no tools")
+        expect(report).toContain("tools.local")
+    })
+
+    test("projects a live agent's description and catalogue", () => {
+        const view = toolsView({
+            describe: () => ({ dialect: "native", catalogueTokens: 0, window: 32_768 }),
+            tools: {
+                specs: () => [
+                    {
+                        slug: "now",
+                        mutating: false,
+                        summary: "the current date and time",
+                        provider: "local",
+                    },
+                ],
+            },
+        })
+        expect(view).toEqual({
+            dialect: "native",
+            catalogueTokens: 0,
+            tools: [{ slug: "now", mutating: false, summary: "the current date and time" }],
+        })
+    })
+})
+
+// ─── the drift loop ──────────────────────────────────────────────────────────────────────
+
+const NO_KEYS: KeyState = {
+    upArrow: false,
+    downArrow: false,
+    leftArrow: false,
+    rightArrow: false,
+    return: false,
+    escape: false,
+    ctrl: false,
+    shift: false,
+    tab: false,
+    backspace: false,
+    delete: false,
+    meta: false,
+}
+
+/** Both, because `^C` and `^D` answer differently depending on which one holds. */
+const CONTEXTS: readonly KeyContext[] = [
+    { busy: false, empty: true },
+    { busy: true, empty: false },
+]
+
+function honoured(letter: string): boolean {
+    return CONTEXTS.some(
+        (context) => keyToIntent(letter, { ...NO_KEYS, ctrl: true }, context).kind !== "none",
+    )
+}
+
+const ALPHABET = "abcdefghijklmnopqrstuvwxyz".split("")
+
+describe("documented bindings and real bindings are the same set", () => {
+    test("every documented chord is one the prompt actually honours", () => {
+        for (const letter of DOCUMENTED_CTRL_LETTERS) {
+            expect(honoured(letter)).toBe(true)
+        }
+    })
+
+    test("every chord the prompt honours is documented", () => {
+        const documented = new Set(DOCUMENTED_CTRL_LETTERS)
+        const missing = ALPHABET.filter((letter) => honoured(letter) && !documented.has(letter))
+        expect(missing).toEqual([])
+    })
+
+    test("the arrows are documented too", () => {
+        expect(keyToIntent("", { ...NO_KEYS, upArrow: true }, CONTEXTS[0] as KeyContext).kind).toBe(
+            "historyPrev",
+        )
+        expect(sessionHelpText()).toContain("↑ / ↓")
+    })
+})

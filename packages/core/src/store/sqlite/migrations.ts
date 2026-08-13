@@ -97,6 +97,26 @@ CREATE TABLE kv (
 );
 `,
     },
+    {
+        version: 2,
+        name: "messages_tool_calls",
+        /**
+         * Native tool calling needs two more facts about a message than `{role, content}` carries.
+         *
+         * Without them a resumed native session is broken in a way that only shows on its *second*
+         * turn: the assistant message recording what the model called comes back with empty content
+         * and no calls, and the `tool` message answering it comes back naming nothing. Against a
+         * strict endpoint that is a 400; against a lenient one the model is handed an observation
+         * with no idea what produced it, which is worse for being silent. Measured — qwen3.5:9b via
+         * Ollama accepted the orphaned trace and answered from context anyway.
+         *
+         * Both columns are nullable and unused under NLT, where the call *is* the content.
+         */
+        sql: `
+ALTER TABLE messages ADD COLUMN tool_calls TEXT;
+ALTER TABLE messages ADD COLUMN tool_call_id TEXT;
+`,
+    },
 ]
 
 export interface MigrationReport {

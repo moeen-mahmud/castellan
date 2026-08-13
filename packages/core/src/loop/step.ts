@@ -9,7 +9,12 @@
 
 import type { EventBus } from "../events/bus.ts"
 import type { EventContext } from "../events/types.ts"
-import type { ChatMessage, ModelProvider } from "../model/provider.ts"
+import type {
+    ChatMessage,
+    ModelProvider,
+    ToolCallRequest,
+    ToolDefinition,
+} from "../model/provider.ts"
 import type { ResolvedRole } from "../model/roles.ts"
 
 export interface StepInput {
@@ -18,6 +23,8 @@ export interface StepInput {
     readonly messages: readonly ChatMessage[]
     readonly params: { temperature?: number; topP?: number; maxTokens: number }
     readonly promptTokens: number
+    /** Wire-level tool definitions. Present under `native`, absent under a text dialect. */
+    readonly tools?: readonly ToolDefinition[]
     readonly bus: EventBus
     readonly context: EventContext
     readonly signal: AbortSignal
@@ -31,6 +38,11 @@ export interface StepResult {
     readonly promptTokens: number
     readonly outputTokens: number
     readonly latencyMs: number
+    /**
+     * Calls the transport reported structurally. Always empty under NLT, where a call *is* text and
+     * `text` carries it — which is why the dialect gets both and decides which one it reads.
+     */
+    readonly calls: readonly ToolCallRequest[]
     /** True when the signal fired before the stream finished. */
     readonly aborted: boolean
 }
@@ -57,11 +69,13 @@ export async function runStep(input: StepInput): Promise<StepResult> {
     let finishReason = ""
     let promptTokens = input.promptTokens
     let reportedOutputTokens: number | undefined
+    const calls: ToolCallRequest[] = []
 
     const stream = input.provider.chat(
         {
             model: input.role.config.id,
             messages: input.messages,
+            ...(input.tools === undefined ? {} : { tools: input.tools }),
             ...input.params,
         },
         input.signal,
@@ -85,6 +99,12 @@ export async function runStep(input: StepInput): Promise<StepResult> {
                         { delta: chunk.delta, kind: "reasoning" },
                         input.context,
                     )
+                    break
+                case "tool_call":
+                    // No `model.chunk` for these. There is nothing a person would read — a JSON
+                    // argument document is not prose — and the call becomes visible as `tool.call`
+                    // the moment the executor starts it, which is the same row NLT produces.
+                    calls.push(chunk.call)
                     break
                 case "usage":
                     // The API-reported number is authoritative; the local estimate was a stand-in.
@@ -120,5 +140,5 @@ export async function runStep(input: StepInput): Promise<StepResult> {
         input.context,
     )
 
-    return { text, reasoning, finishReason, promptTokens, outputTokens, latencyMs, aborted }
+    return { text, reasoning, finishReason, promptTokens, outputTokens, latencyMs, calls, aborted }
 }

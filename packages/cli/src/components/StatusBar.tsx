@@ -16,6 +16,7 @@ const LABEL: Record<TurnStatus, string> = {
     idle: "ready",
     thinking: "thinking",
     streaming: "replying",
+    working: "running a tool",
     cancelling: "cancelling",
 }
 
@@ -23,6 +24,7 @@ const COLOUR: Record<TurnStatus, string> = {
     idle: "green",
     thinking: "yellow",
     streaming: "cyan",
+    working: "blue",
     cancelling: "magenta",
 }
 

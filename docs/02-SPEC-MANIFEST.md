@@ -146,7 +146,15 @@ Three roles. `main` required; `selector` and `compactor` fall back to `main`.
 | `apiKeyEnv` | string | **Name of the env var**, never the key itself. A literal key in the manifest fails validation. |
 | `temperature`, `topP`, `maxTokens` | number | Optional passthrough. |
 | `headers` | map | Extra headers. Values may use `${ENV_VAR}`. |
+| `streamUsage` | bool | Ask for token usage in a streamed response. Off by default. |
 | `capabilities` | object | Override the shipped registry. See below. |
+
+`streamUsage` sends `stream_options: {include_usage: true}`, which is an OpenAI extension rather than
+part of `/chat/completions` — an endpoint that does not know it may reject the whole request, which is
+why it is opt-in. Turn it on when a token count is being *compared* rather than displayed. Measured
+against Ollama on 2026-08-13: it reports no usage at all without this, so token figures for a local
+model come from the estimator until it is set; with it, `prompt_tokens` and `completion_tokens` arrive
+as they do from a hosted endpoint.
 
 `$ref: model.selector` reuses another role's definition without repetition.
 
@@ -202,7 +210,7 @@ the provider caches nothing: DeepSeek caches context automatically server-side a
 
 | Field | Default | Notes |
 | --- | --- | --- |
-| `dialect` | `nlt` | `nlt` or `native`. Config only — never auto-detected. |
+| `dialect` | `nlt` | `nlt` or `native`. Config only — never auto-detected. `native` is refused at load when the resolved model has `capabilities.nativeTools: false`, and when any resolved slug falls outside a native function name's `[A-Za-z0-9_-]{1,64}`. |
 | `provider` | none | Provider id registered by a plugin: `composio`, `mcp`, or custom. Omit for local-only. |
 | `providerConfig` | `{}` | Passed to the provider. Secrets via `${ENV_VAR}`. |
 | `budget.max` | 24 | Hard cap on catalogue size. |
@@ -210,6 +218,16 @@ the provider caches nothing: DeepSeek caches context automatically server-side a
 | `pinned` | `[]` | Slugs resolved at load. **An unknown slug fails the load** with the slug and provider named. |
 | `search.enabled` | false | Exposes a provider search meta-tool as an escape hatch. Off by default: search-then-execute is two-hop reasoning and small models fail it. |
 | `local` | `[]` | Built-in tools: `memory_write`, `phase_set`, `handoff`, `now`. |
+
+Both dialects render the *same* `ToolSpec`, and both put the same guidance in front of the model —
+summary, `whenToUse`, `whenNotToUse`, and a state-change warning for a mutating tool. Under `nlt` that
+is prose in context slot 1; under `native` it is the wire format's `function.description`, and the
+schema is passed through unchanged. So switching `dialect` changes the channel and nothing about what
+the model is told, which is what makes `evals/tools` a comparison of dialects rather than of wording.
+
+One consequence worth knowing when reading token figures: under `native` the catalogue is in the
+request body rather than in context, so `context.window` is reduced by its estimated cost and
+`validate` reports the same total under either dialect.
 
 ### `phases`
 

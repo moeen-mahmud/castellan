@@ -22,17 +22,15 @@ import { useElapsed } from "#hooks/useElapsed"
 import { useTerminalSize } from "#hooks/useTerminalSize"
 import { useTurn } from "#hooks/useTurn"
 import { keyToIntent } from "#keymap"
-import { EXIT_WORDS, HELP_WORD, RESET_WORD } from "#lib/const"
 import type { AppProps } from "#lib/schema"
+import {
+    resolveSessionCommand,
+    sessionHelpText,
+    toolsReport,
+    toolsView,
+    unknownCommandText,
+} from "#lib/session-commands"
 import { lastStats } from "#transcript"
-
-const SLASH_HELP = [
-    `${EXIT_WORDS.join(" / ")} — leave`,
-    `${RESET_WORD} — clear this session's history (memory files on disk are untouched)`,
-    "^C — cancel the turn in flight, or exit at an idle prompt",
-    "^U / ^W / ^A / ^E — kill line, kill word, start of line, end of line",
-    "↑ / ↓ — walk what you have already sent",
-].join("\n  ")
 
 export function App({ agent, bus, sessionKey, model, initial, showReasoning, quiet }: AppProps) {
     const { exit } = useApp()
@@ -43,26 +41,36 @@ export function App({ agent, bus, sessionKey, model, initial, showReasoning, qui
     const last = useMemo(() => lastStats(state.items), [state.items])
 
     const onSubmit = (text: string): void => {
-        if (EXIT_WORDS.includes(text)) {
-            exit()
-            return
-        }
-        if (text === HELP_WORD) {
-            note(`  ${SLASH_HELP}`)
-            return
-        }
-        if (text === RESET_WORD) {
-            // Fire-and-report rather than awaited: a component cannot block, and the note is the
-            // acknowledgement. A failure here surfaces as a rejected promise, so it is caught.
-            agent
-                .clearSession(sessionKey)
-                .then(() => note("session cleared — memory files on disk are untouched"))
-                .catch((error: unknown) =>
-                    note(
-                        `could not clear the session: ${error instanceof Error ? error.message : String(error)}`,
-                    ),
-                )
-            return
+        // Both renderers dispatch through the same table, so `--plain` and the rich path cannot
+        // answer the same typed command differently.
+        const command = resolveSessionCommand(text)
+        if (command !== undefined) {
+            switch (command.kind) {
+                case "exit":
+                    exit()
+                    return
+                case "help":
+                    note(sessionHelpText())
+                    return
+                case "tools":
+                    note(toolsReport(toolsView(agent)))
+                    return
+                case "reset":
+                    // Fire-and-report rather than awaited: a component cannot block, and the note is
+                    // the acknowledgement. A failure surfaces as a rejected promise, so it is caught.
+                    agent
+                        .clearSession(sessionKey)
+                        .then(() => note("session cleared — memory files on disk are untouched"))
+                        .catch((error: unknown) =>
+                            note(
+                                `could not clear the session: ${error instanceof Error ? error.message : String(error)}`,
+                            ),
+                        )
+                    return
+                case "unknown":
+                    note(unknownCommandText(command))
+                    return
+            }
         }
         if (busy) {
             // Two turns on one session would interleave in the history the next turn is conditioned

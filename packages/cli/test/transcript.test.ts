@@ -282,3 +282,104 @@ test("chunks arriving before turn.start do not throw", () => {
     const state = run([chunk("orphan")])
     expect(state.live?.text).toBe("orphan")
 })
+
+describe("tool rows", () => {
+    function call(slug: string, mutating = false): TranscriptAction {
+        return {
+            kind: "event",
+            event: ev("tool.call", { slug, callId: "c1", argsHash: "deadbeef", mutating }),
+        }
+    }
+
+    function result(slug: string, ok = true, truncated = false): TranscriptAction {
+        return {
+            kind: "event",
+            event: ev("tool.result", {
+                slug,
+                callId: "c1",
+                ok,
+                latencyMs: 12,
+                bytes: 40,
+                truncated,
+            }),
+        }
+    }
+
+    test("a call is committed when it starts, not when it returns", () => {
+        // A tool that takes eight seconds must not leave the screen looking like a stalled model.
+        const state = run([START, call("now")])
+        expect(state.items.map((item) => item.role)).toEqual(["tool"])
+        expect(state.items[0]?.text).toBe("now")
+    })
+
+    test("a running tool is `working`, which is not `streaming`", () => {
+        // The model is not producing tokens during a tool call, and saying "replying" would be a lie.
+        expect(run([START, call("now")]).status).toBe("working")
+    })
+
+    test("a mutating call says so on the row", () => {
+        expect(run([START, call("memory_write", true)]).items[0]?.text).toBe(
+            "memory_write (changes state)",
+        )
+    })
+
+    test("the result is its own row rather than an edit of the call's", () => {
+        // `<Static>` has already written the call row. Editing a written node silently does nothing,
+        // so the outcome has to arrive as a new item.
+        const state = run([START, call("now"), result("now")])
+        expect(state.items).toHaveLength(2)
+        expect(state.items[1]?.text).toBe("now — ok · 12 ms")
+    })
+
+    test("a failed call is an error row, not a tool row", () => {
+        const state = run([START, call("now"), result("now", false)])
+        expect(state.items[1]?.role).toBe("error")
+        expect(state.items[1]?.text).toContain("failed")
+    })
+
+    test("a trimmed observation is visible on the row", () => {
+        const state = run([START, call("big"), result("big", true, true)])
+        expect(state.items[1]?.text).toContain("observation trimmed")
+    })
+
+    test("a repair is a note naming what could not be used", () => {
+        const state = run([
+            START,
+            { kind: "event", event: ev("tool.repair", { slugs: ["memory_write"], errors: ["x"] }) },
+        ])
+        expect(state.items[0]?.role).toBe("note")
+        expect(state.items[0]?.text).toContain("memory_write")
+        expect(state.items[0]?.text).toContain("asking the model again")
+    })
+
+    test("a cancellation already requested survives a tool starting", () => {
+        const state = run([START, chunk("hi"), { kind: "cancelling" }, call("now")])
+        expect(state.status).toBe("cancelling")
+    })
+})
+
+describe("filtered deltas", () => {
+    test("a delta action accumulates exactly like a raw chunk event", () => {
+        const viaAction = run([START, { kind: "delta", of: "text", text: "hello" }])
+        const viaEvent = run([START, chunk("hello")])
+        expect(viaAction.live).toEqual(viaEvent.live)
+        expect(viaAction.status).toBe("streaming")
+    })
+
+    test("an empty delta changes nothing — a filter holding text back is not a state change", () => {
+        // The filter returns "" while it waits to see whether a line becomes an ACTION block. That
+        // must not flip the status to streaming or replace the live turn.
+        const before = run([START])
+        const after = reduce(before, { kind: "delta", of: "text", text: "" })
+        expect(after).toBe(before)
+    })
+
+    test("reasoning arrives unfiltered and stays separate from the reply", () => {
+        const state = run([
+            START,
+            { kind: "delta", of: "reasoning", text: "thinking…" },
+            { kind: "delta", of: "text", text: "answer" },
+        ])
+        expect(state.live).toEqual({ text: "answer", reasoning: "thinking…", last: "text" })
+    })
+})

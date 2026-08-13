@@ -8,6 +8,8 @@
  * content, and prose after a blank line is the reply rather than an argument.
  */
 
+import type { ChatMessage } from "../src/model/provider.ts"
+import type { StepOutput } from "../src/tools/dialect/dialect.ts"
 import { nltDialect, parseNlt, renderNltEntry } from "../src/tools/dialect/nlt.ts"
 import type { ToolResult, ToolSpec } from "../src/tools/types.ts"
 import { describe, expect, test } from "./_harness.ts"
@@ -247,8 +249,31 @@ describe("the catalogue", () => {
         expect(blocks.length).toBe(1)
         expect(blocks[0]?.slot).toBe(1)
         expect(blocks[0]?.pinned).toBe(true)
-        expect(blocks[0]?.content).toContain("ACTION: tool_name")
+        expect(blocks[0]?.content).toContain("ACTION: weather_lookup")
         expect(blocks[0]?.content).toContain("### send_email")
+    })
+
+    test("the example we tell a model to copy is one our own parser accepts", () => {
+        // Self-referential on purpose: the format documentation and the parser cannot drift apart if
+        // the documentation is run through the parser. The catalogue is prose with exactly one block
+        // in it, so anything else parsing as a block means the surrounding text has become ambiguous.
+        const content = nltDialect.renderCatalogue([SPEC])[0]?.content ?? ""
+        const parsed = parseNlt(content)
+        expect(parsed.intents.length).toBe(1)
+        expect(parsed.intents[0]?.slug).toBe("weather_lookup")
+        expect(Object.keys(parsed.intents[0]?.args ?? {})).toEqual(["city", "units"])
+    })
+
+    test("the example never uses the words `field` or `value` as field names", () => {
+        // The regression this exists for: `ACTION: tool_name` / `field: value` reads as metasyntax to a
+        // large model and as instruction to a small one. qwen3.5:9b copied it literally in 25 of 37
+        // fixtures, reasoning correctly about the tool and then encoding every argument through the
+        // placeholder words. It cost NLT 65 points against native and looked like a dialect result.
+        const keys = Object.keys(
+            parseNlt(nltDialect.renderCatalogue([SPEC])[0]?.content ?? "").intents[0]?.args ?? {},
+        )
+        expect(keys.includes("field")).toBe(false)
+        expect(keys.includes("value")).toBe(false)
     })
 
     test("an empty catalogue renders nothing at all", () => {
@@ -264,6 +289,161 @@ describe("the catalogue", () => {
     })
 })
 
+describe("the stream filter", () => {
+    /** Feed a whole output through in fixed-size chunks, as a stream would arrive. */
+    function stream(output: string, chunk = 3): string {
+        const filter = nltDialect.createStreamFilter()
+        let shown = ""
+        for (let i = 0; i < output.length; i += chunk) {
+            shown += filter.push(output.slice(i, i + chunk))
+        }
+        return shown + filter.end()
+    }
+
+    const CASES: readonly [string, string][] = [
+        ["plain prose", "The answer is 4."],
+        ["prose over several lines", "First line.\nSecond line."],
+        ["a call and nothing else", "ACTION: now\nEND"],
+        ["narration then a call", "Let me check.\nACTION: now\nEND"],
+        ["a call then an answer", "ACTION: now\nEND\nIt is nine."],
+        ["two calls", "ACTION: now\nEND\nACTION: memory_write\ntext: hi\nEND"],
+        ["a heredoc", "ACTION: send_email\nbody: <<<\nline one\nline two\n>>>\nEND"],
+        ["a wrapped call", "Sure.\n```\nACTION: now\nEND\n```"],
+        ["a fence in the reply", "Here:\n```ts\nconst x = 1\n```"],
+        ["a bulleted call", "- ACTION: now\nEND"],
+        ["prose beginning with A", "A good question."],
+        ["prose beginning with a dash", "- a bullet in the reply"],
+        ["an unterminated block then prose", "ACTION: now\ntimezone: UTC\n\nAll done."],
+        ["a call with no END at all", "ACTION: now\ntimezone: UTC"],
+    ]
+
+    // The property that matters: what the person watches must be exactly what the parser calls the
+    // reply. Any divergence means the screen and the transcript disagree about what was said.
+    test.each(CASES)("%s streams to exactly what parse calls the reply", (_name, output) => {
+        expect(stream(output)).toBe(parseNlt(output).text)
+    })
+
+    test.each(CASES)("%s is the same at a one-character chunk size", (_name, output) => {
+        expect(stream(output, 1)).toBe(parseNlt(output).text)
+    })
+
+    test.each(CASES)("%s is the same when it arrives in one chunk", (_name, output) => {
+        expect(stream(output, 10_000)).toBe(parseNlt(output).text)
+    })
+
+    test("no part of an invocation block is ever shown", () => {
+        const filter = nltDialect.createStreamFilter()
+        let shown = ""
+        for (const char of "Checking.\nACTION: send_email\nto: a@b.com\nEND\nSent.") {
+            shown += filter.push(char)
+        }
+        shown += filter.end()
+        expect(shown.includes("ACTION")).toBe(false)
+        expect(shown.includes("a@b.com")).toBe(false)
+        expect(shown.includes("END")).toBe(false)
+        expect(shown).toBe("Checking.\nSent.")
+    })
+
+    test("mid-line prose is not held back", () => {
+        // The reason this matters: a reply is usually one long line, so waiting for the newline would
+        // make the whole answer appear at once and streaming would be decorative.
+        const filter = nltDialect.createStreamFilter()
+        filter.push("The answer ")
+        expect(filter.push("is 4")).toBe("is 4")
+    })
+
+    test("a line that could still become a call is held, then released", () => {
+        const filter = nltDialect.createStreamFilter()
+        expect(filter.push("ACT")).toBe("")
+        expect(filter.push("ually, no.")).toBe("ACTually, no.")
+    })
+
+    test("a filter is per turn — a fresh one starts outside any block", () => {
+        // Reusing one across turns would leave the next turn inside whatever block this one ended in,
+        // and its reply would vanish entirely.
+        const first = nltDialect.createStreamFilter()
+        first.push("ACTION: now\n")
+        expect(first.push("timezone: UTC\n")).toBe("")
+
+        const second = nltDialect.createStreamFilter()
+        expect(second.push("Hello")).toBe("Hello")
+    })
+
+    test("a line break waits until something follows it", () => {
+        // It cannot be shown when it arrives: a break at the end of the reply is trailing whitespace
+        // the transcript does not have, and there is no way to un-emit it.
+        const filter = nltDialect.createStreamFilter()
+        expect(filter.push("First.\n")).toBe("First.")
+        expect(filter.push("Second.")).toBe("\nSecond.")
+        expect(filter.end()).toBe("")
+    })
+
+    test("CRLF does not leak a carriage return into the reply", () => {
+        expect(stream("Hello.\r\nGoodbye.\r\n")).toBe("Hello.\nGoodbye.")
+    })
+
+    /** Every step's output through one filter, as a multi-step turn arrives. */
+    function streamSteps(steps: readonly string[], chunk = 3): string {
+        const filter = nltDialect.createStreamFilter()
+        let shown = ""
+        for (const [index, step] of steps.entries()) {
+            for (let i = 0; i < step.length; i += chunk) {
+                shown += filter.push(step.slice(i, i + chunk))
+            }
+            if (index < steps.length - 1) shown += filter.endStep()
+        }
+        return shown + filter.end()
+    }
+
+    /** How `runTurn` joins each step's prose into the reply. The filter has to match it exactly. */
+    function joinSteps(steps: readonly string[]): string {
+        return steps
+            .map((step) => parseNlt(step).text)
+            .filter((text) => text !== "")
+            .join("\n\n")
+    }
+
+    const TURNS: readonly [string, readonly string[]][] = [
+        ["a call then an answer", ["ACTION: now\nEND", "It is nine."]],
+        ["narration, a call, an answer", ["Let me check.\nACTION: now\nEND", "It is nine."]],
+        ["two tool steps then an answer", ["ACTION: now\nEND", "ACTION: now\nEND", "Both done."]],
+        [
+            "narration on every step",
+            [
+                "First I check.\nACTION: now\nEND",
+                "Now I save.\nACTION: memory_write\ntext: x\nEND",
+                "Done.",
+            ],
+        ],
+        ["a step that says nothing at all", ["ACTION: now\nEND", "", "Answer."]],
+    ]
+
+    test.each(TURNS)("%s streams to exactly what the turn calls the reply", (_name, steps) => {
+        expect(streamSteps(steps)).toBe(joinSteps(steps))
+    })
+
+    test.each(TURNS)("%s is the same one character at a time", (_name, steps) => {
+        expect(streamSteps(steps, 1)).toBe(joinSteps(steps))
+    })
+
+    test("an unterminated block does not continue into the next step", () => {
+        // A step's output is parsed on its own. Carrying the block across would swallow the next
+        // step's reply entirely, and the turn would look like it produced nothing.
+        const filter = nltDialect.createStreamFilter()
+        filter.push("ACTION: memory_write\ntext: no end marker")
+        filter.endStep()
+        expect(filter.push("Saved it.")).toBe("Saved it.")
+    })
+
+    test("the step break is dropped when the next step is silent", () => {
+        const filter = nltDialect.createStreamFilter()
+        expect(filter.push("All I have to say.")).toBe("All I have to say.")
+        expect(filter.endStep()).toBe("")
+        expect(filter.push("ACTION: now\nEND")).toBe("")
+        expect(filter.end()).toBe("")
+    })
+})
+
 describe("observations and repairs", () => {
     const result = (over: Partial<ToolResult> = {}): ToolResult => ({
         callId: "c1",
@@ -276,11 +456,27 @@ describe("observations and repairs", () => {
         ...over,
     })
 
+    /**
+     * The dialect returns a list, because `native` needs one `tool` message per call. NLT deliberately
+     * returns exactly one however many results there were — one per result would repeat the "continue
+     * or reply" instruction after every observation, which is most of what that message is for.
+     */
+    function onlyMessage(messages: readonly ChatMessage[]): ChatMessage {
+        expect(messages.length).toBe(1)
+        const [message] = messages
+        if (message === undefined) throw new Error("expected exactly one message")
+        return message
+    }
+
+    const NO_CALLS: StepOutput = { text: "", calls: [] }
+
     test("one message carries every result from the step, in order", () => {
-        const message = nltDialect.renderObservation([
-            result(),
-            result({ callId: "c2", slug: "memory_write", ok: false, output: "nope" }),
-        ])
+        const message = onlyMessage(
+            nltDialect.renderObservation([
+                result(),
+                result({ callId: "c2", slug: "memory_write", ok: false, output: "nope" }),
+            ]),
+        )
         expect(message.role).toBe("user")
         expect(message.content).toContain("OBSERVATION now — ok")
         expect(message.content).toContain("OBSERVATION memory_write — failed")
@@ -288,15 +484,38 @@ describe("observations and repairs", () => {
     })
 
     test("a tool that returned nothing says so, rather than looking like a blank success", () => {
-        const message = nltDialect.renderObservation([result({ output: "   " })])
+        const message = onlyMessage(nltDialect.renderObservation([result({ output: "   " })]))
         expect(message.content).toContain("(no output)")
     })
 
     test("a repair quotes each field error and says it is the only retry", () => {
-        const message = nltDialect.renderRepair([
-            { field: "to", message: "is required but was not given.", hint: "Add a line `to: …`." },
-        ])
+        const message = onlyMessage(
+            nltDialect.renderRepair(
+                [
+                    {
+                        field: "to",
+                        message: "is required but was not given.",
+                        hint: "Add a line `to: …`.",
+                    },
+                ],
+                NO_CALLS,
+            ),
+        )
         expect(message.content).toContain("to: is required but was not given.")
         expect(message.content).toContain("only retry")
+    })
+
+    test("the assistant message replays the raw text, blocks and all", () => {
+        // Not the cleaned-up prose: the text *is* the call under NLT, and a history that dropped the
+        // block would leave the observation after it explaining nothing.
+        const raw = "Let me check.\nACTION: now\nEND"
+        expect(nltDialect.renderCall({ text: raw, calls: [] })).toEqual({
+            role: "assistant",
+            content: raw,
+        })
+    })
+
+    test("nothing is added to the request — the protocol is the text", () => {
+        expect(nltDialect.requestTools([SPEC])).toBeUndefined()
     })
 })
