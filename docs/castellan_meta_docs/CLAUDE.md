@@ -74,7 +74,6 @@ framework explainers, go straight to the specific thing.
 | Modules | ESM only |
 | Lint/format | Biome — not ESLint, not Prettier |
 | Tests | `bun test` — not Vitest, not Jest |
-| CLI rendering | Ink 7 + React 19, `.tsx`, in `packages/cli` only — lazily imported |
 | Schema | Zod |
 | Storage | SQLite via `bun:sqlite` / `node:sqlite` adapter |
 | Release | Changesets, semver |
@@ -87,7 +86,6 @@ bun run build
 bun test
 bun run lint
 bun run bench:boot        # must stay under 1000ms; CI fails at 1200ms
-bun run test:node         # core only, under Node's runner — proves the sqlite adapter
 ```
 
 ---
@@ -126,13 +124,13 @@ inbound (channel | API | schedule)
   a poor internal architecture.
 - **Plugins are trusted in-process code**, documented as such. `permissions` is advisory
   vocabulary in v1.
-- **Workspace files are tiered, not a flat list.** Static (cached, read-only) before breakpoint A,
-  volatile after it, reminder past the history. Frontmatter and HTML comments are stripped before
-  injection. Phase 3.5 — the runtime still reads flat `context.files` until then.
-- **Vendor prompting guidance is encoded as a capability, never a constant.** Published advice is
-  written for frontier models and a good fraction of it inverts at 3–8B — Anthropic now says to
-  *remove* emphatic phrasing because models overtrigger on it; a 7B model needs it. That lives in
-  `capabilities.promptStyle`.
+- **Workspace files are tiered, not a flat list.** Static (cached, read-only) before the
+  breakpoint, volatile after, reminder past the history. Frontmatter and HTML comments are
+  stripped before injection.
+- **Vendor prompting guidance is encoded as a capability, never a constant.** Published
+  advice is written for frontier models and a good fraction of it inverts at 3–8B —
+  Anthropic now says to *remove* emphatic phrasing because models overtrigger; a 7B model
+  needs it. That lives in `capabilities.promptStyle`.
 
 Full detail: `docs/01-ARCHITECTURE.md`.
 
@@ -142,14 +140,13 @@ Full detail: `docs/01-ARCHITECTURE.md`.
 
 ```
 packages/core/       the loop, context, tools, skills, memory, store, schedule, plugins
-packages/cli/        `castellan` binary — lib/ plumbing, components/ Ink, pure reducers at top level
+packages/cli/        `castellan` binary
 packages/server/     HTTP/SSE/WS surface
 packages/channel-*/  Telegram, WhatsApp
 packages/tools-*/    Composio, MCP
 packages/compat-openclaw/   VelaOps bridge — quarantined, deletable
 docs/                design + plan (read these)
-evals/               fixtures/ the shared catalogue and tasks; tools/ committed results.
-                     Every performance claim has a number here
+evals/               committed eval results; every performance claim has a number here
 scripts/             bench-boot, rename-brand
 ```
 
@@ -209,40 +206,10 @@ Never claim a performance property without a number in `evals/` and a script to 
 - **`resolve()` must throw on unknown tool slugs.** Silently dropping them is how write tools
   get starved and how a config error becomes a runtime mystery.
 - **The outbox must be idempotent.** A crash mid-delivery must not double-send.
-- **Ink redraws its whole dynamic tree every frame.** Finished transcript items belong in
-  `<Static>`, which writes once and never touches the node again — so they must be append-only
-  and immutable, and mutating one is a change that silently never appears. The live pane is
-  capped in terminal *rows*, not lines.
-- **Nothing on a shared CLI path may import Ink or React.** They cost ~170-210 ms under Node,
-  more than the entire runtime of `validate --json`. A structural test enforces it.
-- **`--plain` at a terminal must produce exactly what a pipe produces.** That is why the
-  terminal restore fires only when the rich path has dirtied the terminal.
+- **Frontmatter and HTML comments must never reach the model.** The templates carry their
+  authoring guidance in comments on the assumption the loader strips them; if it doesn't,
+  every agent pays hundreds of tokens per turn for documentation it can't use.
+- **Workspace budget failures name the file and stop.** Never truncate silently — that
+  produces an agent running on partial instructions with no error anywhere.
 - **Turns are detached from the client connection.** Never cancel on disconnect. Persist
   partial content only on explicit stop.
-- **Frontmatter and HTML comments must never reach the model.** The workspace templates carry their
-  authoring guidance in comments on the assumption the loader strips them. If it doesn't, every
-  agent pays several hundred tokens per turn, forever, for documentation it can't use — and nothing
-  reports it. Asserted on the assembled prefix, not trusted.
-- **A workspace budget failure names the file and stops.** Never truncate to fit: that produces an
-  agent running on partial instructions with no error anywhere, which is the same silent-degradation
-  shape as a dropped tool call.
-- **Slot number equals prompt position** in `SLOT` (`context/blocks.ts`). The two are kept equal so
-  the table in `01-ARCHITECTURE.md` can be read in order; inserting a slot means renumbering, which
-  is cheap because every reference is by name (`SLOT.input`, never `8`).
-- **A `ChatMessage` is no longer just `{role, content}`.** Under the `native` dialect it carries
-  `toolCalls` or `toolCallId`, and every layer that copies a message must copy those too — the wire
-  mapper in `chat-completions.ts`, the `message` field on `ContextBlock`, and the store's
-  `tool_calls`/`tool_call_id` columns. Each of the three dropped them at some point during Phase 3,
-  and none of the three failed loudly: the endpoint accepts the request and the model simply never
-  sees the call it made.
-- **Both dialects must put the same guidance in front of the model.** `native`'s
-  `function.description` carries `whenToUse` and `whenNotToUse`, not just the summary. Trimming it to
-  the summary makes `evals/tools` measure the guidance and report it as a property of the dialect.
-- **A placeholder in a prompt example is an instruction to a small model.** The NLT preamble said
-  "exactly like this" and showed `field: value`; qwen3.5:9b wrote `field: title` / `value: <the value>`
-  and NLT scored 27% against native's 92% — its reasoning about which tool and which arguments was
-  correct every time. Examples in `PREAMBLE` are concrete, use a tool that exists in no catalogue, and
-  are asserted by parsing the rendered catalogue with `parseNlt` itself. This cuts the other way too:
-  because NLT's protocol is prose the model imitates and native's is a schema the API enforces, *any*
-  defect in the preamble shows up as a dialect difference. Before believing an NLT-vs-native number,
-  read what the model actually wrote — `results.json` keeps it on every non-`correct` attempt.

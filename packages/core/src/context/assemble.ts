@@ -1,9 +1,10 @@
 /**
  * Ordered, budgeted context assembly.
  *
- * Phase 1 fills slots 0 (identity), 5 (recent history), and 6 (current input). Slot 1 arrives
- * with tools, 2 with skills, 3 with memory, 4 with compaction. The slot order is already fixed
- * so that adding them later cannot disturb the cache-stable prefix.
+ * Phase 1 fills slots 0 (identity), 6 (recent history) and 8 (current input); Phase 3 added slot 1
+ * (tools). Still empty: 2 (workspace volatile) and 7 (workspace reminder) arrive with Phase 3.5, 3
+ * with skills, 4 with memory, 5 with compaction. The slot order is fixed in advance so that filling
+ * them later cannot disturb the cache-stable prefix.
  *
  * History is trimmed from the oldest end when the budget is tight. That is a window, not
  * compaction — dropping the oldest turn outright is what Phase 7's ladder replaces with
@@ -139,12 +140,18 @@ export function assembleContext(input: AssembleInput): AssembledContext {
 /** Slot-level report for `GET /v1/agents/:id/context` and the `context.assembled` event. */
 export function slotReport(
     blocks: readonly ContextBlock[],
-): { slot: number; tokens: number; pinned: boolean }[] {
-    const bySlot = new Map<number, { slot: number; tokens: number; pinned: boolean }>()
+): { slot: number; label: string; tokens: number; pinned: boolean }[] {
+    // `label` is carried because slot numbers are positional: inserting a slot renumbers the ones
+    // after it, so a consumer that reads meaning from the number breaks the next time one is added.
+    // `ContextBlock.label` was documented as existing for this endpoint and then not sent to it.
+    const bySlot = new Map<
+        number,
+        { slot: number; label: string; tokens: number; pinned: boolean }
+    >()
     for (const b of blocks) {
         const existing = bySlot.get(b.slot)
         if (existing === undefined) {
-            bySlot.set(b.slot, { slot: b.slot, tokens: b.tokens, pinned: b.pinned })
+            bySlot.set(b.slot, { slot: b.slot, label: b.label, tokens: b.tokens, pinned: b.pinned })
         } else {
             existing.tokens += b.tokens
         }

@@ -1,7 +1,8 @@
 # 05 — Implementation Plan
 
-Thirteen phases, dependency-ordered. Every phase ends at a **running state** — nothing is
-half-wired across a boundary.
+Fifteen phases, dependency-ordered — thirteen numbered, plus 2.5 and 3.5 inserted rather than
+renumbered, because the later numbers are named across the source and the other docs. Every phase
+ends at a **running state** — nothing is half-wired across a boundary.
 
 ## How to use this
 
@@ -61,7 +62,7 @@ endpoint. No tools, no channels, no storage.
 - `model/chat-completions.ts` — fetch + SSE, streaming, cancellation, retry on 429/5xx
 - `model/capabilities.ts` — shipped registry, glob keys, manifest merge
 - `model/roles.ts` — main/selector/compactor with fallback
-- `context/assemble.ts` — slots 0, 5, 6 only; token estimator
+- `context/assemble.ts` — slots 0, 6, 8 only; token estimator
 - `loop/turn.ts`, `loop/step.ts` — single step, no tools; abort support
 - `events/bus.ts` + types for turn/model events
 - `runtime/runtime.ts` — hosts N agents, boot sequence, `runtime.ready`
@@ -465,6 +466,72 @@ in this phase.
 
 ---
 
+## Phase 3.5 — Workspace
+
+**Goal.** The agent's persistent files are tiered, budgeted, and rendered per model. `context.files`
+becomes a deprecated alias.
+
+Inserted rather than renumbered, for the reason Phase 2.5 was: Phases 3, 7 and 8 are named in about
+thirty source comments and docs, and renumbering them costs more than it buys. Governed by
+`docs/07-SPEC-WORKSPACE.md`, which is binding.
+
+**Why it is its own phase.** A flat ordered array cannot express which files are cache-stable, which
+sit after the conversation history, or which the agent may write to. Each has a measured cost when
+got wrong — an invalidated prompt cache, decayed rule adherence, persona drift — and none of the
+three is expressible by reordering `context.files`.
+
+**Deliverables**
+
+- `workspace/load.ts` — tiered load per tier; **strips frontmatter and HTML comments before
+  injection**; per-file and total budgets with a named failure and no truncation
+- `workspace/rules.ts` — imperative count across `static` + `reminder` against `reliabilityTarget`,
+  computed rather than tabulated
+- `model/prompt-style.ts` — render authored markdown per `delimiters` / `intensity` / `examplesIn`
+- Slots 2 (`volatile`) and 7 (`reminder`) populated; both already declared in `SLOT`
+- `editable` enforced at the tool boundary: `memory_write` against `editable: none` is a typed error
+- `context.files` → deprecated alias for `static`, warning naming the replacement
+- `knowledge/` — Tier 3, activation by frontmatter keyword gate, `maxActive`, own budget
+- `SOUL.md` — `requires` / `onUnmet`, plus `castellan soul distill` emitting an editable scaffold
+- `castellan workspace validate` and `castellan eval rules`
+- `evals/prompt-style/` — the two unresolved `promptStyle` questions, with committed numbers
+- `examples/workspace-template/` and a filled-in `examples/telegram-assistant/workspace/`
+
+**Files.** `packages/core/src/workspace/`, `model/prompt-style.ts`, `manifest/schema.ts`,
+`context/assemble.ts`, `packages/cli/`, `evals/prompt-style/`
+
+**Acceptance**
+
+- [ ] Frontmatter and HTML comments never reach the model — asserted on the assembled prefix
+- [ ] A workspace over total budget fails the load naming the offending file; nothing is truncated
+- [ ] The same `AGENT.md` renders with XML delimiters under `delimiters: xml` and plain sections
+      under `plain`, from one authored source
+- [ ] `MEMORY.md` is in slot 2, after breakpoint A: a `memory_write` leaves slots 0–1 byte-identical
+- [ ] `REMINDER.md` lands in slot 7 — after the history, before the input
+- [ ] `memory_write` against an `editable: none` file returns a typed error, not a silent no-op
+- [ ] A manifest using `context.files` still loads, with a warning naming `static`
+- [ ] Rule guard: three rules at `perRuleSuccess: 0.90` / `reliabilityTarget: 0.80` fails the load
+      quoting the computed figure; two pass
+- [ ] `castellan eval rules` reports a measured `perRuleSuccess` for the configured model
+- [ ] `evals/prompt-style/` settles both open questions on ≥2 models: (a) `examplesIn: system` vs
+      `user`, where Anthropic and OpenAI give opposite guidance; (b) `intensity: emphatic` vs
+      `neutral` on the smallest model, confirming the inversion is real rather than assumed
+- [ ] `castellan workspace validate` flags a bulleted `AGENT.md` when every bound channel is
+      `markdown: none|basic`, and flags a rule with no rationale clause
+- [ ] `SOUL.md` on a model failing `requires` behaves per `onUnmet`; `distill` ships the compact file
+- [ ] `knowledge/` activates on keyword, respects `maxActive` and its budget, and is **not** pinned
+- [ ] `bun run bench:boot` still under 1000 ms with a full workspace loaded
+
+**Non-goals.** Automatic soul distillation — a summariser drops exactly the parts that produce voice.
+Scored or embedded knowledge retrieval: Phase 3.5 ships the keyword gate behind a seam Phase 6 can
+attach a scored selector to, and **must not** build a second index. Compaction notice (Phase 7, with
+the ladder it describes). Rewriting `context.files` callers beyond the alias.
+
+**Sequencing note.** This phase is large — plausibly two sessions, split at `promptStyle`. Tiers,
+budgets and the alias form the first half and are independently useful; rendering, the eval matrix,
+`SOUL.md` and `knowledge/` form the second.
+
+---
+
 ## Phase 4 — Channels, server, outbox
 
 **Goal.** Telegram works. The HTTP API works. Delivery is idempotent.
@@ -504,12 +571,15 @@ in this phase.
 
 - `skills/index.ts` — frontmatter-only scan, `.castellan/skills.idx.json` cache with mtime check
 - `skills/select.ts` — BM25 over name + description + `when_not_to_use`, threshold, `maxActive`
-- `skills/load.ts` — body into slot 2, cache breakpoint B
+- `skills/load.ts` — body into slot 3, cache breakpoint B
 - `skills/scripts.ts` — subprocess; `uv run` when Python metadata present, else `python3`; TS/JS via host; loud failure on missing runtime
 - Scripts registered as `skill.<skill>.<script>`, visible only while active
 - Skill template with mandatory `when_not_to_use`
 - `castellan skills list|show|validate` — table entry plus a plain writer, `--json` included
 - 3 example skills, one shipping a Python script
+
+`castellan workspace validate` belongs to Phase 3.5, not here: it validates workspace tiers and
+budgets, which exist by then. Skills only add the `when_not_to_use` check to it.
 
 **Files.** `packages/core/src/skills/`, `examples/*/skills/`, `packages/cli/`
 
@@ -538,7 +608,7 @@ in this phase.
 - `memory/fts5.ts` — FTS5 over memory markdown + message history, BM25 with recency boost
 - `memory/writer.ts` — real `memory_write` appending to `memory/YYYY-MM-DD.md`
 - Incremental index on write; rebuild on mtime mismatch
-- Context slot 3
+- Context slot 4
 - `castellan memory search|rebuild` — table entry plus a plain writer, `--json` included
 
 **Files.** `packages/core/src/memory/`, migration 003
@@ -568,6 +638,10 @@ in this phase.
 - Artifact store for trimmed observations; pointer format the agent can re-read
 - `loop/phases.ts` + `phase_set` local tool
 - `GET /v1/agents/:id/context`
+- `context/compaction-notice.ts` — the runtime-generated line telling the model its context compacts
+  automatically. Generated rather than authored because the author does not know the thresholds;
+  without it, models sense the approaching limit and wrap up work early. `compactionNotice: false`
+  suppresses it. Specified in `07-SPEC-WORKSPACE.md`, delivered here with the ladder it describes
 - Events: `context.pressure`, `compaction.stage`, `context.reset`, `phase.changed`
 - CLI: compaction and phase indicators in the status bar — reducer cases, not a new screen
 
@@ -583,6 +657,8 @@ in this phase.
 - [ ] Two-phase manifest: `triage` exposes only read tools; after `phase_set("act")`, writes appear
 - [ ] Small-model eval improves measurably with phases on vs off — number recorded in `evals/`
 - [ ] S5 firing twice in one session emits a misconfiguration warning
+- [ ] With `compactionNotice: true` a long session does not show the model wrapping up work early on
+      budget grounds; with it false, the behaviour reappears
 
 **Non-goals.** Agent-triggered compaction. Learned compaction.
 

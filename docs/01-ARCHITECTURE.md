@@ -89,10 +89,14 @@ packages/core/src/
 │   └── compaction/
 │       ├── ladder.ts        # stage selection
 │       └── stages.ts        # S1..S5 implementations
+├── workspace/
+│   ├── load.ts              # tiered load, strips frontmatter + HTML comments
+│   └── rules.ts             # imperative count vs reliability target
 ├── model/
 │   ├── provider.ts          # ModelProvider interface
 │   ├── chat-completions.ts  # the one transport (fetch + SSE)
 │   ├── capabilities.ts      # shipped registry + override merge
+│   ├── prompt-style.ts      # render authored markdown per capability
 │   └── roles.ts             # main / selector / compactor resolution
 ├── tools/
 │   ├── registry.ts          # pinned manifest, slug validation, budget
@@ -198,22 +202,41 @@ Fixed order. The prefix must be byte-stable across turns or prompt caching stops
 and prompt caching is the largest available cost lever.
 
 ```
-slot  content                                    pinned  cache
-────  ─────────────────────────────────────────  ──────  ─────
- 0    system: identity (manifest.context files)    yes     ┐ breakpoint A
+slot  content                                    pinned  cache          phase
+────  ─────────────────────────────────────────  ──────  ─────────────  ─────
+ 0    system: workspace `static` tier              yes     ┐ breakpoint A
  1    tool dialect preamble + tool catalogue       yes     ┘
- 2    active skill body (0 or 1)                   no      ─ breakpoint B
- 3    retrieved memory passages (k)                no
- 4    rolling digest (compaction output)           no
- 5    recent message window                        no
- 6    current input + current task line            yes
- 7    last error, if any                           yes
+ 2    workspace `volatile` tier                    yes                    3.5
+ 3    active skill body (0 or 1)                   no      ─ breakpoint B  5
+ 4    retrieved memory passages (k)                no                      6
+ 5    rolling digest (compaction output)           no                      7
+ 6    recent message window                        no
+ 7    workspace `reminder` tier                    yes                    3.5
+ 8    current input + current task line            yes
+ 9    last error, if any                           yes
 ```
+
+**Slot number equals prompt position.** The two are kept equal so this table can be read in
+order; inserting a slot means renumbering, which is cheap because every reference in the tree
+is by name (`SLOT.input`, never `8`). Slots 2 and 7 were inserted for the workspace tiers with
+no logic or test churn at all.
+
+Slot 0 is the workspace's `static` tier per `07-SPEC-WORKSPACE.md`. Until Phase 3.5 lands it is
+the flat `context.files` list concatenated, and `SLOT.identity` is still its name in code —
+naming a slot for behaviour the runtime does not have yet is worse than naming it for what it
+actually holds.
 
 Pinned blocks survive every compaction stage. This is why anything that must always hold —
 identity, guardrails, the tool catalogue — lives in slots 0/1 and never in history.
 Compaction reliably eats initial instructions; the fix is structural placement, not a
 stronger prompt.
+
+The two workspace tiers are placed by different reasoning, and both are load-bearing. Slot 2
+sits *after* breakpoint A because its content changes whenever the agent writes to memory, and
+changing content ahead of the breakpoint invalidates the cached prefix on every write — cost
+rises with no error anywhere. Slot 7 sits *after* the history because rule adherence decays
+across a conversation and attention is stronger at both ends of the context than the middle, so
+a rule stated once in slot 0 of a thirty-turn session is effectively in the middle of it.
 
 ### Budget
 
@@ -588,7 +611,7 @@ read at boot.
 turn input and the previous assistant turn. Score threshold; at most one active skill per
 turn by default (`skills.maxActive`).
 
-**Injection**: the full SKILL.md body enters context slot 2.
+**Injection**: the full SKILL.md body enters context slot 3.
 
 **Scripts**: a skill may ship `scripts/`. Those register as tools named
 `skill.<skill>.<script>`, visible **only while the skill is active**. Executed via

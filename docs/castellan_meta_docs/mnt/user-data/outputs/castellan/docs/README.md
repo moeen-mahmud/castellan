@@ -17,9 +17,9 @@ VelaOps is its first consumer, not its owner.
 | `02-SPEC-MANIFEST.md` | `agent.yaml` — the single config contract. |
 | `03-SPEC-PLUGIN-API.md` | Plugin and middleware contracts. |
 | `04-SPEC-WIRE.md` | HTTP/SSE surface and the lifecycle event schema. |
-| `05-PLAN.md` | Fifteen phases, each with acceptance criteria. The build order. |
+| `05-PLAN.md` | Thirteen phases, each with acceptance criteria. The build order. |
 | `06-VELAOPS-INTEGRATION.md` | The compat adapter, migration strategy, and what must never leak into core. |
-| `07-SPEC-WORKSPACE.md` | The tiered agent workspace — `AGENT.md`, `POLICY.md`, `USER.md`, `MEMORY.md`, `REMINDER.md`, budgets, and per-model rendering. Supersedes `context.files` in doc 02. |
+| `07-SPEC-WORKSPACE.md` | The tiered agent workspace: AGENT.md, POLICY.md, USER.md, MEMORY.md, REMINDER.md, budgets, and per-model rendering. Supersedes `context.files` in doc 02. |
 
 `CLAUDE.md` lives at the repo root, not here. It is the standing brief for coding agents.
 
@@ -41,13 +41,7 @@ subsystems are only testable end-to-end.
 
 ## Status
 
-Phases 0–3 implemented and verified: manifest, loop, model layer, store and sessions, the Ink
-CLI, and the tool layer with both dialects. Measured numbers live in `evals/` — see
-`evals/tools/README.md` for the NLT-versus-native comparison that Phase 3's gate turns on.
-
-Still design-only: everything from Phase 3.5 on. `07-SPEC-WORKSPACE.md` in particular describes
-a subsystem that does not exist yet — the runtime reads the flat `context.files` list until
-Phase 3.5 lands.
+Snapshot 2026-08-12. Nothing implemented; this is the pre-code design record.
 
 When code and these documents disagree, **the code wins** and the doc is stale — fix it in
 the same PR. A planning doc that quietly drifts from the implementation is worse than no

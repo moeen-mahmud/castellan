@@ -146,15 +146,7 @@ Three roles. `main` required; `selector` and `compactor` fall back to `main`.
 | `apiKeyEnv` | string | **Name of the env var**, never the key itself. A literal key in the manifest fails validation. |
 | `temperature`, `topP`, `maxTokens` | number | Optional passthrough. |
 | `headers` | map | Extra headers. Values may use `${ENV_VAR}`. |
-| `streamUsage` | bool | Ask for token usage in a streamed response. Off by default. |
 | `capabilities` | object | Override the shipped registry. See below. |
-
-`streamUsage` sends `stream_options: {include_usage: true}`, which is an OpenAI extension rather than
-part of `/chat/completions` — an endpoint that does not know it may reject the whole request, which is
-why it is opt-in. Turn it on when a token count is being *compared* rather than displayed. Measured
-against Ollama on 2026-08-13: it reports no usage at all without this, so token figures for a local
-model come from the estimator until it is set; with it, `prompt_tokens` and `completion_tokens` arrive
-as they do from a hosted endpoint.
 
 `$ref: model.selector` reuses another role's definition without repetition.
 
@@ -166,92 +158,57 @@ Only override when the shipped registry is wrong for your endpoint.
 capabilities:
   nativeTools: false
   strictSchema: false
-  thinking: none          # none | anthropic | openai | deepseek
+  thinking: none          # none | anthropic | openai
   promptCache: none       # none | anthropic | openai
   parallelToolCalls: false
   contextWindow: 32768
   maxOutput: 4096
-  promptStyle:            # Phase 3.5 — workspace rendering
+  promptStyle:
     delimiters: plain     # xml | markdown | plain
     intensity: emphatic   # emphatic | neutral | soft
     examplesIn: system    # system | user
     skillsIn: system      # system | user
 ```
 
-Capabilities affect thinking-block replay, cache-breakpoint placement, and workspace rendering
-**only**. They never change the tool dialect.
+Capabilities affect thinking-block replay, cache-breakpoint placement, and workspace
+rendering **only**. They never change the tool dialect.
 
-`promptStyle` exists because published prompting guidance is written for frontier models and a
-significant fraction of it inverts at 3–8B. Anthropic advises removing emphatic phrasing because
-current models overtrigger on it; a 7B model needs that emphasis. Anthropic recommends XML
-delimiters, having trained Claude on them; cross-model work finds a 22–37% token penalty for
-structured formats with no reliable accuracy gain. Authors write one file and the runtime renders it
-per model. Phase 3 measured what getting this wrong costs from the other direction — see decision
-4.19, where a single placeholder read as metasyntax by large models and as instruction by a 9B model
-moved a benchmark 65 points. Full rationale in `07-SPEC-WORKSPACE.md`.
-
-`thinking` says what the loop must *do* with reasoning, and the non-`none` cases disagree:
-
-| Value | Reasoning arrives as | Replayed with tool results |
-| --- | --- | --- |
-| `none` | not exposed | n/a |
-| `anthropic` | separate thinking blocks | **required** — omitting it degrades multi-step reasoning silently |
-| `openai` | server-side, opaque | nothing to replay |
-| `deepseek` | `reasoning_content`, beside `content` | **no** — sending it back is accepted but buys nothing |
-
-`deepseek` carries a second consequence, and it is the one that actually bites: **reasoning
-tokens are billed against the output budget.** A `max_tokens` too small to cover the model's
-thinking returns empty content with `finish_reason: "length"`. Measured against
-`deepseek-v4-pro` on 2026-08-12: `max_tokens: 16` produced 16 reasoning tokens and no reply.
-Set `context.reserveOutput` high enough for reasoning *plus* the answer — the runtime reports
-this case as a failed turn rather than an empty success, but it cannot fix the budget for you.
-
-`promptCache: none` means there are no breakpoints for the runtime to place. It does not mean
-the provider caches nothing: DeepSeek caches context automatically server-side and reports
-`prompt_cache_hit_tokens` on every response.
+`promptStyle` exists because published prompting guidance is written for frontier models
+and a significant fraction of it inverts at 3–8B. Anthropic advises removing emphatic
+phrasing because current models overtrigger on it; a 7B model needs that emphasis. Anthropic
+recommends XML delimiters (Claude was trained on them); cross-model work finds a 22–37%
+token penalty for structured formats with no reliable accuracy gain. Authors write one file;
+the runtime renders it per model. Full rationale in `07-SPEC-WORKSPACE.md`.
 
 ### `context`
+
+> **Superseded in part.** The flat `files` array below was replaced by the tiered workspace
+> in `07-SPEC-WORKSPACE.md`. A flat ordered list cannot express which files are
+> cache-stable versus volatile, which sit after the conversation history, or which the
+> agent may write to — and each of those has a measured cost when got wrong. `files` is
+> retained as a deprecated alias meaning `static`.
 
 | Field | Default | Notes |
 | --- | --- | --- |
 | `window` | from capabilities | Total token budget. |
 | `reserveOutput` | 4096 | Held back for the response. |
 | `observationMaxTokens` | 2000 | Above this a single tool observation is trimmed to head+tail with an artifact pointer. |
-| `files` | `[]` | Ordered. Concatenated into context slot 0 (pinned, cache-stable). Relative to the manifest. Missing file = load failure. **Deprecated from Phase 3.5** — alias for `static`, warns. |
+| `workspace` | `./workspace` | Directory holding the persistent files. |
+| `static` | `[]` | Tier 0. Cache-stable, read-only, before breakpoint A. |
+| `volatile` | `[]` | Tier 1. Agent-writable, after breakpoint A. |
+| `reminder` | none | Tier 2. Injected after conversation history. |
+| `budgets` | `{static:700, volatile:500, reminder:60, total:1300}` | Hard caps. Over budget fails the load naming the file — never silent truncation. |
+| `rules` | `{perRuleSuccess:0.90, reliabilityTarget:0.80, onExceed:fail}` | Imperative-count guard across static + reminder. |
+| `soul` | none | Capability-gated long-form identity document. See `07-SPEC-WORKSPACE.md`. |
+| `compactionNotice` | true | Runtime-generated line telling the model context is compacted automatically, so it doesn't wrap up work early. |
+| `files` | `[]` | **Deprecated.** Alias for `static`. Emits a warning. |
 | `thresholds` | see architecture | Compaction ladder trigger fractions. Must be strictly ascending; validated. |
-
-#### Workspace — Phase 3.5
-
-> **Specified, not implemented.** `files` above is what the runtime reads today. The fields below
-> are governed by `07-SPEC-WORKSPACE.md`, which supersedes the flat list: an ordered array cannot
-> say which files are cache-stable versus volatile, which sit after the conversation history, or
-> which the agent may write to — and each of those has a measured cost when got wrong.
-
-| Field | Default | Notes |
-| --- | --- | --- |
-| `workspace` | `./workspace` | Directory holding the persistent files. Relative to the manifest. |
-| `static` | `[]` | Tier 0, slot 0. Cache-stable, read-only, before breakpoint A. |
-| `volatile` | `[]` | Tier 1, slot 2. Agent-writable, **after** breakpoint A so a write does not invalidate the cached prefix. |
-| `reminder` | none | Tier 2, slot 7. Injected after the conversation history, before the current input. |
-| `budgets` | `{static: 700, volatile: 500, reminder: 60, total: 1300}` | Hard caps. Over budget **fails the load naming the file** — never silent truncation. |
-| `rules` | `{perRuleSuccess: 0.90, reliabilityTarget: 0.80, onExceed: fail}` | Imperative-count guard across static + reminder. At 0.90 a 0.80 target permits two rules, not four. |
-| `soul` | none | Capability-gated long-form identity, with `requires` and `onUnmet: distill \| omit \| fail`. |
-| `compactionNotice` | true | Runtime-generated line telling the model context compacts automatically, so it does not wrap up work early on budget grounds. Phase 7. |
-
-A `knowledge` section sits alongside `skills` at the top level, and is Tier 3 — retrieved, never
-pinned, so it has no share of the 1,300:
-
-| Field | Default | Notes |
-| --- | --- | --- |
-| `knowledge.dir` | none | Directory of keyword-gated knowledge files. |
-| `knowledge.maxActive` | 2 | Entries activated in one turn. |
-| `knowledge.budget` | 600 | Total across activated entries. |
 
 ### `tools`
 
 | Field | Default | Notes |
 | --- | --- | --- |
-| `dialect` | `nlt` | `nlt` or `native`. Config only — never auto-detected. `native` is refused at load when the resolved model has `capabilities.nativeTools: false`, and when any resolved slug falls outside a native function name's `[A-Za-z0-9_-]{1,64}`. |
+| `dialect` | `nlt` | `nlt` or `native`. Config only — never auto-detected. |
 | `provider` | none | Provider id registered by a plugin: `composio`, `mcp`, or custom. Omit for local-only. |
 | `providerConfig` | `{}` | Passed to the provider. Secrets via `${ENV_VAR}`. |
 | `budget.max` | 24 | Hard cap on catalogue size. |
@@ -259,16 +216,6 @@ pinned, so it has no share of the 1,300:
 | `pinned` | `[]` | Slugs resolved at load. **An unknown slug fails the load** with the slug and provider named. |
 | `search.enabled` | false | Exposes a provider search meta-tool as an escape hatch. Off by default: search-then-execute is two-hop reasoning and small models fail it. |
 | `local` | `[]` | Built-in tools: `memory_write`, `phase_set`, `handoff`, `now`. |
-
-Both dialects render the *same* `ToolSpec`, and both put the same guidance in front of the model —
-summary, `whenToUse`, `whenNotToUse`, and a state-change warning for a mutating tool. Under `nlt` that
-is prose in context slot 1; under `native` it is the wire format's `function.description`, and the
-schema is passed through unchanged. So switching `dialect` changes the channel and nothing about what
-the model is told, which is what makes `evals/tools` a comparison of dialects rather than of wording.
-
-One consequence worth knowing when reading token figures: under `native` the catalogue is in the
-request body rather than in context, so `context.window` is reduced by its estimated cost and
-`validate` reports the same total under either dialect.
 
 ### `phases`
 
@@ -300,7 +247,7 @@ Phase state persists per session.
 | --- | --- | --- |
 | `retriever` | `fts5` | Interface id. `fts5` is the only shipped implementation. |
 | `dir` | `./memory` | Dated markdown. Written by the agent through `memory_write`. |
-| `k` | 6 | Passages retrieved into context slot 4. |
+| `k` | 6 | Passages retrieved into context slot 3. |
 | `includeHistory` | true | Whether past messages are indexed alongside memory files. |
 
 ### `channels`

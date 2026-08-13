@@ -16,22 +16,45 @@
 import type { ChatMessage } from "../model/provider.ts"
 
 export const SLOT = {
-    /** system: identity, from `context.files`. Pinned, cache breakpoint A. */
+    /**
+     * system: identity, from `context.files`. Pinned, cache breakpoint A.
+     *
+     * Phase 3.5 supersedes `context.files` with the workspace's `static` tier — same position, same
+     * cache role. The name stays `identity` until that lands, because a slot named for behaviour the
+     * runtime does not have yet is worse than one named for what it actually holds.
+     */
     identity: 0,
     /** Tool dialect preamble and catalogue. Pinned, cache breakpoint A. Phase 3. */
     tools: 1,
+    /**
+     * Workspace `volatile` tier — the user model and working memory. Pinned. Phase 3.5.
+     *
+     * *After* breakpoint A, and that is the entire reason the tier exists: this content changes when
+     * the agent writes to memory, and content ahead of the breakpoint that changes invalidates the
+     * cached prefix on every write. The cost rises and nothing anywhere reports it.
+     */
+    volatile: 2,
     /** Active skill body. Cache breakpoint B. Phase 5. */
-    skill: 2,
+    skill: 3,
     /** Retrieved memory passages. Phase 6. */
-    memory: 3,
+    memory: 4,
     /** Rolling digest, the output of compaction. Phase 7. */
-    digest: 4,
+    digest: 5,
     /** Recent message window. */
-    history: 5,
+    history: 6,
+    /**
+     * Workspace `reminder` tier — one or two re-asserted rules. Pinned. Phase 3.5.
+     *
+     * Positioned after the history rather than with the other pinned instruction slots, because that
+     * is what it is for: rule adherence decays across a conversation, attention is stronger at both
+     * ends of the context than in the middle, and a rule stated once at the top of a thirty-turn
+     * session is effectively in the middle.
+     */
+    reminder: 7,
     /** Current input and current task line. Pinned. */
-    input: 6,
+    input: 8,
     /** Last error, if any. Pinned. */
-    error: 7,
+    error: 9,
 } as const
 
 export type SlotName = keyof typeof SLOT
