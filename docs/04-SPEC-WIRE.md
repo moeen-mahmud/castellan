@@ -215,7 +215,8 @@ interface Event {
 | `model.chunk` | streaming | `delta` — suppressed unless subscriber opted in |
 | `model.result` | response done | `outputTokens`, `finishReason`, `latencyMs`, `costUsd?` |
 | `tool.call` | before execute | `slug`, `callId`, `argsHash`, `mutating` |
-| `tool.result` | after execute | `slug`, `callId`, `ok`, `latencyMs`, `bytes`, `truncated` |
+| `tool.result` | after execute | `slug`, `callId`, `ok`, `latencyMs`, `bytes`, `truncated`, `trust` |
+| `tool.gated` | a call was blocked | `slug`, `callId`, `reason`, `policy` |
 | `tool.repair` | step unusable | `slugs[]`, `errors[]` |
 | `tools.refreshed` | after `runtime.ready` | `provider`, `ok`, `fetched`, `changed[]`, `missing[]`, `latencyMs`, `error?` |
 | `handoff.start` | delegation | `to`, `task` |
@@ -231,6 +232,11 @@ deliberately the only evidence: the refresh is detached, because awaiting it wou
 trip back inside the boot path. `ok: false` is not a turn failure — the agent keeps serving the
 catalogue it resolved from disk. Watch `changed`: a slug whose schema moved under a running agent is
 one the model has already been told about in the current session's cached prefix.
+
+`tool.gated` fires when a mutating call is refused because untrusted content entered the turn. It is
+not an error: the model is told to report back and ask instead, and the turn continues. `policy` names
+the `tools.untrusted.onMutate` setting that decided it, so a surprised operator can see whether they
+were on the default.
 
 `callId` identifies a call within its step; the envelope's `stepId` makes it unique. Arguments
 themselves never appear on the wire — `argsHash` is a stable hash over them, because arguments carry

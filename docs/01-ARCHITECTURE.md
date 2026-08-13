@@ -19,7 +19,8 @@ with you.
 ## What Castellan is not
 
 Not an orchestration graph. Not a workflow engine. Not a RAG pipeline. Not a vector
-database. Not a browser automator. Not a model gateway. Not a provisioning platform —
+database. Not a browser automator — `web_fetch` reads one page by explicit URL with no JavaScript
+execution and no link-following, and a real crawl is a pinned Composio tool. Not a model gateway. Not a provisioning platform —
 that's VelaOps, and the boundary is enforced in `06-VELAOPS-INTEGRATION.md`.
 
 ---
@@ -102,6 +103,7 @@ packages/core/src/
 │   └── roles.ts             # main / selector / compactor resolution
 ├── tools/
 │   ├── registry.ts          # pinned manifest, slug validation, budget
+│   ├── trust.ts             # untrusted-observation boundary + write gate
 │   ├── dialect/
 │   │   ├── dialect.ts       # ToolDialect interface
 │   │   ├── nlt.ts           # default

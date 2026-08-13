@@ -259,6 +259,21 @@ pinned, so it has no share of the 1,300:
 | `pinned` | `[]` | Slugs resolved at load. **An unknown slug fails the load** with the slug and provider named. |
 | `search.enabled` | false | Exposes a provider search meta-tool as an escape hatch. Off by default: search-then-execute is two-hop reasoning and small models fail it. |
 | `local` | `[]` | Built-in tools: `memory_write`, `phase_set`, `handoff`, `now`. |
+| `providers` | `{}` | **Phase 3.6.** Map of provider id → its config, so more than one can be used at once. `provider` + `providerConfig` remain as the single-provider alias and warn. |
+| `web` | none | **Phase 3.6.** `backend` (`tavily \| brave \| exa`), `apiKeyEnv`, `maxBytes`, `timeoutMs`, `allowPrivateHosts`. |
+| `untrusted.onMutate` | `refuse` | **Phase 3.6.** What to do when untrusted content is in the turn and a mutating tool is requested: `refuse \| confirm \| allow`. `confirm` needs Phase 9's approval middleware. |
+
+**`tools.search` is about finding a *tool*, not searching the web.** It exposes a meta-tool over the
+provider's own catalogue — 25,438 entries, for Composio — so the model can discover a tool it was not
+given. Off by design and refused if enabled: search-then-execute is two-hop reasoning, which is where
+small models fail. Searching the *internet* is `web_search`, or a pinned `COMPOSIO_SEARCH_*` tool, and
+has nothing to do with this field. The two have been confused, so they are stated together here.
+
+**Trust.** Every tool carries `trust`, and a provider-resolved tool defaults to `untrusted` — a
+provider cannot know what its upstream API will return, so the default is the one that is wrong
+harmlessly. An untrusted observation reaches the model delimited and labelled as data, and cannot
+silently drive a mutating call in the same turn. The delimiters are advisory; the write gate is not.
+
 
 Both dialects render the *same* `ToolSpec`, and both put the same guidance in front of the model —
 summary, `whenToUse`, `whenNotToUse`, and a state-change warning for a mutating tool. Under `nlt` that

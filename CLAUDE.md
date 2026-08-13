@@ -209,6 +209,14 @@ Never claim a performance property without a number in `evals/` and a script to 
   or multi-step reasoning silently degrades with no error.
 - **`allowFrom` is inbound-only.** It confers nothing on outbound delivery. Conflating these
   produces a confusing "chat not found" class of failure.
+- **A tool result is not automatically trustworthy.** `ToolSpec.trust` separates text the runtime wrote
+  from text a stranger wrote, and a provider-resolved tool defaults to `untrusted`. The delimiters
+  around untrusted content are advisory — a model can be talked past them. The write gate
+  (`tools.untrusted.onMutate`, default `refuse`) is the part that holds. Do not "improve" this by
+  filtering instruction-like phrasing out of untrusted text: it does not work, and an unreliable
+  filter invites the belief that the problem is handled.
+- **`tools.search` searches the provider's tool catalogue, not the web.** Two different things, and
+  they have already been confused once. Web search is `web_search`.
 - **`resolve()` must throw on unknown tool slugs.** Silently dropping them is how write tools
   get starved and how a config error becomes a runtime mystery.
 - **`mutating` defaults to true for a provider tool with no annotation, and that is the safe direction.**

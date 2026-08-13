@@ -17,7 +17,7 @@ VelaOps is its first consumer, not its owner.
 | `02-SPEC-MANIFEST.md` | `agent.yaml` — the single config contract. |
 | `03-SPEC-PLUGIN-API.md` | Plugin and middleware contracts. |
 | `04-SPEC-WIRE.md` | HTTP/SSE surface and the lifecycle event schema. |
-| `05-PLAN.md` | Fifteen phases, each with acceptance criteria. The build order. |
+| `05-PLAN.md` | Sixteen phases, each with acceptance criteria. The build order. |
 | `06-VELAOPS-INTEGRATION.md` | The compat adapter, migration strategy, and what must never leak into core. |
 | `07-SPEC-WORKSPACE.md` | The tiered agent workspace — `AGENT.md`, `POLICY.md`, `USER.md`, `MEMORY.md`, `REMINDER.md`, budgets, and per-model rendering. Supersedes `context.files` in doc 02. |
 

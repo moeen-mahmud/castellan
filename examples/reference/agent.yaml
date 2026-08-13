@@ -150,10 +150,37 @@ tools:
   #   - GMAIL_FETCH_EMAILS
   #   - GOOGLECALENDAR_EVENTS_LIST
 
-  # Off by design in v1, and refused if enabled: search-then-execute is two-hop reasoning, which is
-  # exactly where small models fail. Pin what the agent needs instead.
+  # ── tools.search is about finding a TOOL, not searching the web ──
+  # This exposes a meta-tool that searches the *provider's catalogue* — 25,438 tools, in Composio's
+  # case — so the model can discover a tool it was not given. Off by design in v1 and refused if
+  # enabled: search-then-execute is two-hop reasoning, which is exactly where small models fail. Pin
+  # what the agent needs instead.
+  #
+  # If you want the agent to search the *internet*, that is `web_search` below, or a pinned Composio
+  # tool such as COMPOSIO_SEARCH_SEARCH. Nothing to do with this field.
   search:
     enabled: false
+
+  # ── Phase 3.6: web search and page fetching ──
+  # First-party, provider-agnostic. `web_search` returns results; `web_fetch` returns one page as
+  # text. Both are read-only, and both are marked `trust: untrusted` — their output is text a
+  # stranger wrote, so it is delimited as data and cannot silently drive a mutating tool in the same
+  # turn. See docs/05-PLAN.md Phase 3.6.
+  #
+  # web:
+  #   backend: tavily              # tavily | brave | exa
+  #   apiKeyEnv: TAVILY_API_KEY    # the variable's name, never the key
+  #   maxBytes: 2000000            # stop reading a page here, before extraction
+  #   timeoutMs: 15000
+  #   # Loopback, link-local and private ranges are refused outright. Only turn this off for a
+  #   # deliberately sandboxed network — it is the SSRF boundary.
+  #   allowPrivateHosts: false
+  #
+  # What to do when untrusted output is in the turn and the model asks for a mutating tool.
+  # `refuse` is the default: the call is blocked and the model is told to ask the person instead.
+  # `confirm` needs the approval middleware and arrives with Phase 9.
+  # untrusted:
+  #   onMutate: refuse             # refuse | confirm | allow
 
 # ── limits ────────────────────────────────────────────────────────────────────────────────
 limits:
