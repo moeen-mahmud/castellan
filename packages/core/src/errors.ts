@@ -324,6 +324,25 @@ export function nativeToolNameInvalid(slug: string, provider: string): ConfigErr
     })
 }
 
+/**
+ * `tools.provider` names a provider the runtime was not given.
+ *
+ * Refused at load rather than ignored, because ignoring it means every pinned slug fails to resolve
+ * and the report blames the slugs — twenty errors about tool names when the real problem is one
+ * missing registration.
+ */
+export function toolProviderUnknown(id: string, known: readonly string[]): ConfigError {
+    return new ConfigError({
+        code: "tool_provider_unknown",
+        message: `tools.provider is "${id}", which this runtime has no factory for.${known.length === 0 ? " No providers are registered." : ` Registered: ${known.join(", ")}.`}`,
+        hint:
+            known.length === 0
+                ? "A provider is supplied by the embedder, not resolved by name at runtime — nothing is installed while the process runs. Pass it as Runtime.create({ toolProviders: { composio: (ctx) => new ComposioProvider(ctx) } }), or drop tools.provider and use tools.local."
+                : `Check the spelling against the registered ids, or register a factory for "${id}" in Runtime.create({ toolProviders }).`,
+        field: "tools.provider",
+    })
+}
+
 export function toolSlugCollision(slug: string, providers: readonly string[]): ConfigError {
     return new ConfigError({
         code: "tool_slug_collision",

@@ -14,7 +14,7 @@
 import { mkdirSync } from "node:fs"
 import { dirname, isAbsolute, resolve } from "node:path"
 import { BRAND } from "../brand.ts"
-import { HarnessError } from "../errors.ts"
+import { HarnessError, toolProviderUnknown } from "../errors.ts"
 import { EventBus } from "../events/bus.ts"
 import type { EnvSource } from "../manifest/env.ts"
 import { type LoadedManifest, loadManifest, loadManifestFromObject } from "../manifest/load.ts"
@@ -23,6 +23,7 @@ import { TurnStreams } from "../store/buffer.ts"
 import { SqliteStore } from "../store/sqlite/store.ts"
 import type { Store } from "../store/store.ts"
 import { ToolRegistry } from "../tools/registry.ts"
+import type { ToolProvider, ToolProviderFactory } from "../tools/types.ts"
 import { Agent } from "./agent.ts"
 
 export type AgentSource = string | Record<string, unknown>
@@ -56,6 +57,15 @@ export interface RuntimeOptions {
     /** Directory for relative paths in object-form manifests. Defaults to `process.cwd()`. */
     readonly dir?: string
     readonly store?: StoreSource
+    /**
+     * Tool provider factories, by the id a manifest's `tools.provider` names.
+     *
+     * Factories rather than instances: `packages/core` may not import a sibling package, and a
+     * provider needs the agent's own directory and resolved environment, which exist only once its
+     * manifest is loaded. A manifest naming an unregistered id fails at load rather than resolving
+     * nothing and blaming the slugs.
+     */
+    readonly toolProviders?: Readonly<Record<string, ToolProviderFactory>>
 }
 
 export interface BootReport {
@@ -164,15 +174,23 @@ export class Runtime {
         // 3. Tools: resolve the catalogue from the manifest. Local tools resolve from memory, so
         //    this touches nothing. A network provider resolves from its on-disk cache here and
         //    refreshes after readiness — hard rule 4 has no exception for "just this one call".
+        //    The factory is called here rather than at first use so an unregistered id fails during
+        //    boot, next to the manifest that named it — not on the first turn, hours later.
+        const providersByAgent = new Map<string, ToolProvider>()
         const registries = await markAsync("tools", () =>
             Promise.all(
-                loaded.map((entry: LoadedManifest) =>
-                    ToolRegistry.create({
+                loaded.map((entry: LoadedManifest) => {
+                    const provider = buildProvider(entry, options)
+                    if (provider !== undefined) {
+                        providersByAgent.set(entry.manifest.id, provider)
+                    }
+                    return ToolRegistry.create({
                         pinned: entry.manifest.tools.pinned,
                         local: entry.manifest.tools.local,
                         budget: entry.manifest.tools.budget,
-                    }),
-                ),
+                        ...(provider === undefined ? {} : { providers: [provider] }),
+                    })
+                }),
             ),
         )
 
@@ -247,6 +265,48 @@ export class Runtime {
             agents: agents.length,
         })
 
+        // The first legal network call of the process, and deliberately not awaited. Awaiting it here
+        // would put a remote round trip back inside `Runtime.create` — the boot cost this project
+        // exists to remove — just on the far side of the event. So it runs detached and reports through
+        // the bus, and a failure leaves the agent serving the catalogue it resolved from disk.
+        for (const [agentId, provider] of providersByAgent) {
+            const entry = loaded.find((item: LoadedManifest) => item.manifest.id === agentId)
+            const slugs = entry?.manifest.tools.pinned ?? []
+            if (provider.refresh === undefined || slugs.length === 0) continue
+            const from = performance.now()
+            void provider
+                .refresh(slugs)
+                .then((result) => {
+                    bus.emit(
+                        "tools.refreshed",
+                        {
+                            provider: provider.id,
+                            ok: true,
+                            fetched: result.fetched,
+                            changed: [...result.changed],
+                            missing: [...result.missing],
+                            latencyMs: Math.round(performance.now() - from),
+                        },
+                        { agentId },
+                    )
+                })
+                .catch((error: unknown) => {
+                    bus.emit(
+                        "tools.refreshed",
+                        {
+                            provider: provider.id,
+                            ok: false,
+                            fetched: 0,
+                            changed: [],
+                            missing: [],
+                            latencyMs: Math.round(performance.now() - from),
+                            error: error instanceof Error ? error.message : String(error),
+                        },
+                        { agentId },
+                    )
+                })
+        }
+
         return runtime
     }
 
@@ -284,8 +344,40 @@ export class Runtime {
     }
 }
 
-function envOptions(options: RuntimeOptions): { env?: EnvSource } {
-    return options.env === undefined ? {} : { env: options.env }
+function envOptions(options: RuntimeOptions): {
+    env?: EnvSource
+    knownProviders?: readonly string[]
+} {
+    const known = Object.keys(options.toolProviders ?? {})
+    return {
+        ...(options.env === undefined ? {} : { env: options.env }),
+        // Passed even when empty, so the load-time check reports against what this runtime can
+        // actually supply rather than against nothing at all.
+        ...(known.length === 0 ? {} : { knownProviders: known }),
+    }
+}
+
+/**
+ * Construct the agent's tool provider, if its manifest names one.
+ *
+ * The provider gets the *manifest's* directory and env rather than the process's: a resolution cache
+ * belongs beside the agent it describes, and `process.cwd()` belongs to whoever launched the process
+ * and moves depending on how they did it. Same reasoning as `ToolContext.dir`.
+ */
+function buildProvider(entry: LoadedManifest, options: RuntimeOptions): ToolProvider | undefined {
+    const id = entry.manifest.tools.provider
+    if (id === undefined) return undefined
+
+    const factories = options.toolProviders ?? {}
+    const factory = factories[id]
+    if (factory === undefined) throw toolProviderUnknown(id, Object.keys(factories))
+
+    return factory({
+        dir: entry.dir,
+        env: entry.env,
+        config: entry.manifest.tools.providerConfig,
+        agentId: entry.manifest.id,
+    })
 }
 
 /**

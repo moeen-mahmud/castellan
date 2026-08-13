@@ -102,6 +102,44 @@ export interface ToolProvider {
     resolve(slugs: readonly string[]): Promise<readonly Tool[]>
     /** Optional, and only used to suggest a nearest match when resolution fails. */
     list?(): Promise<readonly string[]>
+    /**
+     * Bring a cached catalogue up to date. **Called after `runtime.ready`, never before.**
+     *
+     * This exists because `resolve` runs inside the boot sequence, where hard rule 4 forbids network
+     * I/O — so a remote provider resolves from disk there and catches up here. A provider with nothing
+     * to refresh omits it; the runtime skips what is absent rather than requiring an empty
+     * implementation.
+     */
+    refresh?(slugs: readonly string[], signal?: AbortSignal): Promise<ToolProviderRefresh>
+}
+
+export interface ToolProviderRefresh {
+    readonly fetched: number
+    /** Slugs the provider no longer has. Reported, never silently dropped from the catalogue. */
+    readonly missing: readonly string[]
+    /** Slugs whose schema differs from the copy resolved at boot. */
+    readonly changed: readonly string[]
+}
+
+/**
+ * How a provider is supplied to the runtime.
+ *
+ * A factory rather than an instance, because `packages/core` may not import a sibling package (hard
+ * rule 2) and because a provider needs the *agent's* directory and resolved environment — which only
+ * exist once its manifest is loaded. The embedder registers factories by id; the manifest's
+ * `tools.provider` selects one. Phase 9's plugin loader replaces this with registration, and keeps the
+ * same shape.
+ */
+export type ToolProviderFactory = (context: ToolProviderContext) => ToolProvider
+
+export interface ToolProviderContext {
+    /** The agent's own directory — where a resolution cache belongs, never `process.cwd()`. */
+    readonly dir: string
+    /** The manifest's env, layered over the ambient one. Holds values; the manifest holds names. */
+    readonly env: Readonly<Record<string, string | undefined>>
+    /** `tools.providerConfig`, verbatim. */
+    readonly config: Readonly<Record<string, unknown>>
+    readonly agentId: string
 }
 
 export interface ToolIntent {

@@ -47,8 +47,10 @@ castellan/
 │   ├── tools-mcp/               @castellan/tools-mcp
 │   └── compat-openclaw/         @castellan/compat-openclaw
 ├── examples/
-│   ├── minimal/                 # library usage, no channels
-│   └── telegram-assistant/      # full agent.yaml
+│   ├── minimal/                 # smallest thing that runs: one model, no tools
+│   ├── reference/               # every agent.yaml field; future phases commented with their phase
+│   ├── workspace-template/      # the tiered workspace files, to copy (Phase 3.5)
+│   └── telegram-assistant/      # a worked workspace (Phases 3.5 + 4)
 ├── docker/
 │   └── Dockerfile
 └── scripts/

@@ -8,10 +8,14 @@
 import { Runtime } from "@castellan/core"
 import { EXIT_OK } from "#lib/const"
 import { onExit } from "#lib/exit"
+import { TOOL_PROVIDERS } from "#lib/providers"
 import type { AgentsOptions } from "#lib/schema"
 
 export async function agentsCommand(options: AgentsOptions): Promise<number> {
-    const runtime = await Runtime.create({ agents: [...options.manifestPaths] })
+    const runtime = await Runtime.create({
+        agents: [...options.manifestPaths],
+        toolProviders: TOOL_PROVIDERS,
+    })
     onExit(() => runtime.stop("cli-exit"))
 
     const described = runtime.list().map((agent) => agent.describe())

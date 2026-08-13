@@ -305,7 +305,10 @@ Phase 3 or later. Any change to `packages/core`.
       turn ends at 2 steps rather than spending the step budget on the same broken block
 - [x] Parser unit tests: 47 cases across multi-block, missing END, wrong case, bullets, numbered
       lists, backticked slugs, embedded `>>>`, wrapping fences, CRLF, and repeated keys
-- [ ] Composio path uses zero MCP transport — grep proves it
+- [x] Composio path uses zero MCP transport — grep proves it: `packages/tools-composio` depends on
+      `@castellan/core` and nothing else, no `@modelcontextprotocol` import anywhere, no `EventSource`
+      and no `text/event-stream`. Every request goes through one injectable `fetch`, and a test asserts
+      all three absences per source file rather than trusting them
 
 **Progress.** The core tool layer and both CLI surfaces are complete and verified: `types`, `registry`
 (resolution, budget, loud failure), `dialect/nlt` (catalogue, parser, stream filter, observations,
@@ -318,8 +321,16 @@ Verified live against DeepSeek, at a pty and through a pipe: one tool, two paral
 a two-tool chain across steps, tool rows on both paths, and zero occurrences of `ACTION` in either
 path's output.
 
-Still outstanding: `packages/tools-composio` with its resolution cache. That is the whole of what remains
-in this phase.
+**Verified live against Composio's API** (25,438 tools reported by the listing): `tools --warm` fetched
+three pinned schemas in 1.6 s and wrote the cache; the catalogue then rendered from disk **with no API
+key present at all**; and a full turn against DeepSeek routed to `GOOGLECALENDAR_EVENTS_LIST`, hit the
+missing-connection error, and reported it honestly instead of inventing a calendar.
+
+The number that matters: `Runtime.create` returns in **27 ms** with the provider configured, and the
+post-readiness refresh takes **1,474 ms**. Awaiting it inside boot would have made boot sixty times
+slower, which is the whole reason the two paths are separate. `bench:boot` unchanged at 68.0 ms.
+
+Phase 3 is complete.
 
 **Non-goals.** Tool search. Phases. MCP provider.
 
@@ -463,6 +474,55 @@ in this phase.
   central claim. The gate also no longer speaks for Phase 3 on a narrowed run: a `--tasks` subset that
   regresses still exits non-zero, as `SUBSET REGRESSION`, but the Phase 3 wording is reserved for the
   full fixture set so a subset cannot be quoted as the decision.
+
+- **`mutating` is read from Composio's annotations, and an unannotated tool is assumed mutating.** The
+  plan proposed action-name and HTTP-method heuristics; the live data made them unnecessary and worse.
+  Composio publishes MCP-style hints in `tags` — `readOnlyHint` on 51 of 100 sampled tools,
+  `destructiveHint` on 10, and **nothing at all on 37**, including `ABLY_PUBLISH_MESSAGE_TO_CHANNEL`.
+  No tool carries `readOnlyHint` while having a write verb in its slug, so the annotation is reliable
+  when present and silent when absent. Confirmed on the three pinned live: `GMAIL_SEND_EMAIL` has no
+  `readOnlyHint` and correctly resolved as `write`. The default is the safe direction rather than the
+  cautious one — `mutating` is what serialises a call and suppresses its retry, so a write mislabelled
+  as a read runs in parallel *and* is retried, and the side effect happens twice.
+- **Value constraints are carried in the field description; structural keywords are refused.** The plan
+  said `map.ts` should refuse what it cannot express. Applied literally that refuses **46 of 100** tools:
+  `minimum` appears 62 times, `maximum` 23, `format` 22, plus `pattern`, `minLength`, `maxLength`. So
+  those are appended to the description where both dialects render them, with the stated cost that an
+  out-of-range value is rejected by Composio at execution rather than repaired locally. `anyOf`, `oneOf`,
+  `allOf`, `not` and `$ref` decide *validity* and are refused naming tool, field and keyword — none
+  appears in the live sample, so it costs nothing today.
+- **`default: null` is dropped in the mapper.** `GMAIL_SEND_EMAIL.subject` really ships
+  `{"default": null, "nullable": true}`, and `coerce` applies any default that is not `undefined` — so
+  carrying it would have sent an explicit `subject: null` on every call the model left blank. A null
+  default is a schema saying "no default", not "default to null".
+- **Providers are factories registered by the embedder, and the plumbing did not exist.**
+  `RegistryOptions.providers` was already consulted but nothing populated it: `runtime.ts` passed only
+  `{pinned, local, budget}`, and `tools.provider` was read by nothing while `validate` refused it as
+  `not_implemented_yet`. Core cannot import a provider (hard rule 2) and a provider needs the *agent's*
+  directory and env, so `Runtime.create({ toolProviders })` takes factories keyed by id. The same list
+  reaches `validate`, because a validator that accepts what the runtime refuses is worse than none.
+- **An unwarmed cache needed its own error, and the generic one proved it.** On the first cold run the
+  registry reported *"No provider resolved GMAIL_FETCH_EMAILS. Consulted: local, composio … Available:
+  now, memory_write"* — three correct slugs blamed, local tools offered as the alternative, and no
+  mention of the actual cause. Only the provider knows the cache is empty, so it now throws
+  `composio_cache_miss` naming the slugs, the cache path, and the warm command.
+- **`castellan tools <manifest> [--warm]` is a new command, and it had to be.** Without it the cache is
+  unfillable: an empty cache fails the load, so the post-readiness refresh that would have populated it
+  never runs. `--warm` therefore does not boot the runtime at all — it loads the manifest, constructs
+  the provider, and fetches. It exits non-zero when a slug does not exist, since exiting 0 would let a
+  bad slug through to a load failure after the person believed it had succeeded.
+- **`tools.refreshed` is a new event.** The refresh is fire-and-forget, so without an event there is no
+  evidence it happened or failed. `ok: false` is not a turn failure — the agent keeps serving what it
+  resolved from disk.
+- **`slotReport` was dropping `label`.** Found while documenting the slot renumber:
+  `ContextBlock.label`'s own comment describes it as existing for `GET /v1/agents/:id/context`, which
+  never received it. Slot numbers are positional and renumber on insertion, so a consumer without the
+  label has to hardcode numbers. `slotReport` had no tests at all, which is how it went unnoticed;
+  `packages/core/test/context.test.ts` now covers it, including two assertions on the numbering
+  invariant itself.
+- **`tools.providerConfig` refuses an unknown key.** The manifest schema keeps it a free-form record, so
+  nothing upstream catches `userid` for `userId`. A silently ignored setting is a configuration that
+  looks applied and is not.
 
 ---
 

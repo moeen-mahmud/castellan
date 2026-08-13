@@ -252,8 +252,8 @@ pinned, so it has no share of the 1,300:
 | Field | Default | Notes |
 | --- | --- | --- |
 | `dialect` | `nlt` | `nlt` or `native`. Config only — never auto-detected. `native` is refused at load when the resolved model has `capabilities.nativeTools: false`, and when any resolved slug falls outside a native function name's `[A-Za-z0-9_-]{1,64}`. |
-| `provider` | none | Provider id registered by a plugin: `composio`, `mcp`, or custom. Omit for local-only. |
-| `providerConfig` | `{}` | Passed to the provider. Secrets via `${ENV_VAR}`. |
+| `provider` | none | Provider id the embedder registered: `composio`, or custom. Omit for local-only. **Naming an unregistered id fails the load** — resolving nothing instead would blame every pinned slug for one missing registration. |
+| `providerConfig` | `{}` | Passed to the provider, which validates it and **refuses an unknown key** rather than ignoring it. Secrets are env var *names*. |
 | `budget.max` | 24 | Hard cap on catalogue size. |
 | `budget.reserveWrite` | 6 | Slots held for mutating tools so reads cannot starve writes. |
 | `pinned` | `[]` | Slugs resolved at load. **An unknown slug fails the load** with the slug and provider named. |
@@ -265,6 +265,33 @@ summary, `whenToUse`, `whenNotToUse`, and a state-change warning for a mutating 
 is prose in context slot 1; under `native` it is the wire format's `function.description`, and the
 schema is passed through unchanged. So switching `dialect` changes the channel and nothing about what
 the model is told, which is what makes `evals/tools` a comparison of dialects rather than of wording.
+
+#### Providers and the resolution cache
+
+A provider is supplied by the embedder, not resolved by name at runtime — nothing installs while the
+process runs:
+
+```ts
+Runtime.create({ agents: ["./agent.yaml"], toolProviders: { composio: composioFromConfig } })
+```
+
+The `castellan` binary registers `composio` already, so a manifest naming it works from the CLI with
+no code.
+
+Resolution happens at agent load, inside the boot sequence, where **no network I/O is permitted**. A
+remote provider therefore resolves from `.castellan/tools.cache.json` and catches up after
+`runtime.ready`, reporting through the `tools.refreshed` event. Measured on a three-tool Composio
+manifest: boot returns in 27 ms and the refresh takes 1,474 ms, so awaiting it would make boot sixty
+times slower.
+
+The consequence is that a cold agent must be warmed once — `castellan tools <manifest> --warm`. An
+empty cache fails the load naming the slugs and that command, rather than making the call it is not
+allowed to make. A warmed agent boots and serves its catalogue with no API key present at all.
+
+`tools.providerConfig` for `composio` accepts `apiKeyEnv` (default `COMPOSIO_API_KEY`), `userId`, and
+`baseUrl`. Anything else is refused: the schema keeps this a free-form record, so nothing upstream
+catches `userid` for `userId`, and a silently ignored setting is a configuration that looks applied
+and is not.
 
 One consequence worth knowing when reading token figures: under `native` the catalogue is in the
 request body rather than in context, so `context.window` is reduced by its estimated cost and

@@ -204,7 +204,7 @@ interface Event {
 | `agent.error` | load failure | `code`, `message`, `hint` |
 | `agent.channel.status` | connect/disconnect | `channelId`, `status`, `detail` |
 | `turn.start` | inbound accepted | `source`, `inputTokens` |
-| `context.assembled` | per turn | `slots: [{slot, tokens, pinned}]`, `total` |
+| `context.assembled` | per turn | `slots: [{slot, label, tokens, pinned}]`, `total` |
 | `context.pressure` | per step | `used`, `window`, `fraction` |
 | `compaction.stage` | ladder fires | `stage`, `before`, `after`, `dropped` |
 | `context.reset` | S5 fires | `sessionKey` — warn level |
@@ -217,6 +217,7 @@ interface Event {
 | `tool.call` | before execute | `slug`, `callId`, `argsHash`, `mutating` |
 | `tool.result` | after execute | `slug`, `callId`, `ok`, `latencyMs`, `bytes`, `truncated` |
 | `tool.repair` | step unusable | `slugs[]`, `errors[]` |
+| `tools.refreshed` | after `runtime.ready` | `provider`, `ok`, `fetched`, `changed[]`, `missing[]`, `latencyMs`, `error?` |
 | `handoff.start` | delegation | `to`, `task` |
 | `handoff.result` | returned | `to`, `ok`, `steps`, `tokens` |
 | `delivery.sent` | outbox success | `channelId`, `providerMessageId` |
@@ -224,6 +225,12 @@ interface Event {
 | `schedule.fired` | timer | `scheduleId`, `kind`, `drift Ms` |
 | `turn.end` | complete | `reason`, `steps`, `tokens`, `durationMs` |
 | `error` | anything uncaught | `code`, `message`, `hint`, `stack?` |
+
+`tools.refreshed` is the only evidence a remote provider caught its cached catalogue up, and it is
+deliberately the only evidence: the refresh is detached, because awaiting it would put a network round
+trip back inside the boot path. `ok: false` is not a turn failure — the agent keeps serving the
+catalogue it resolved from disk. Watch `changed`: a slug whose schema moved under a running agent is
+one the model has already been told about in the current session's cached prefix.
 
 `callId` identifies a call within its step; the envelope's `stepId` makes it unique. Arguments
 themselves never appear on the wire — `argsHash` is a stable hash over them, because arguments carry

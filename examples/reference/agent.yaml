@@ -1,0 +1,249 @@
+# The reference manifest: every field `agent.yaml` accepts, in one place.
+#
+# Runnable as it stands. Everything a phase has not delivered yet is present but commented, with
+# the phase that unlocks it — so completing a phase means uncommenting a block here and watching it
+# work, rather than discovering the field name in a spec.
+#
+# The commenting is not cosmetic. A section this build does not implement is **refused at load**,
+# naming the phase, rather than parsed and ignored: a runtime that silently drops configuration
+# lies about what it is doing. Uncomment `channels` today and the load fails on purpose.
+#
+# `docs/02-SPEC-MANIFEST.md` is the binding reference. This file is the worked copy.
+
+apiVersion: castellan/v1
+id: reference
+name: Reference Assistant
+
+# Path to a base manifest. Shallow merge; arrays replace rather than concatenate.
+# extends: ./base.agent.yaml
+
+# ── model ─────────────────────────────────────────────────────────────────────────────────
+# Three roles. `main` is required; `selector` and `compactor` fall back to it.
+model:
+  main:
+    # Sent verbatim as the `model` parameter.
+    id: ${MODEL_ID}
+    # Must end at the version segment. The runtime appends `/chat/completions`.
+    baseUrl: ${MODEL_BASE_URL}
+    # The *name* of an env var. A literal key here fails validation — rule 2.
+    apiKeyEnv: MODEL_API_KEY
+    temperature: 0.3
+    # topP: 0.95
+    # maxTokens: 4096
+    # headers:
+    #   x-my-gateway-tenant: ${TENANT_ID}
+
+    # `stream_options: {include_usage: true}` — an OpenAI extension, so off by default because an
+    # endpoint that does not know it may reject the whole request. Ollama reports no usage at all
+    # without it, so local token counts come from the estimator until this is set. Turn it on when a
+    # token figure is being compared rather than displayed.
+    # streamUsage: true
+
+    # Override the shipped capability registry only when it is wrong for your endpoint. These affect
+    # thinking-block replay and cache-breakpoint placement, and never the tool dialect.
+    # capabilities:
+    #   nativeTools: true
+    #   strictSchema: false
+    #   # none | anthropic | openai | deepseek — what the loop must *do* with reasoning, not
+    #   # whether the model reasons. `deepseek` bills reasoning to the output budget, so
+    #   # reserveOutput must cover thinking *plus* the answer.
+    #   thinking: deepseek
+    #   promptCache: none
+    #   parallelToolCalls: false
+    #   contextWindow: 32768
+    #   maxOutput: 8192
+    #   # Phase 3.5 — how authored workspace files are rendered for this model.
+    #   promptStyle:
+    #     delimiters: plain     # xml | markdown | plain
+    #     intensity: emphatic   # emphatic | neutral | soft
+    #     examplesIn: system    # system | user
+    #     skillsIn: system      # system | user
+
+  # A cheap model for tool selection and summarisation. `$ref` reuses a role without repeating it.
+  # selector:
+  #   id: ${SELECTOR_MODEL_ID}
+  #   baseUrl: ${MODEL_BASE_URL}
+  #   apiKeyEnv: MODEL_API_KEY
+  # compactor: { $ref: model.selector }
+
+# ── context ───────────────────────────────────────────────────────────────────────────────
+context:
+  # Defaults to the model's `contextWindow` capability. Set it to spend less than the window.
+  # window: 32768
+
+  # Held back for the reply. Generous on purpose: a reasoning model bills its thinking here too,
+  # and too small a reserve returns empty content with finish_reason=length.
+  reserveOutput: 8192
+
+  # Above this, one tool observation is cut to head+tail with the removed size named.
+  observationMaxTokens: 2000
+
+  # Ordered, concatenated into context slot 0 — pinned and cache-stable. Relative to this file.
+  # A missing file fails the load. Superseded by the workspace tiers in Phase 3.5, which keeps
+  # `files` as a deprecated alias for `static`.
+  files:
+    - IDENTITY.md
+
+  # Compaction ladder trigger fractions. Must be strictly ascending; validated at load.
+  thresholds:
+    trim: 0.60
+    snip: 0.70
+    micro: 0.80
+    collapse: 0.88
+    reset: 0.95
+
+  # ── Phase 3.5: the tiered workspace ──
+  # Replaces the flat `files` list above. A flat array cannot say which files are cache-stable,
+  # which sit after the conversation history, or which the agent may write to — and each of those
+  # has a measured cost when got wrong. See docs/07-SPEC-WORKSPACE.md.
+  #
+  # workspace: ./workspace
+  # static:                      # slot 0, before cache breakpoint A, read-only
+  #   - AGENT.md
+  #   - POLICY.md
+  # volatile:                    # slot 2, after the breakpoint so a write does not void the cache
+  #   - USER.md
+  #   - MEMORY.md
+  # reminder: REMINDER.md        # slot 7, after the history, before the current input
+  # budgets:
+  #   static: 700
+  #   volatile: 500
+  #   reminder: 60
+  #   total: 1300                # hard cap. Over budget fails the load naming the file.
+  # rules:
+  #   perRuleSuccess: 0.90       # measure it with `castellan eval rules`, do not guess
+  #   reliabilityTarget: 0.80    # at 0.90 per rule, this permits TWO rules, not four
+  #   onExceed: fail
+  # soul:
+  #   file: SOUL.md
+  #   requires: { contextWindow: ">=200000", class: frontier }
+  #   onUnmet: distill           # distill | omit | fail
+  # compactionNotice: true       # Phase 7 — stops the model wrapping up early on budget grounds
+
+# ── tools ─────────────────────────────────────────────────────────────────────────────────
+tools:
+  # Config only, never auto-detected: behaviour must not drift when the model changes. `nlt` is
+  # the default on measured evidence — see evals/tools/README.md.
+  dialect: nlt
+
+  # Built-in tools, resolved from memory. Never sent to a remote provider.
+  local:
+    - now             # read-only: runs in parallel with other reads
+    - memory_write    # mutating: serialises, holds a reserved write slot, never retried
+
+  budget:
+    max: 24
+    # Slots held for mutating tools so a large read surface cannot starve the writes.
+    reserveWrite: 6
+
+  # ── A remote provider ──
+  # Registered by the embedder — nothing installs at runtime. The `castellan` binary registers
+  # `composio` already. Run `castellan tools ./agent.yaml --warm` once before starting: resolution
+  # happens during boot, where no network call is permitted, so a cold cache fails the load naming
+  # the slugs and that command.
+  #
+  # provider: composio
+  # providerConfig:
+  #   apiKeyEnv: COMPOSIO_API_KEY   # the variable's name, never the key
+  #   userId: me
+  # pinned:
+  #   - GMAIL_FETCH_EMAILS
+  #   - GOOGLECALENDAR_EVENTS_LIST
+
+  # Off by design in v1, and refused if enabled: search-then-execute is two-hop reasoning, which is
+  # exactly where small models fail. Pin what the agent needs instead.
+  search:
+    enabled: false
+
+# ── limits ────────────────────────────────────────────────────────────────────────────────
+limits:
+  # Steps per turn before forced termination, reported as `reason: max_steps`. A two-tool chain
+  # needs three: call, observe, reply. This leaves room for one repair.
+  maxSteps: 8
+  # Must exceed any upstream timeout on the model endpoint.
+  turnTimeoutMs: 300000
+  toolTimeoutMs: 30000
+  # Read-only tools only. Mutating tools always serialise, whatever this says.
+  maxParallelTools: 4
+
+# ── Phase 7: phase-scoped tool visibility ─────────────────────────────────────────────────
+# The strongest published small-model lever: constraining the tool space per phase took local
+# models from 2/10 to 10/10 on a benchmark subset with no model change.
+#
+# phases:
+#   triage:
+#     entry: true
+#     allow: ["now", "tag:read"]     # slugs, `tag:<name>`, or `*`
+#   act:
+#     allow: ["*"]
+
+# ── Phase 5: skills ───────────────────────────────────────────────────────────────────────
+# skills:
+#   dir: ./skills
+#   maxActive: 1
+#   threshold: 0.35        # normalised BM25 floor; below it nothing activates
+#   sources: []
+
+# ── Phase 3.5: knowledge — Tier 3, retrieved and never pinned ─────────────────────────────
+# knowledge:
+#   dir: ./workspace/knowledge
+#   maxActive: 2
+#   budget: 600
+
+# ── Phase 6: memory ───────────────────────────────────────────────────────────────────────
+# FTS5 over memory markdown plus message history. No embedding model, no network.
+#
+# memory:
+#   retriever: fts5
+#   dir: ./memory
+#   k: 6
+#   includeHistory: true
+
+# ── Phase 4: channels, delivery, and the HTTP server ──────────────────────────────────────
+# `allowFrom` is inbound-only. It confers nothing on outbound delivery, and conflating the two
+# produces a confusing "chat not found" class of failure.
+#
+# channels:
+#   - type: telegram
+#     id: tg
+#     enabled: true
+#     mode: longpoll               # channel-specific fields reach the plugin's own schema
+#     tokenEnv: TELEGRAM_BOT_TOKEN
+#     allowFrom: ["@moeen"]
+#   - type: whatsapp
+#     id: wa
+#     authDir: ./.castellan/wa-auth
+#
+# delivery:
+#   default: tg                    # used when a turn has no origin — a schedule, or the API
+#   targets:
+#     owner: { channel: tg, to: "@moeen" }
+#
+# server:
+#   enabled: false                 # enabling it is refused until Phase 4
+#   host: 127.0.0.1                # a public bind is explicit, and requires a token
+#   port: 7420
+#   tokenEnv: CASTELLAN_API_TOKEN
+
+# ── Phase 8: schedules ────────────────────────────────────────────────────────────────────
+# Validated at write time rather than fire time. `deliver` is required — `{channel,to}` or the
+# literal "none" to return results through the event stream only.
+#
+# schedules:
+#   - id: morning-brief
+#     kind: cron                   # cron | every | at
+#     expr: "0 8 * * *"            # cron: 5 or 6 field · every: "15m" · at: ISO 8601, max +10y
+#     task: "Summarise today's calendar and unread email."
+#     deliver: { channel: tg, to: "@moeen" }
+#     session: isolated            # or `shared:<key>`
+#     enabled: true
+#     timezone: Asia/Dhaka         # IANA name; defaults to TZ, then UTC
+
+# ── Phase 9: plugins ──────────────────────────────────────────────────────────────────────
+# Trusted in-process code, documented as such. Resolved at boot from this list; never installed
+# at runtime.
+#
+# plugins:
+#   - "@castellan/channel-telegram"
+#   - spec: "./plugins/custom-metrics"
+#     config: { endpoint: "http://localhost:9090" }

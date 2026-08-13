@@ -25,6 +25,7 @@ import {
 import { EXIT_FAILURE, EXIT_OK, PROMPT } from "#lib/const"
 import { flushOutput, markTerminalDirty, onExit } from "#lib/exit"
 import { resolveModeFromProcess } from "#lib/output"
+import { TOOL_PROVIDERS } from "#lib/providers"
 import type { RunOptions } from "#lib/schema"
 import {
     resolveSessionCommand,
@@ -79,6 +80,7 @@ export async function runCommand(options: RunOptions): Promise<number> {
     const runtime = await RuntimeClass.create({
         agents: [options.manifestPath],
         emitChunks: true,
+        toolProviders: TOOL_PROVIDERS,
         store: options.ephemeral === true ? ":memory:" : (options.store ?? defaultStorePath()),
     })
     onExit(() => runtime.stop("cli-exit"))

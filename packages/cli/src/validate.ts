@@ -10,11 +10,12 @@
 
 import { HarnessError, loadManifest, resolveCapabilities } from "@castellan/core"
 import { EXIT_FAILURE, EXIT_OK } from "#lib/const"
+import { PROVIDER_IDS } from "#lib/providers"
 import type { ValidateOptions } from "#lib/schema"
 
 export function validateCommand(options: ValidateOptions): number {
     try {
-        const loaded = loadManifest(options.manifestPath)
+        const loaded = loadManifest(options.manifestPath, { knownProviders: PROVIDER_IDS })
         const { manifest } = loaded
         const capabilities = resolveCapabilities(
             manifest.model.main.id,

@@ -12,6 +12,7 @@
 import { type Agent, defaultStorePath, Runtime, type SessionSummary } from "@castellan/core"
 import { DEFAULT_ROW_LIMIT, EXIT_FAILURE, EXIT_OK } from "#lib/const"
 import { onExit } from "#lib/exit"
+import { TOOL_PROVIDERS } from "#lib/providers"
 import type { SessionsOptions } from "#lib/schema"
 
 const MINUTE_MS = 60_000
@@ -93,6 +94,7 @@ export async function sessionsCommand(options: SessionsOptions): Promise<number>
     const runtime = await Runtime.create({
         agents: [options.manifestPath],
         store: options.store ?? defaultStorePath(),
+        toolProviders: TOOL_PROVIDERS,
     })
     onExit(() => runtime.stop("cli-exit"))
 

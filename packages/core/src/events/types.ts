@@ -109,6 +109,27 @@ export interface EventDataMap {
      * asking again. Two of these back to back is the signal that a catalogue needs work.
      */
     "tool.repair": { slugs: string[]; errors: string[] }
+    /**
+     * A remote tool provider caught its cached catalogue up, **after** `runtime.ready`.
+     *
+     * The only observable evidence that the refresh happened, since it is deliberately fire-and-forget:
+     * the boot path resolves from disk so that nothing touches the network before readiness, which
+     * means the network call has to live somewhere with no caller waiting on it. `ok: false` carries
+     * the reason and is not a turn failure — the agent keeps serving the cached catalogue.
+     *
+     * `changed` is the field worth watching. A slug whose schema moved under a running agent is a
+     * catalogue the model has already been told about in the current session's cached prefix.
+     */
+    "tools.refreshed": {
+        provider: string
+        ok: boolean
+        fetched: number
+        changed: string[]
+        missing: string[]
+        latencyMs: number
+        /** Present when `ok` is false. */
+        error?: string
+    }
     "turn.end": {
         reason: TurnEndReason
         steps: number

@@ -112,6 +112,24 @@ export const COMMANDS: readonly CommandSpec[] = [
         args: [{ ...MANIFEST, variadic: true, help: "one or more paths to an agent.yaml" }],
         flags: [JSON_FLAG],
     },
+    {
+        // The one command whose whole purpose is to make a network call, which is why it is a command
+        // rather than something boot does: boot resolves a remote catalogue from disk so that nothing
+        // touches the network before readiness, and an empty cache would otherwise deadlock — the load
+        // fails on unresolved slugs, so the post-readiness refresh that would have filled it never runs.
+        name: "tools",
+        summary:
+            "show the resolved tool catalogue, or fetch a remote provider's schemas into the cache",
+        args: [MANIFEST],
+        flags: [
+            {
+                name: "warm",
+                kind: "boolean",
+                help: "fetch every pinned slug from the provider and write the resolution cache",
+            },
+            JSON_FLAG,
+        ],
+    },
 ]
 
 export function findCommand(name: string): CommandSpec | undefined {

@@ -27,6 +27,7 @@ import { finish, installGuards } from "#lib/exit"
 import { helpText } from "#lib/help"
 import { runCommand } from "#run"
 import { sessionsCommand } from "#sessions"
+import { toolsCommand } from "#tools"
 import { validateCommand } from "#validate"
 
 function report(error: unknown): number {
@@ -106,6 +107,13 @@ async function dispatch(argv: readonly string[]): Promise<number> {
 
         case "agents":
             return await agentsCommand({ manifestPaths: positionals, json: flags.bool("json") })
+
+        case "tools":
+            return await toolsCommand({
+                manifestPath,
+                warm: flags.bool("warm"),
+                json: flags.bool("json"),
+            })
 
         default:
             // Unreachable: `parse` refuses an unknown command with a suggestion. Present so that

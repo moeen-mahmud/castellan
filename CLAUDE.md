@@ -124,6 +124,9 @@ inbound (channel | API | schedule)
 - **Memory is FTS5, not embeddings.** Prove lexical insufficient before paying for vectors.
 - **Composio is called directly, never through MCP.** MCP is a fine integration protocol and
   a poor internal architecture.
+- **A remote provider resolves from disk at boot and refreshes after readiness.** Measured: boot 27 ms,
+  refresh 1,474 ms. Awaiting the refresh inside boot makes boot sixty times slower and reintroduces the
+  exact cost this project exists to remove. A cold agent is warmed once with `tools --warm`.
 - **Plugins are trusted in-process code**, documented as such. `permissions` is advisory
   vocabulary in v1.
 - **Workspace files are tiered, not a flat list.** Static (cached, read-only) before breakpoint A,
@@ -208,6 +211,13 @@ Never claim a performance property without a number in `evals/` and a script to 
   produces a confusing "chat not found" class of failure.
 - **`resolve()` must throw on unknown tool slugs.** Silently dropping them is how write tools
   get starved and how a config error becomes a runtime mystery.
+- **`mutating` defaults to true for a provider tool with no annotation, and that is the safe direction.**
+  It is what serialises a call and suppresses its retry — so a write mislabelled as a read runs in
+  parallel *and* is retried, and the side effect happens twice. 37 of 100 Composio tools carry no hint,
+  so this default decides a third of the catalogue.
+- **A cache-miss and a mistyped slug are different failures.** The registry's generic version blames the
+  slugs: on a cold agent it read "no provider resolved GMAIL_FETCH_EMAILS … Available: now,
+  memory_write". Only the provider knows the cache is empty, so only it can say so.
 - **The outbox must be idempotent.** A crash mid-delivery must not double-send.
 - **Ink redraws its whole dynamic tree every frame.** Finished transcript items belong in
   `<Static>`, which writes once and never touches the node again — so they must be append-only

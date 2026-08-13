@@ -10,6 +10,11 @@ dist/
 .env.*
 !.env.example
 
+# agent-written memory. `memory_write` appends real notes beside the manifest, so a run inside
+# examples/ leaves a file behind — it is the agent's data, not the repo's.
+examples/*/memory/
+
+
 # runtime state directory. Named literally because gitignore has no way to read brand.ts —
 # `scripts/rename-brand.ts` reports this file as needing a manual edit after a rename.
 .castellan/

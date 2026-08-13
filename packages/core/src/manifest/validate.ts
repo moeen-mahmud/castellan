@@ -292,7 +292,10 @@ const UNSUPPORTED_SECTIONS: readonly { key: string; feature: string; phase: stri
     { key: "delivery", feature: "delivery targets", phase: "Phase 4" },
 ]
 
-function validateSupportedSections(raw: Record<string, unknown>): ErrorDetail[] {
+function validateSupportedSections(
+    raw: Record<string, unknown>,
+    knownProviders: readonly string[],
+): ErrorDetail[] {
     const found: ErrorDetail[] = []
 
     for (const { key, feature, phase } of UNSUPPORTED_SECTIONS) {
@@ -311,24 +314,55 @@ function validateSupportedSections(raw: Record<string, unknown>): ErrorDetail[] 
         })
     }
 
+    // `server` is checked on `enabled` rather than on presence, because the schema gives it a default
+    // and writing `server: { enabled: false }` explicitly asks for nothing. Asking for a *listening*
+    // server is different: without this the manifest below validates, no server starts, and nothing
+    // anywhere says so — the whole of rule 8 in one field.
+    const server = raw.server
+    if (server !== null && typeof server === "object" && !Array.isArray(server)) {
+        if ((server as { enabled?: unknown }).enabled === true) {
+            found.push({
+                code: "not_implemented_yet",
+                message:
+                    "This build does not implement the HTTP server, but the manifest enables it.",
+                hint: "The server arrives in Phase 4. Set server.enabled to false or remove the section — it is refused rather than ignored, because a manifest that asks for a listening port and gets silence is worse than one that fails to load.",
+                field: "server.enabled",
+            })
+        }
+    }
+
     const tools = raw.tools
     if (tools !== null && typeof tools === "object" && !Array.isArray(tools)) {
         const toolKeys = tools as Record<string, unknown>
 
-        for (const key of ["provider", "providerConfig", "search"] as const) {
-            const value = toolKeys[key]
-            if (value === undefined || value === null) continue
-            if (Array.isArray(value) && value.length === 0) continue
-            if (typeof value === "object" && Object.keys(value).length === 0) continue
-            if (key === "search" && (value as { enabled?: unknown }).enabled !== true) continue
+        // `provider` and `providerConfig` are implemented now, but only for an id the caller registered.
+        // Checked against `knownProviders` rather than dropped from this list entirely: naming a
+        // provider nobody supplied has to fail, and failing here — beside the field — beats failing at
+        // resolution, where the report blames twenty slugs for one missing registration.
+        const declared = toolKeys.provider
+        if (typeof declared === "string" && declared !== "" && !knownProviders.includes(declared)) {
+            found.push({
+                code: "tool_provider_unknown",
+                message: `tools.provider is "${declared}", which is not registered here.${knownProviders.length === 0 ? "" : ` Available: ${knownProviders.join(", ")}.`}`,
+                hint:
+                    knownProviders.length === 0
+                        ? `A provider is supplied by the embedder — nothing installs at runtime. Pass it as Runtime.create({ toolProviders: { ${declared}: (ctx) => new … } }). ${BRAND.slug} validate reports this whenever it is run without one, since it cannot know what an embedder would register.`
+                        : "Check the spelling against the available ids.",
+                field: "tools.provider",
+            })
+        }
+
+        const search = toolKeys.search
+        if (
+            search !== undefined &&
+            search !== null &&
+            (search as { enabled?: unknown }).enabled === true
+        ) {
             found.push({
                 code: "not_implemented_yet",
-                message: `This build does not implement tools.${key}.`,
-                hint:
-                    key === "search"
-                        ? "Runtime tool search stays off in v1 by design: search-then-execute is two-hop reasoning, which is where small models fail. Pin the tools the agent needs instead."
-                        : "Tool providers arrive with the Composio package. Built-in tools work now — name them in tools.local.",
-                field: `tools.${key}`,
+                message: "This build does not implement tools.search.",
+                hint: "Runtime tool search stays off in v1 by design: search-then-execute is two-hop reasoning, which is where small models fail. Pin the tools the agent needs instead.",
+                field: "tools.search",
             })
         }
     }
@@ -373,6 +407,15 @@ export interface ValidateOptions {
     env: Record<string, string | undefined>
     /** The document as written, for checks that must not see schema defaults. */
     raw: Record<string, unknown>
+    /**
+     * Provider ids the caller can actually supply, from `Runtime.create({ toolProviders })`.
+     *
+     * `tools.provider` is checked against this rather than against a hardcoded list, because a
+     * provider is registered by the embedder and core may not import one. Omitted means none — which
+     * is why `validate` on its own still refuses a manifest naming a provider: the CLI knows what it
+     * registers, and a bare validation cannot know what an embedder would.
+     */
+    knownProviders?: readonly string[]
 }
 
 /** Every rule this build can enforce. Returns all failures; the caller decides how to report. */
@@ -385,6 +428,6 @@ export function validateManifest(manifest: AgentManifest, options: ValidateOptio
         ...validateBaseUrls(manifest),
         ...validateApiKeyEnv(manifest, options.env),
         ...validateDialectSupport(manifest, options.capabilities),
-        ...validateSupportedSections(options.raw),
+        ...validateSupportedSections(options.raw, options.knownProviders ?? []),
     ]
 }

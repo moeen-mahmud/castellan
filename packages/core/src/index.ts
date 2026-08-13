@@ -240,6 +240,9 @@ export type {
     ToolIntent,
     ToolParameters,
     ToolProvider,
+    ToolProviderContext,
+    ToolProviderFactory,
+    ToolProviderRefresh,
     ToolResult,
     ToolSpec,
 } from "./tools/types.ts"

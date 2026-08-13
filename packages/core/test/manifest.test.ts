@@ -540,7 +540,10 @@ channels:
         expect(allDetails(error)[0]?.hint).toContain("Phase 4")
     })
 
-    test("naming a tool provider is refused — built-in tools are what this build resolves", () => {
+    test("naming a provider nobody registered is refused, naming the field", () => {
+        // Not "not implemented" any more — providers work. What fails is naming one this runtime was
+        // never given, and failing here beats failing at resolution, where the report would blame every
+        // pinned slug for one missing registration.
         const error = expectFailure({
             "agent.yaml": manifestYaml(`id: t
 model:
@@ -552,8 +555,40 @@ tools:
   provider: composio
 `),
         })
-        expect(codes(error)).toContain("not_implemented_yet")
+        expect(codes(error)).toContain("tool_provider_unknown")
         expect(allDetails(error)[0]?.field).toBe("tools.provider")
+    })
+
+    test("a registered provider loads, and the refusal names the ones that are available", () => {
+        const yaml = manifestYaml(`id: t
+model:
+  main:
+    id: gpt-4o-mini
+    baseUrl: https://api.example.com/v1
+    apiKeyEnv: MODEL_API_KEY
+tools:
+  provider: composio
+`)
+        const dir = workspace({ "agent.yaml": yaml })
+        const loaded = loadManifest(join(dir, "agent.yaml"), {
+            env: ENV,
+            skipEnvFile: true,
+            knownProviders: ["composio"],
+        })
+        expect(loaded.manifest.tools.provider).toBe("composio")
+
+        // A typo against a registered set names what is available rather than only what is wrong.
+        let hint = ""
+        try {
+            loadManifest(join(workspace({ "agent.yaml": yaml }), "agent.yaml"), {
+                env: ENV,
+                skipEnvFile: true,
+                knownProviders: ["mcp"],
+            })
+        } catch (error) {
+            hint = error instanceof HarnessError ? (error.details[0]?.message ?? "") : ""
+        }
+        expect(hint.includes("Available: mcp")).toBe(true)
     })
 
     test("enabling runtime tool search is refused, and says why it is off by design", () => {
@@ -709,5 +744,42 @@ context:
         const printed = error.format()
         expect(printed).toContain("field:")
         expect(printed).toContain("hint:")
+    })
+})
+
+describe("the HTTP server section", () => {
+    test("enabling it is refused — a listening port that never opens is rule 8", () => {
+        // It validated cleanly before this check existed: nothing consumes `manifest.server`, so a
+        // manifest asking for port 9999 loaded, no server started, and nothing anywhere said so.
+        const error = expectFailure({
+            "agent.yaml": manifestYaml(`id: t
+model:
+  main:
+    id: gpt-4o-mini
+    baseUrl: https://api.example.com/v1
+    apiKeyEnv: MODEL_API_KEY
+server:
+  enabled: true
+  port: 9999
+`),
+        })
+        expect(codes(error)).toContain("not_implemented_yet")
+        expect(allDetails(error)[0]?.field).toBe("server.enabled")
+    })
+
+    test("declaring it disabled is not an error — that asks for nothing", () => {
+        const loaded = load({
+            "agent.yaml": manifestYaml(`id: t
+model:
+  main:
+    id: gpt-4o-mini
+    baseUrl: https://api.example.com/v1
+    apiKeyEnv: MODEL_API_KEY
+server:
+  enabled: false
+  port: 9999
+`),
+        })
+        expect(loaded.manifest.server.enabled).toBe(false)
     })
 })
