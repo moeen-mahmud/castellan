@@ -1,8 +1,8 @@
 /**
  * Ordered, budgeted context assembly.
  *
- * Phase 1 fills slots 0 (identity), 6 (recent history) and 8 (current input); Phase 3 added slot 1
- * (tools). Still empty: 2 (workspace volatile) and 7 (workspace reminder) arrive with Phase 3.5, 3
+ * Phase 1 filled slots 0 (identity), 6 (recent history) and 8 (current input); Phase 3 added slot 1
+ * (tools) and Phase 3.5 slots 2 (workspace volatile) and 7 (workspace reminder). Still empty: 3
  * with skills, 4 with memory, 5 with compaction. The slot order is fixed in advance so that filling
  * them later cannot disturb the cache-stable prefix.
  *
@@ -16,8 +16,26 @@ import { type ContextBlock, SLOT } from "./blocks.ts"
 import { estimateMessageTokens, estimateTokens } from "./tokens.ts"
 
 export interface AssembleInput {
-    /** Concatenated `context.files`, read once at agent load. Must be byte-stable per turn. */
+    /** Slot 0: the workspace's `static` tier, read once at agent load. Byte-stable per turn. */
     readonly identity: string
+    /**
+     * Slot 2: the workspace's `volatile` tier — the user model and working memory.
+     *
+     * Separate from `identity` for one reason, and it is not organisational: this content changes
+     * when the agent writes to memory, and it sits *after* the cache breakpoint so that a write
+     * leaves slots 0 and 1 byte-identical. Folding it into `identity` would invalidate the cached
+     * prefix on every memory write, and the only symptom would be the bill.
+     */
+    readonly volatile?: string
+    /**
+     * Slot 7: the workspace's `reminder` tier, one or two re-asserted rules.
+     *
+     * Placed after the history rather than with the other pinned instruction blocks, because rule
+     * adherence decays across a conversation and attention is stronger at both ends of a context
+     * than in the middle. A rule stated once at the top of a thirty-turn session is, positionally,
+     * in the middle.
+     */
+    readonly reminder?: string
     /**
      * Slot 1: the dialect preamble and tool catalogue, rendered once at agent load.
      *
@@ -81,6 +99,12 @@ export function assembleContext(input: AssembleInput): AssembledContext {
         pinned.push(block(SLOT.identity, "system", input.identity, true, "identity"))
     }
     for (const toolBlock of input.toolBlocks ?? []) pinned.push(toolBlock)
+    if (input.volatile !== undefined && input.volatile.trim() !== "") {
+        pinned.push(block(SLOT.volatile, "system", input.volatile, true, "workspace-volatile"))
+    }
+    if (input.reminder !== undefined && input.reminder.trim() !== "") {
+        pinned.push(block(SLOT.reminder, "system", input.reminder, true, "workspace-reminder"))
+    }
     const inputBlock = block(SLOT.input, "user", input.input, true, "input")
     pinned.push(inputBlock)
     if (input.lastError !== undefined && input.lastError !== "") {
@@ -120,11 +144,13 @@ export function assembleContext(input: AssembleInput): AssembledContext {
     }))
 
     // Slot order, not insertion order: 0 and 1 lead so the cached prefix is the same bytes every
-    // turn, and the pinned tail follows the history it applies to.
+    // turn, 2 opens the uncached region, and the pinned tail follows the history it applies to.
     const blocks = [
         ...pinned.filter((b) => b.slot === SLOT.identity),
         ...pinned.filter((b) => b.slot === SLOT.tools),
+        ...pinned.filter((b) => b.slot === SLOT.volatile),
         ...historyBlocks,
+        ...pinned.filter((b) => b.slot === SLOT.reminder),
         ...pinned.filter((b) => b.slot === SLOT.input || b.slot === SLOT.error),
     ]
 

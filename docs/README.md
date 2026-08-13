@@ -19,7 +19,7 @@ VelaOps is its first consumer, not its owner.
 | `04-SPEC-WIRE.md` | HTTP/SSE surface and the lifecycle event schema. |
 | `05-PLAN.md` | Sixteen phases, each with acceptance criteria. The build order. |
 | `06-VELAOPS-INTEGRATION.md` | The compat adapter, migration strategy, and what must never leak into core. |
-| `07-SPEC-WORKSPACE.md` | The tiered agent workspace — `AGENT.md`, `POLICY.md`, `USER.md`, `MEMORY.md`, `REMINDER.md`, budgets, and per-model rendering. Supersedes `context.files` in doc 02. |
+| `07-SPEC-WORKSPACE.md` | The tiered agent workspace — `AGENT.md`, `POLICY.md`, `USER.md`, `MEMORY.md`, `REMINDER.md`, budgets, and per-model rendering. Supersedes `context.files` in doc 02, which survives as a deprecated alias. |
 
 `CLAUDE.md` lives at the repo root, not here. It is the standing brief for coding agents.
 
@@ -45,9 +45,11 @@ Phases 0–3 implemented and verified: manifest, loop, model layer, store and se
 CLI, and the tool layer with both dialects. Measured numbers live in `evals/` — see
 `evals/tools/README.md` for the NLT-versus-native comparison that Phase 3's gate turns on.
 
-Still design-only: everything from Phase 3.5 on. `07-SPEC-WORKSPACE.md` in particular describes
-a subsystem that does not exist yet — the runtime reads the flat `context.files` list until
-Phase 3.5 lands.
+Phase 3.5's first half is in: the workspace tiers, frontmatter and comment stripping, per-file
+and total budgets, the rule guard, and `context.files` as a deprecated alias. `07-SPEC-WORKSPACE.md`
+marks which of its sections are built. Still design-only: `promptStyle` rendering, `SOUL.md`,
+`knowledge/`, `workspace validate` and `eval rules` — the phase's second half — and everything
+from Phase 3.6 on.
 
 When code and these documents disagree, **the code wins** and the doc is stale — fix it in
 the same PR. A planning doc that quietly drifts from the implementation is worse than no

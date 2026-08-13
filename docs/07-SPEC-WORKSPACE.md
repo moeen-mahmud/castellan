@@ -3,9 +3,9 @@
 The persistent files an agent carries: identity, policy, user model, memory, knowledge, and
 skills. This document supersedes the flat `context.files` list in `02-SPEC-MANIFEST.md`.
 
-**Status.** Specified, not implemented. Phase 3.5 builds it. `context.files` is what the
-runtime reads today — a flat array concatenated into slot 0 with no stripping, no budgets,
-and no tiers.
+**Status.** Tiers, stripping, budgets, the rule guard, and the `context.files` alias are
+implemented (Phase 3.5, first half). Still design-only: `promptStyle` rendering, `SOUL.md`,
+`knowledge/`, `workspace validate`, and `eval rules` — the second half.
 
 **Why it replaced the flat list.** A flat ordered array cannot express three things that
 turned out to matter: which files are cache-stable versus volatile, which sit after the
@@ -19,17 +19,28 @@ adherence, or persona drift.
 
 | Tier | Slot | Position | Cache | Editable | Default budget |
 | --- | --- | --- | --- | --- | --- |
-| `static` | 0 | system prefix, first | before breakpoint A | no | 700 |
-| `volatile` | 2 | system prefix, after the tool catalogue | after breakpoint A | yes | 500 |
-| `reminder` | 7 | after history, before the current input | never | no | 60 |
+| `static` | 0 | system prefix, first | before breakpoint A | no | 2,000 |
+| `volatile` | 2 | system prefix, after the tool catalogue | after breakpoint A | yes | 3,500 |
+| `reminder` | 7 | after history, before the current input | never | no | 500 |
 
 Slot numbers are the ones in `01-ARCHITECTURE.md` and in `SLOT`
 (`packages/core/src/context/blocks.ts`), where slot number equals prompt position. `static`
 and the tool catalogue together form the cached prefix; `volatile` opens the uncached region.
 
-Total hard cap 1,300 tokens. Exceeding it **fails the load** and names the file. No silent
+Total hard cap 6,000 tokens. Exceeding it **fails the load** and names the file. No silent
 truncation — that failure mode produces an agent running on partial instructions with no
 error surfaced anywhere.
+
+Every figure here is a **ceiling, not a target**, and the two are easy to confuse. What a
+window *fits* and what a model still *follows* are different numbers, and only the second one
+matters; the budget can only stop the first kind of mistake. Everything inside it is paid on
+every turn of every session, so a workspace comfortably under budget is not thereby right-sized.
+
+Budgets are measured with the runtime's own estimator (`estimateTokens`, 3.8 chars/token plus a
+newline penalty), which is deliberately biased **high** — roughly 10% above a real BPE count on
+English prose. A file that measures 554 here is nearer 480 at the endpoint. The bias is the safe
+direction for window arithmetic, where under-counting overflows; treat it as slack when setting a
+per-file `budget:`.
 
 Tier 3 content (`knowledge/`, `skills/`) is not pinned and has no share of this budget.
 
@@ -76,17 +87,29 @@ assembled prefix rather than trusted.
 typed error rather than a silent no-op. Read-only identity is the most effective known
 mitigation for persona drift.
 
+Only the `volatile` tier is writable, and a `static` or `reminder` file declaring otherwise is
+refused at load rather than quietly downgraded. `memory_write` takes no file argument: the runtime
+resolves one write target — the first `volatile` file whose frontmatter allows a write, in declared
+order — because choosing a file would be a second decision on every save, and a second decision is
+the two-hop shape small models fail. A workspace whose volatile files are all `editable: none` is a
+refusal with a name in it, not a fall-through to the default note file: a save the model believes
+succeeded, landing somewhere the agent's own context never reads, is worse than a failed call.
+
 ---
 
 ## Standard files
 
 | File | Tier | Editable | Budget | Purpose |
 | --- | --- | --- | --- | --- |
-| `AGENT.md` | static | none | 500 | Identity, voice, rules, examples |
-| `POLICY.md` | static | none | 200 | Soft boundaries and uncertainty behaviour |
-| `USER.md` | volatile | append | 250 | User model |
-| `MEMORY.md` | volatile | replace | 400 | Working memory, capped, evicting |
-| `REMINDER.md` | reminder | none | 60 | One or two re-asserted rules |
+| `AGENT.md` | static | none | 1,400 | Identity, voice, rules, examples |
+| `POLICY.md` | static | none | 600 | Soft boundaries and uncertainty behaviour |
+| `USER.md` | volatile | append | 1,500 | User model |
+| `MEMORY.md` | volatile | replace | 2,000 | Working memory, capped, evicting |
+| `REMINDER.md` | reminder | none | 500 | One or two re-asserted rules |
+
+A file with no `budget:` in its frontmatter takes its tier's budget. There is no per-filename
+default in the loader — the figures above are what the templates declare, not magic the runtime
+knows about `AGENT.md`.
 
 All are optional. A missing file is skipped; a file listed in the manifest but absent from
 disk fails the load.
@@ -233,6 +256,18 @@ runtime computes it rather than trusting a table.
 `castellan eval rules` measures `perRuleSuccess` against the configured model with a
 verifiable-instruction probe. Guessing produces a guard that validates nothing, and small
 models run well below 0.90.
+
+The count is a **heuristic**: a line is a rule if it carries an obligation marker (`must`,
+`never`, `always`, `do not`, …) or opens with a recognised imperative verb. Fenced code and
+`<example>` blocks are excluded, since an example demonstrates an obligation rather than adding one,
+and headings are excluded even when they read like rules. Because it is a heuristic, **every counted
+line is reported back in the failure** — a guard whose reasoning is invisible is one authors learn
+to route around rather than satisfy. `onExceed: warn` is the escape when it has misread a line. It
+is deliberately not "raise `reliabilityTarget`", which changes the number without changing anything
+the number describes.
+
+`validate` and `run` apply the same check from the same function. A validator that accepts what the
+runtime refuses is worse than no validator.
 
 Remedy for exceeding the budget is deleting rules or moving them into `wrapToolCall`
 middleware. Never raising the target, and never reformatting — structured formatting costs

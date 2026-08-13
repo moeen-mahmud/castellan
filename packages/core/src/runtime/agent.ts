@@ -1,7 +1,7 @@
 /**
  * A single agent: a manifest plus its resolved model roles, identity, and persisted sessions.
  *
- * Identity is read from `context.files` **once, at load**, and held as one string. That is not
+ * The workspace is read **once, at load**, and its `static` tier held as one string. That is not
  * an optimisation. Slot 0 is half of the cache-stable prefix, and re-reading the files per turn
  * would let an editor save change the prefix mid-session, quietly destroying prompt caching
  * with no error and no symptom other than the bill.
@@ -12,8 +12,7 @@
  * to an in-memory SQLite database rather than to a different implementation.
  */
 
-import { readFileSync } from "node:fs"
-import { isAbsolute, resolve } from "node:path"
+import type { ErrorDetail } from "../errors.ts"
 import type { EventBus } from "../events/bus.ts"
 import { newTurnId } from "../loop/ids.ts"
 import { runTurn, type ToolRuntime, type TurnResult } from "../loop/turn.ts"
@@ -26,6 +25,13 @@ import { passThroughFilter, type StreamFilter } from "../tools/dialect/dialect.t
 import { nativeDialect, nativeWireTokens } from "../tools/dialect/native.ts"
 import { nltDialect } from "../tools/dialect/nlt.ts"
 import { ToolRegistry } from "../tools/registry.ts"
+import {
+    loadWorkspace,
+    planWorkspace,
+    ruleBudgetFailure,
+    type Workspace,
+    writeTarget,
+} from "../workspace/load.ts"
 
 export interface AgentCreateOptions extends ResolveRolesOptions {
     /**
@@ -49,7 +55,15 @@ export interface AgentDescription {
     readonly model: string
     readonly window: number
     readonly identityTokensApprox: number
+    /** Every workspace file, in load order, whichever tier listed it. */
     readonly contextFiles: readonly string[]
+    readonly workspace: readonly {
+        readonly name: string
+        readonly tier: string
+        readonly editable: string
+        readonly tokens: number
+        readonly budget: number
+    }[]
     readonly dialect: string
     readonly tools: readonly string[]
     /**
@@ -68,8 +82,12 @@ export class Agent {
     readonly dir: string
     readonly window: number
     readonly roles: ResolvedRoles
-    /** Concatenated `context.files`. Byte-stable for the lifetime of the agent. */
+    /** The workspace's `static` tier. Byte-stable for the lifetime of the agent. */
     readonly identity: string
+    /** Tiers, budgets, and per-file editability. Slot 0's text is `workspace.static`. */
+    readonly workspace: Workspace
+    /** Non-fatal load findings, emitted as `agent.warning` by `Runtime`. */
+    readonly warnings: readonly ErrorDetail[]
     readonly store: Store
     /** Resolved once, at load. Never searched, never extended at runtime. */
     readonly tools: ToolRegistry
@@ -80,7 +98,8 @@ export class Agent {
     private constructor(init: {
         loaded: LoadedManifest
         roles: ResolvedRoles
-        identity: string
+        workspace: Workspace
+        warnings: readonly ErrorDetail[]
         bus: EventBus
         store: Store
         tools: ToolRegistry
@@ -90,7 +109,9 @@ export class Agent {
         this.dir = init.loaded.dir
         this.window = init.loaded.window
         this.roles = init.roles
-        this.identity = init.identity
+        this.workspace = init.workspace
+        this.identity = init.workspace.static
+        this.warnings = init.warnings
         this.#bus = init.bus
         this.store = init.store
         this.tools = init.tools
@@ -99,6 +120,11 @@ export class Agent {
         // changing silently when someone edits `model.main.id`, and a per-model difference nobody can
         // reproduce is exactly the bug class decision 4.1's opt-in avoids.
         const dialect = this.manifest.tools.dialect === "native" ? nativeDialect : nltDialect
+
+        // Resolved once, here, rather than per call: which file a note goes to is a property of the
+        // manifest, and re-deriving it inside a handler would let it disagree with the tier the
+        // model is actually shown in slot 2.
+        const target = writeTarget(init.workspace)
 
         // The catalogue is rendered here, once, for the same reason the identity files are read
         // here: slot 1 is half of the cache-stable prefix. Rendering it per turn — or letting its
@@ -117,6 +143,7 @@ export class Agent {
                 dialect,
                 dir: init.loaded.dir,
                 blocks: dialect.renderCatalogue(specs),
+                ...(target === undefined ? {} : { writeTarget: target }),
                 ...(requestTools === undefined ? {} : { requestTools }),
                 wireTokens: requestTools === undefined ? 0 : nativeWireTokens(requestTools),
                 observationMaxTokens: this.manifest.context.observationMaxTokens,
@@ -130,12 +157,13 @@ export class Agent {
         store: Store,
         options: AgentCreateOptions = {},
     ): Agent {
-        const identity = readIdentity(loaded)
+        const { workspace, warnings } = readWorkspace(loaded)
         const roles = resolveRoles(loaded.manifest, options)
         return new Agent({
             loaded,
             roles,
-            identity,
+            workspace,
+            warnings,
             bus,
             store,
             tools: options.tools ?? ToolRegistry.empty(),
@@ -193,6 +221,13 @@ export class Agent {
             input,
             history,
             identity: this.identity,
+            // Read at load, like `static`. The tier's *position* is what Phase 3.5's first half
+            // delivers — after the cache breakpoint, so that a write leaves slots 0 and 1
+            // byte-identical. Re-reading it mid-session lands with the write path that changes it,
+            // since a re-read with nothing writing is a filesystem call per turn for no observable
+            // difference.
+            ...(this.workspace.volatile === "" ? {} : { volatile: this.workspace.volatile }),
+            ...(this.workspace.reminder === "" ? {} : { reminder: this.workspace.reminder }),
             role: this.roles.main,
             window: this.window,
             reserveOutput: this.manifest.context.reserveOutput,
@@ -254,7 +289,14 @@ export class Agent {
             model: this.manifest.model.main.id,
             window: this.window,
             identityTokensApprox: Math.ceil(this.identity.length / 3.8),
-            contextFiles: this.manifest.context.files,
+            contextFiles: this.workspace.files.map((file) => file.name),
+            workspace: this.workspace.files.map((file) => ({
+                name: file.name,
+                tier: file.tier,
+                editable: file.editable,
+                tokens: file.tokens,
+                budget: file.budget,
+            })),
             dialect: this.#toolRuntime?.dialect.id ?? this.manifest.tools.dialect,
             tools: this.tools.specs().map((spec) => spec.slug),
             catalogueTokens:
@@ -265,15 +307,27 @@ export class Agent {
 }
 
 /**
- * Read and concatenate `context.files` in declared order. Existence and readability were
- * already checked by `validateManifest`, so a failure here is a race with the filesystem
- * rather than a configuration error — and it is still loud.
+ * Load the workspace, then check its rule budget.
+ *
+ * Both are load-time and both fail loudly. The ordering matters only in that the budget failure is
+ * about size and the rule failure is about count, and an author over on both should hear about the
+ * size first — it is the one that is mechanically true regardless of which model is configured.
  */
-function readIdentity(loaded: LoadedManifest): string {
-    const parts: string[] = []
-    for (const file of loaded.manifest.context.files) {
-        const path = isAbsolute(file) ? file : resolve(loaded.dir, file)
-        parts.push(readFileSync(path, "utf8").trimEnd())
+function readWorkspace(loaded: LoadedManifest): { workspace: Workspace; warnings: ErrorDetail[] } {
+    const { context } = loaded.manifest
+    const plan = planWorkspace(context, loaded.dir)
+    const workspace = loadWorkspace({ refs: plan.refs, budgets: context.budgets })
+    const warnings = [...plan.warnings]
+
+    // Counted across static and reminder together, because the model does not know they came from
+    // different files. `volatile` is excluded: it holds facts about the person, not obligations.
+    const failure = ruleBudgetFailure(workspace, context.rules)
+    if (failure !== undefined) {
+        // `warn` is the escape for a miscounted line, and it still says so. Silence is not an
+        // option here: an author over budget and unaware of it is the case the guard exists for.
+        if (context.rules.onExceed === "fail") throw failure
+        warnings.push(failure.toDetail())
     }
-    return parts.join("\n\n")
+
+    return { workspace, warnings }
 }

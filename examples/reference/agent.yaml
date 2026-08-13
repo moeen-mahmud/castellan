@@ -12,7 +12,7 @@
 
 apiVersion: castellan/v1
 id: reference
-name: Reference Assistant
+name: Milo (Reference Assistant)
 
 # Path to a base manifest. Shallow merge; arrays replace rather than concatenate.
 # extends: ./base.agent.yaml
@@ -78,11 +78,32 @@ context:
   # Above this, one tool observation is cut to head+tail with the removed size named.
   observationMaxTokens: 2000
 
-  # Ordered, concatenated into context slot 0 — pinned and cache-stable. Relative to this file.
-  # A missing file fails the load. Superseded by the workspace tiers in Phase 3.5, which keeps
-  # `files` as a deprecated alias for `static`.
-  files:
+  # ── The tiered workspace (Phase 3.5) ──
+  # This replaces the flat `context.files` list, which remains as a deprecated alias and warns at
+  # load. A flat array cannot say which files are cache-stable, which sit after the conversation
+  # history, or which the agent may write to — and each of those has a measured cost when got
+  # wrong. See docs/07-SPEC-WORKSPACE.md.
+
+  # Where the tier lists resolve from. This example keeps its files beside the manifest; a real
+  # agent usually points this at ./workspace — see examples/workspace-template.
+  workspace: .
+
+  # Tier 0 — slot 0, before cache breakpoint A, read-only. Byte-stable across turns, or prompt
+  # caching stops working with no error anywhere.
+  static:
     - IDENTITY.md
+    - AGENT.md
+    - README.md
+
+  # Tier 1 — slot 2, AFTER the breakpoint, so a memory write leaves the cached prefix untouched.
+  # `memory_write` lands in the first file here whose frontmatter allows it.
+  # volatile:
+  #   - USER.md
+  #   - MEMORY.md
+
+  # Tier 2 — slot 7, after the conversation history and before the current input. One or two
+  # rules, re-asserted because adherence decays and attention is weakest in the middle.
+  # reminder: REMINDER.md
 
   # Compaction ladder trigger fractions. Must be strictly ascending; validated at load.
   thresholds:
@@ -92,28 +113,22 @@ context:
     collapse: 0.88
     reset: 0.95
 
-  # ── Phase 3.5: the tiered workspace ──
-  # Replaces the flat `files` list above. A flat array cannot say which files are cache-stable,
-  # which sit after the conversation history, or which the agent may write to — and each of those
-  # has a measured cost when got wrong. See docs/07-SPEC-WORKSPACE.md.
-  #
-  # workspace: ./workspace
-  # static:                      # slot 0, before cache breakpoint A, read-only
-  #   - AGENT.md
-  #   - POLICY.md
-  # volatile:                    # slot 2, after the breakpoint so a write does not void the cache
-  #   - USER.md
-  #   - MEMORY.md
-  # reminder: REMINDER.md        # slot 7, after the history, before the current input
-  # budgets:
-  #   static: 700
-  #   volatile: 500
-  #   reminder: 60
-  #   total: 1300                # hard cap. Over budget fails the load naming the file.
-  # rules:
-  #   perRuleSuccess: 0.90       # measure it with `castellan eval rules`, do not guess
-  #   reliabilityTarget: 0.80    # at 0.90 per rule, this permits TWO rules, not four
-  #   onExceed: fail
+  budgets:
+    static: 2000
+    volatile: 5500
+    reminder: 500
+    total: 6000                # hard cap. Over budget fails the load naming the file.
+  # Imperative count across static + reminder, against what the target affords. The runtime
+  # computes the allowance rather than trusting a table — the arithmetic is unintuitive and
+  # authors consistently overestimate it.
+  rules:
+    perRuleSuccess: 0.90        # measure it with `eval rules`, do not guess
+    reliabilityTarget: 0.80     # at 0.90 per rule this permits TWO rules, not four
+    # `warn` rather than the shipped default `fail`, and only because this example's static tier
+    # carries README.md — documentation for a human reader, which states rules of its own. Six
+    # counted against a budget of two: expected all-rules compliance 0.53. A real agent drops the
+    # README from the tier or deletes rules rather than relaxing this.
+    onExceed: warn              # fail | warn
   # soul:
   #   file: SOUL.md
   #   requires: { contextWindow: ">=200000", class: frontier }

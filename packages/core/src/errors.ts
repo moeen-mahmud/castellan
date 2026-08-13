@@ -390,6 +390,124 @@ export function toolRepairFailed(errors: readonly ErrorDetail[]): ToolError {
     })
 }
 
+// ─── Workspace ───────────────────────────────────────────────────────────────────────────
+
+export function workspaceFileMissing(name: string, path: string, field: string): ConfigError {
+    return new ConfigError({
+        code: "workspace_file_missing",
+        message: `${field} names ${name}, which is not readable at ${path}.`,
+        hint: "Workspace paths resolve against context.workspace, which itself resolves against the manifest. A file the manifest lists but disk does not have is a load failure rather than a skip: the alternative is an agent silently missing the instructions its author believes it has.",
+        field,
+    })
+}
+
+export function workspaceFrontmatterInvalid(
+    name: string,
+    detail: string,
+    cause?: unknown,
+): ConfigError {
+    return new ConfigError({
+        code: "workspace_frontmatter_invalid",
+        message: `The frontmatter in ${name} is unusable: ${detail}`,
+        hint: "Frontmatter is the leading --- block and takes only tier, editable, budget, and eviction. It is stripped before the file reaches the model, so it costs nothing to be explicit there.",
+        ...(cause === undefined ? {} : { cause }),
+    })
+}
+
+export interface WorkspaceBudgetInit {
+    /** The file that pushed the tier over, or the tier name when the total is what overflowed. */
+    readonly name: string
+    readonly scope: "file" | "tier" | "total"
+    readonly tier?: string
+    readonly tokens: number
+    readonly budget: number
+    readonly field: string
+}
+
+/**
+ * Over budget. Never truncated to fit.
+ *
+ * Truncation is the tempting behaviour and the wrong one: it produces an agent running on partial
+ * instructions with no error anywhere, which is the same silent-degradation shape as a dropped tool
+ * call and is harder to notice, because the agent still answers.
+ */
+export function workspaceBudgetExceeded(init: WorkspaceBudgetInit): ConfigError {
+    const where =
+        init.scope === "file"
+            ? `${init.name} is ${init.tokens} tokens against its ${init.budget}-token budget`
+            : init.scope === "tier"
+              ? `the ${init.tier} tier is ${init.tokens} tokens against its ${init.budget}-token budget (largest file: ${init.name})`
+              : `the workspace totals ${init.tokens} tokens against a ${init.budget}-token cap (largest file: ${init.name})`
+    return new ConfigError({
+        code: "workspace_budget_exceeded",
+        message: `Workspace over budget: ${where}.`,
+        hint: "Shorten the file, or raise the cap under context.budgets if the model's window genuinely affords it. Nothing is truncated to fit — an agent running on half its instructions with no error anywhere is worse than one that refuses to start.",
+        field: init.field,
+    })
+}
+
+export function workspaceTierMismatch(name: string, declared: string, listed: string): ConfigError {
+    return new ConfigError({
+        code: "workspace_tier_mismatch",
+        message: `${name} declares tier: ${declared} in its frontmatter but is listed under context.${listed}.`,
+        hint: `Make the two agree. The tier decides prompt position and cache behaviour, so a file in the wrong one is not a cosmetic problem: a volatile file listed as static invalidates the cached prefix on every write, and the only symptom is the bill.`,
+        field: `context.${listed}`,
+    })
+}
+
+export function workspaceAliasConflict(): ConfigError {
+    return new ConfigError({
+        code: "workspace_alias_conflict",
+        message: "The manifest sets both context.files and context.static.",
+        hint: "context.files is the deprecated alias for context.static and resolves against the manifest directory, while context.static resolves against context.workspace. Merging them would produce an order nobody wrote and paths nobody can predict from reading the manifest, so pick one — context.static.",
+        field: "context.files",
+    })
+}
+
+export function workspaceNotWritableTier(
+    name: string,
+    tier: string,
+    editable: string,
+): ConfigError {
+    return new ConfigError({
+        code: "workspace_not_writable_tier",
+        message: `${name} is in the ${tier} tier but declares editable: ${editable}.`,
+        hint: `Only the volatile tier is writable. A ${tier} file sits inside the cache-stable prefix or is re-asserted verbatim after the history, and a write to either invalidates prompt caching on every turn with no error and no symptom beyond the bill. Move the file to context.volatile, or set editable: none.`,
+        field: `context.${tier}`,
+    })
+}
+
+export function workspaceRuleBudget(init: {
+    counted: number
+    allowed: number
+    perRuleSuccess: number
+    reliabilityTarget: number
+    lines: readonly string[]
+}): ConfigError {
+    return new ConfigError({
+        code: "workspace_rule_budget",
+        message:
+            `The workspace states ${init.counted} rules; at perRuleSuccess ${init.perRuleSuccess} a ` +
+            `reliabilityTarget of ${init.reliabilityTarget} permits ${init.allowed}. ` +
+            `Expected compliance with all ${init.counted}: ${(init.perRuleSuccess ** init.counted).toFixed(2)}.`,
+        hint: "Delete rules, or move the ones with real consequences into tool-boundary code where they are enforced rather than requested. Do not raise reliabilityTarget — that changes the number without changing the behaviour. Counted lines are listed below; the count is a heuristic, so context.rules.onExceed: warn is the escape if it has misread a line.",
+        field: "context.rules",
+        details: init.lines.map((line) => ({
+            code: "workspace_rule_counted",
+            message: line,
+            hint: "Counted as a rule because it states an obligation or begins with an imperative.",
+        })),
+    })
+}
+
+export function workspaceNotEditable(name: string, editable: string): ToolError {
+    return new ToolError({
+        code: "workspace_not_editable",
+        message: `${name} is declared editable: ${editable}, so it cannot be written to.`,
+        hint: "Point the write at a volatile file whose frontmatter allows it (editable: append or replace), or change that file's frontmatter. Read-only identity is deliberate — it is the most effective known mitigation for persona drift, so this refuses rather than silently doing nothing.",
+    })
+}
+
 // ─── Unsupported ─────────────────────────────────────────────────────────────────────────
 
 export function notImplementedYet(feature: string, phase: string): ConfigError {

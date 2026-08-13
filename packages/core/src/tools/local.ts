@@ -12,6 +12,7 @@
 
 import { appendFile, mkdir } from "node:fs/promises"
 import { join } from "node:path"
+import { workspaceNotEditable } from "../errors.ts"
 import type { Tool, ToolContext, ToolProvider } from "./types.ts"
 
 export const LOCAL_PROVIDER_ID = "local"
@@ -132,13 +133,32 @@ const memoryWrite: Tool = {
     async handler(args, context) {
         const text = typeof args.text === "string" ? args.text.trim() : ""
         const tags = Array.isArray(args.tags) ? args.tags.map((tag) => String(tag)) : []
-        const dir = join(context.dir, MEMORY_DIR)
-        const file = join(dir, MEMORY_FILE)
-
-        await mkdir(dir, { recursive: true })
         const stamped = context.now().toISOString()
         const labels = tags.length === 0 ? "" : ` _(${tags.join(", ")})_`
-        await appendFile(file, `\n- **${stamped}**${labels} ${text}\n`, "utf8")
+        const line = `\n- **${stamped}**${labels} ${text}\n`
+
+        const target = context.writeTarget
+
+        // A workspace that declares a memory file and makes it read-only is refused out loud. The
+        // tempting alternative — quietly falling back to the default file — would put the note
+        // somewhere the agent's own context never reads from, so the model would be told it saved
+        // something it will never see again. `editable` is enforced, not advisory.
+        if (target?.mode === "refused") {
+            throw workspaceNotEditable(target.name, target.reason ?? "none")
+        }
+
+        if (target?.path !== undefined) {
+            await appendFile(target.path, line, "utf8")
+            // Named rather than described, because the model sees this file's contents in slot 2 on
+            // the next turn and the two should be recognisably the same thing.
+            return `Saved to ${target.name}.`
+        }
+
+        // No workspace declared anywhere to write. The agent's own directory it is — the same place
+        // the memory subsystem will index when it lands.
+        const dir = join(context.dir, MEMORY_DIR)
+        await mkdir(dir, { recursive: true })
+        await appendFile(join(dir, MEMORY_FILE), line, "utf8")
 
         return `Saved to ${MEMORY_DIR}/${MEMORY_FILE}.`
     },
@@ -175,5 +195,6 @@ export function toolContext(overrides: Partial<ToolContext> = {}): ToolContext {
         dir: overrides.dir ?? process.cwd(),
         signal: overrides.signal ?? new AbortController().signal,
         now: overrides.now ?? (() => new Date()),
+        ...(overrides.writeTarget === undefined ? {} : { writeTarget: overrides.writeTarget }),
     }
 }

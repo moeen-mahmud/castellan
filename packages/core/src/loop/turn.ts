@@ -23,7 +23,7 @@ import { type ResolvedRole, requestParamsFor } from "../model/roles.ts"
 import type { ParsedOutput, StepOutput, ToolDialect } from "../tools/dialect/dialect.ts"
 import { executeIntents } from "../tools/execute.ts"
 import type { ToolRegistry } from "../tools/registry.ts"
-import type { ToolResult } from "../tools/types.ts"
+import type { ToolResult, WorkspaceWriteTarget } from "../tools/types.ts"
 import { newStepId, newTurnId } from "./ids.ts"
 import { runStep } from "./step.ts"
 
@@ -60,6 +60,9 @@ export interface ToolRuntime {
     readonly wireTokens: number
     /** The agent's directory. A tool touching the filesystem resolves against it, not the cwd. */
     readonly dir: string
+    /** Where `memory_write` lands, resolved from the workspace at load. Absent means no workspace
+     * declared anywhere writable, and the tool falls back to the agent's own directory. */
+    readonly writeTarget?: WorkspaceWriteTarget
     readonly observationMaxTokens: number
     /** Injected so a tool that reads the clock is testable. */
     readonly now?: () => Date
@@ -71,6 +74,10 @@ export interface TurnInput {
     readonly input: string
     readonly history: readonly ChatMessage[]
     readonly identity: string
+    /** Workspace `volatile` tier, slot 2 — after the cache breakpoint. */
+    readonly volatile?: string
+    /** Workspace `reminder` tier, slot 7 — after the history. */
+    readonly reminder?: string
     readonly role: ResolvedRole
     readonly window: number
     readonly reserveOutput: number
@@ -177,6 +184,8 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
             const assembled = assembleContext({
                 identity: input.identity,
                 ...(tools === undefined ? {} : { toolBlocks: tools.blocks }),
+                ...(input.volatile === undefined ? {} : { volatile: input.volatile }),
+                ...(input.reminder === undefined ? {} : { reminder: input.reminder }),
                 history,
                 input: input.input,
                 // Reduced by whatever the dialect puts in the request body rather than in a block.
@@ -309,6 +318,9 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
                               sessionKey: input.sessionKey,
                               turnId,
                               dir: tools.dir,
+                              ...(tools.writeTarget === undefined
+                                  ? {}
+                                  : { writeTarget: tools.writeTarget }),
                               signal: link.signal,
                               now: tools.now ?? (() => new Date()),
                           },

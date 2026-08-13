@@ -131,7 +131,8 @@ inbound (channel | API | schedule)
   vocabulary in v1.
 - **Workspace files are tiered, not a flat list.** Static (cached, read-only) before breakpoint A,
   volatile after it, reminder past the history. Frontmatter and HTML comments are stripped before
-  injection. Phase 3.5 — the runtime still reads flat `context.files` until then.
+  injection. `context.files` survives as a deprecated alias that warns. Built in Phase 3.5's first
+  half; `promptStyle`, `SOUL.md` and `knowledge/` are the second.
 - **Vendor prompting guidance is encoded as a capability, never a constant.** Published advice is
   written for frontier models and a good fraction of it inverts at 3–8B — Anthropic now says to
   *remove* emphatic phrasing because models overtrigger on it; a 7B model needs it. That lives in
@@ -165,7 +166,7 @@ scripts/             bench-boot, rename-brand
 | `docs/02-SPEC-MANIFEST.md` | `agent.yaml`. Adding a field means updating this doc in the same PR. |
 | `docs/03-SPEC-PLUGIN-API.md` | Plugin contracts. First-party plugins use only public API — no back doors. |
 | `docs/04-SPEC-WIRE.md` | HTTP surface and event schema. Event types are append-only within `v: 1`. |
-| `docs/07-SPEC-WORKSPACE.md` | Workspace file tiers, budgets, and `promptStyle` rendering. Supersedes `context.files`. |
+| `docs/07-SPEC-WORKSPACE.md` | Workspace file tiers, budgets, and `promptStyle` rendering. Supersedes `context.files`. Marks which sections are built. |
 
 If a first-party package needs something the plugin API can't express, **the API is wrong
 and gets fixed**. Do not add a private escape hatch.
@@ -243,7 +244,19 @@ Never claim a performance property without a number in `evals/` and a script to 
   reports it. Asserted on the assembled prefix, not trusted.
 - **A workspace budget failure names the file and stops.** Never truncate to fit: that produces an
   agent running on partial instructions with no error anywhere, which is the same silent-degradation
-  shape as a dropped tool call.
+  shape as a dropped tool call. The budgets are a *ceiling, not a target* — what a window fits and
+  what a model follows are different numbers, and only the second matters. They are measured with
+  `estimateTokens`, which is biased about 10% high, so a per-file `budget:` wants that much slack.
+- **A check that only `run` performs is a check `validate` disagrees with.** The rule guard first
+  lived in `Agent.create` alone, and `validate` reported ok on a manifest `run` refused. Anything
+  load-bearing goes in one function both call — `ruleBudgetFailure` returns the finding rather than
+  throwing it, so each caller applies its own `onExceed`.
+- **`memory_write` has no file argument, and must not grow one.** The runtime resolves a single
+  write target from the `volatile` tier. Letting the model name a file adds a second decision to
+  every save, and a second decision is the two-hop shape small models fail — the same reasoning that
+  keeps `tools.search` off. A workspace whose volatile files are all `editable: none` refuses by
+  name; it never falls through to the default note file, because a save the model believes succeeded
+  into a file the agent's own context never reads is worse than a failed call.
 - **Slot number equals prompt position** in `SLOT` (`context/blocks.ts`). The two are kept equal so
   the table in `01-ARCHITECTURE.md` can be read in order; inserting a slot means renumbering, which
   is cheap because every reference is by name (`SLOT.input`, never `8`).

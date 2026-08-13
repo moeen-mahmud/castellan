@@ -76,6 +76,38 @@ export interface ToolContext {
     /** The turn's signal. A handler that ignores it will be abandoned, not killed. */
     readonly signal: AbortSignal
     readonly now: () => Date
+    /**
+     * Where a durable note goes, when a workspace declares somewhere for it.
+     *
+     * Resolved by the runtime rather than chosen by the model, and deliberately not exposed as a
+     * tool argument. Picking a file would be a second decision on every save, and a second decision
+     * is exactly the two-hop shape small models fail — the same reasoning that keeps `tools.search`
+     * off by default.
+     *
+     * Absent means no workspace declared a writable file, and the tool falls back to its own
+     * directory. Present-and-refusing is a different thing entirely and says so: see
+     * `WorkspaceWriteTarget.reason`.
+     */
+    readonly writeTarget?: WorkspaceWriteTarget
+}
+
+/**
+ * The workspace's answer to "where does a note go?".
+ *
+ * A refusal is carried here rather than thrown at load, because `editable: none` on every volatile
+ * file is a legitimate configuration — an agent with a read-only user model that never writes. It
+ * only becomes an error at the moment something tries to write, and then it must be an error, not a
+ * no-op: a save the model believes succeeded and disk never received is worse than a failed call,
+ * which at least the model can report.
+ */
+export interface WorkspaceWriteTarget {
+    /** Absolute path, when one is writable. */
+    readonly path?: string
+    /** As declared in the manifest, for the observation and the error. */
+    readonly name: string
+    readonly mode: "append" | "replace" | "refused"
+    /** Set when `mode` is `refused`: the `editable` value that refused it. */
+    readonly reason?: string
 }
 
 /** Returns the observation text the model will see. Throwing is a failed call, reported as one. */

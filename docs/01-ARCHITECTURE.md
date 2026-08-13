@@ -210,12 +210,12 @@ slot  content                                    pinned  cache          phase
 ────  ─────────────────────────────────────────  ──────  ─────────────  ─────
  0    system: workspace `static` tier              yes     ┐ breakpoint A
  1    tool dialect preamble + tool catalogue       yes     ┘
- 2    workspace `volatile` tier                    yes                    3.5
+ 2    workspace `volatile` tier                    yes
  3    active skill body (0 or 1)                   no      ─ breakpoint B  5
  4    retrieved memory passages (k)                no                      6
  5    rolling digest (compaction output)           no                      7
  6    recent message window                        no
- 7    workspace `reminder` tier                    yes                    3.5
+ 7    workspace `reminder` tier                    yes
  8    current input + current task line            yes
  9    last error, if any                           yes
 ```
@@ -225,10 +225,10 @@ order; inserting a slot means renumbering, which is cheap because every referenc
 is by name (`SLOT.input`, never `8`). Slots 2 and 7 were inserted for the workspace tiers with
 no logic or test churn at all.
 
-Slot 0 is the workspace's `static` tier per `07-SPEC-WORKSPACE.md`. Until Phase 3.5 lands it is
-the flat `context.files` list concatenated, and `SLOT.identity` is still its name in code —
-naming a slot for behaviour the runtime does not have yet is worse than naming it for what it
-actually holds.
+Slot 0 is the workspace's `static` tier per `07-SPEC-WORKSPACE.md`. `SLOT.identity` is still its
+name in code, because that is what the slot *holds* — the tier name says where the text came from,
+the slot name says what it is for. A manifest still using the deprecated `context.files` lands in
+the same slot, by the same path, with a warning naming `static`.
 
 Pinned blocks survive every compaction stage. This is why anything that must always hold —
 identity, guardrails, the tool catalogue — lives in slots 0/1 and never in history.

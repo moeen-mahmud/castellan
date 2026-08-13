@@ -542,34 +542,45 @@ three is expressible by reordering `context.files`.
 
 **Deliverables**
 
-- `workspace/load.ts` — tiered load per tier; **strips frontmatter and HTML comments before
-  injection**; per-file and total budgets with a named failure and no truncation
-- `workspace/rules.ts` — imperative count across `static` + `reminder` against `reliabilityTarget`,
-  computed rather than tabulated
-- `model/prompt-style.ts` — render authored markdown per `delimiters` / `intensity` / `examplesIn`
-- Slots 2 (`volatile`) and 7 (`reminder`) populated; both already declared in `SLOT`
-- `editable` enforced at the tool boundary: `memory_write` against `editable: none` is a typed error
-- `context.files` → deprecated alias for `static`, warning naming the replacement
-- `knowledge/` — Tier 3, activation by frontmatter keyword gate, `maxActive`, own budget
-- `SOUL.md` — `requires` / `onUnmet`, plus `castellan soul distill` emitting an editable scaffold
-- `castellan workspace validate` and `castellan eval rules`
-- `evals/prompt-style/` — the two unresolved `promptStyle` questions, with committed numbers
-- `examples/workspace-template/` and a filled-in `examples/telegram-assistant/workspace/`
+First half — **done**:
+
+- [x] `workspace/frontmatter.ts` — parse, and **strip frontmatter and HTML comments before
+  injection**
+- [x] `workspace/load.ts` — tiered load; per-file, per-tier and total budgets with a named failure
+  and no truncation; `writeTarget` resolution; `ruleBudgetFailure`
+- [x] `workspace/rules.ts` — imperative count across `static` + `reminder` against
+  `reliabilityTarget`, computed rather than tabulated
+- [x] Slots 2 (`volatile`) and 7 (`reminder`) populated; both were already declared in `SLOT`
+- [x] `editable` enforced at the tool boundary: `memory_write` against `editable: none` is a typed
+  error
+- [x] `context.files` → deprecated alias for `static`, warning naming the replacement
+- [x] `examples/workspace-template/` and a filled-in `examples/telegram-assistant/workspace/`
+
+Second half — **not started**:
+
+- [ ] `model/prompt-style.ts` — render authored markdown per `delimiters` / `intensity` /
+  `examplesIn`
+- [ ] `knowledge/` — Tier 3, activation by frontmatter keyword gate, `maxActive`, own budget.
+  Schema is in place and refused at load
+- [ ] `SOUL.md` — `requires` / `onUnmet`, plus `castellan soul distill` emitting an editable
+  scaffold. Schema is in place and refused at load
+- [ ] `castellan workspace validate` and `castellan eval rules`
+- [ ] `evals/prompt-style/` — the two unresolved `promptStyle` questions, with committed numbers
 
 **Files.** `packages/core/src/workspace/`, `model/prompt-style.ts`, `manifest/schema.ts`,
 `context/assemble.ts`, `packages/cli/`, `evals/prompt-style/`
 
 **Acceptance**
 
-- [ ] Frontmatter and HTML comments never reach the model — asserted on the assembled prefix
-- [ ] A workspace over total budget fails the load naming the offending file; nothing is truncated
+- [x] Frontmatter and HTML comments never reach the model — asserted on the assembled prefix
+- [x] A workspace over total budget fails the load naming the offending file; nothing is truncated
 - [ ] The same `AGENT.md` renders with XML delimiters under `delimiters: xml` and plain sections
       under `plain`, from one authored source
-- [ ] `MEMORY.md` is in slot 2, after breakpoint A: a `memory_write` leaves slots 0–1 byte-identical
-- [ ] `REMINDER.md` lands in slot 7 — after the history, before the input
-- [ ] `memory_write` against an `editable: none` file returns a typed error, not a silent no-op
-- [ ] A manifest using `context.files` still loads, with a warning naming `static`
-- [ ] Rule guard: three rules at `perRuleSuccess: 0.90` / `reliabilityTarget: 0.80` fails the load
+- [x] `MEMORY.md` is in slot 2, after breakpoint A: a `memory_write` leaves slots 0–1 byte-identical
+- [x] `REMINDER.md` lands in slot 7 — after the history, before the input
+- [x] `memory_write` against an `editable: none` file returns a typed error, not a silent no-op
+- [x] A manifest using `context.files` still loads, with a warning naming `static`
+- [x] Rule guard: three rules at `perRuleSuccess: 0.90` / `reliabilityTarget: 0.80` fails the load
       quoting the computed figure; two pass
 - [ ] `castellan eval rules` reports a measured `perRuleSuccess` for the configured model
 - [ ] `evals/prompt-style/` settles both open questions on ≥2 models: (a) `examplesIn: system` vs
@@ -579,7 +590,8 @@ three is expressible by reordering `context.files`.
       `markdown: none|basic`, and flags a rule with no rationale clause
 - [ ] `SOUL.md` on a model failing `requires` behaves per `onUnmet`; `distill` ships the compact file
 - [ ] `knowledge/` activates on keyword, respects `maxActive` and its budget, and is **not** pinned
-- [ ] `bun run bench:boot` still under 1000 ms with a full workspace loaded
+- [x] `bun run bench:boot` still under 1000 ms with a full workspace loaded — median 52.1 ms,
+      `agents` phase 1.45 ms including the workspace read
 
 **Non-goals.** Automatic soul distillation — a summariser drops exactly the parts that produce voice.
 Scored or embedded knowledge retrieval: Phase 3.5 ships the keyword gate behind a seam Phase 6 can
@@ -589,6 +601,49 @@ the ladder it describes). Rewriting `context.files` callers beyond the alias.
 **Sequencing note.** This phase is large — plausibly two sessions, split at `promptStyle`. Tiers,
 budgets and the alias form the first half and are independently useful; rendering, the eval matrix,
 `SOUL.md` and `knowledge/` form the second.
+
+### First half — deviations from the plan as written
+
+- **The default budgets are much larger than the spec proposed.** 700/500/60/1300 became
+  2,000/3,500/500/6,000, set in `DEFAULT_WORKSPACE_BUDGETS` and read from there by the manifest
+  schema so the figure a manifest gets by omitting the section and the figure the loader applies
+  without one cannot drift. The original numbers refused a 554-token `AGENT.md` that declared a
+  500-token budget, which is roughly 480 real tokens — the estimator is biased ~10% high by design.
+  Documented as a ceiling rather than a target, because the reasoning behind small budgets (what a
+  model *follows*, not what a window *fits*) is unchanged by raising them.
+- **`ruleBudgetFailure` returns rather than throws, and `validate` calls it too.** The check first
+  lived only in `Agent.create`, so `validate` reported ok on a manifest `run` refused — the exact
+  asymmetry the Composio work established as unacceptable. One function, two callers, each applying
+  its own `onExceed`.
+- **`onExceed` is `fail | warn`, and the failure lists every line it counted.** The imperative count
+  is a heuristic; a guard whose reasoning is invisible is one authors route around. `off` was
+  considered and dropped — `warn` already provides the escape, and silence does not.
+- **`editable` on a `static` or `reminder` file is refused, not downgraded.** The spec said only
+  that `volatile` is writable. Quietly ignoring an `editable: append` on a static file would leave
+  the author believing writes go somewhere they do not.
+- **A frontmatter `tier` disagreeing with the list that named it is a load failure.** Trusting the
+  list would move a writable file ahead of the cache breakpoint; trusting the frontmatter would move
+  a file out of the position its author chose in the manifest. Both are wrong silently.
+- **Setting both `context.files` and `context.static` is refused rather than merged.** They resolve
+  against different directories, so a merge produces an order nobody wrote.
+- **`context.soul`, `context.compactionNotice` and top-level `knowledge` are schema-complete and
+  refused at load.** Same treatment as every other forward-looking section: a manifest that
+  configures them validates as a document and fails as a configuration, naming the phase.
+- **`validate` now loads the workspace instead of counting names.** Every interesting failure —
+  budget, tier mismatch, unreadable file — happens during the load, so a validator that only counted
+  would report ok on a manifest `run` refuses. It prints tokens-against-budget per tier.
+- **Both shipped examples set `onExceed: warn`, and this is a finding rather than a fix.** Their
+  `static` tier includes `README.md` — documentation for a human reader, which states rules of its
+  own. `examples/minimal` counts 6 rules against a budget of 2 (expected all-rules compliance 0.53);
+  `examples/reference` counts 8 (0.43). The real remedy is dropping the README from the tier or
+  deleting rules; `warn` keeps the examples loading while the decision is open.
+- **`memory_write` takes no `file` argument.** The runtime resolves one write target from the
+  workspace. Choosing a file would be a second decision on every save, which is the two-hop shape
+  small models fail.
+- **Slot 2 is read at load, not re-read per turn.** The tier's *position* is what the first half
+  delivers. A `memory_write` therefore reaches the model's slot 2 on the next agent load rather than
+  the next turn; the re-read belongs with the second half, since a re-read with nothing writing is a
+  filesystem call per turn for no observable difference.
 
 ---
 

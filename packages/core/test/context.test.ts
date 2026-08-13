@@ -94,3 +94,71 @@ describe("slot numbering", () => {
         expect(SLOT.reminder < SLOT.input).toBe(true)
     })
 })
+
+describe("workspace tiers in the assembled prompt", () => {
+    function withTiers(volatileText: string) {
+        return assembleContext({
+            identity: "You are a test fixture.",
+            toolBlocks: [
+                {
+                    slot: SLOT.tools,
+                    role: "system",
+                    content: "TOOLS: none",
+                    pinned: true,
+                    tokens: 4,
+                    label: "tools",
+                },
+            ],
+            volatile: volatileText,
+            reminder: "Answer in prose.",
+            history: [
+                { role: "user", content: "first" },
+                { role: "assistant", content: "second" },
+            ],
+            input: "what now",
+            window: 8192,
+            reserveOutput: 1024,
+        })
+    }
+
+    test("a volatile change leaves slots 0 and 1 byte-identical", () => {
+        // The whole reason slot 2 exists. Prompt caching matches a byte-exact prefix, so a memory
+        // write that moved slot 0's bytes would invalidate the cache on every write — with no error,
+        // no failed turn, and no symptom other than the bill.
+        const before = withTiers("Known: the user prefers metric units.")
+        const after = withTiers("Known: the user prefers metric units. Lives in Lisbon.")
+
+        const prefix = (assembled: ReturnType<typeof withTiers>): string =>
+            assembled.blocks
+                .filter((b) => b.slot === SLOT.identity || b.slot === SLOT.tools)
+                .map((b) => b.content)
+                .join(" ")
+
+        expect(prefix(after)).toBe(prefix(before))
+        expect(before.blocks.some((b) => b.slot === SLOT.volatile)).toBe(true)
+    })
+
+    test("volatile follows the catalogue and precedes the history", () => {
+        const slots = withTiers("Memory.").blocks.map((b) => b.slot)
+        expect(slots.indexOf(SLOT.volatile) > slots.indexOf(SLOT.tools)).toBe(true)
+        expect(slots.indexOf(SLOT.volatile) < slots.indexOf(SLOT.history)).toBe(true)
+    })
+
+    test("reminder lands after the history and before the input", () => {
+        const slots = withTiers("Memory.").blocks.map((b) => b.slot)
+        expect(slots.lastIndexOf(SLOT.history) < slots.indexOf(SLOT.reminder)).toBe(true)
+        expect(slots.indexOf(SLOT.reminder) < slots.indexOf(SLOT.input)).toBe(true)
+    })
+
+    test("both tiers are pinned, so compaction cannot eat them", () => {
+        const report = slotReport(withTiers("Memory.").blocks)
+        expect(report.find((e) => e.slot === SLOT.volatile)?.pinned).toBe(true)
+        expect(report.find((e) => e.slot === SLOT.reminder)?.pinned).toBe(true)
+        expect(report.find((e) => e.slot === SLOT.reminder)?.label).toBe("workspace-reminder")
+    })
+
+    test("an empty tier produces no block at all", () => {
+        const slots = withTiers("").blocks.map((b) => b.slot)
+        expect(slots.includes(SLOT.volatile)).toBe(false)
+    })
+})

@@ -7,7 +7,7 @@
  * of them surface days later as "the agent just talks instead of doing the thing".
  */
 
-import { mkdtempSync, readFileSync } from "node:fs"
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { EventBus } from "../src/events/bus.ts"
@@ -16,7 +16,13 @@ import { coerceArgs } from "../src/tools/coerce.ts"
 import { batch, executeIntents, hashArgs, planIntents } from "../src/tools/execute.ts"
 import { localProvider, toolContext } from "../src/tools/local.ts"
 import { applyBudget, ToolRegistry } from "../src/tools/registry.ts"
-import type { Tool, ToolIntent, ToolProvider, ToolSpec } from "../src/tools/types.ts"
+import type {
+    Tool,
+    ToolIntent,
+    ToolProvider,
+    ToolSpec,
+    WorkspaceWriteTarget,
+} from "../src/tools/types.ts"
 import { describe, expect, sleep, test } from "./_harness.ts"
 
 // ─── fixtures ────────────────────────────────────────────────────────────────────────────
@@ -435,6 +441,7 @@ async function runTools(
         maxParallel?: number
         observationMaxTokens?: number
         dir?: string
+        writeTarget?: WorkspaceWriteTarget
     } = {},
 ) {
     const bus = new EventBus({ runtimeId: "rt_test" })
@@ -445,6 +452,7 @@ async function runTools(
         context: toolContext({
             now: () => new Date("2026-08-13T09:00:00Z"),
             ...(over.dir === undefined ? {} : { dir: over.dir }),
+            ...(over.writeTarget === undefined ? {} : { writeTarget: over.writeTarget }),
         }),
         bus,
         eventContext: { agentId: "a", sessionKey: "s", turnId: "t" },
@@ -490,6 +498,41 @@ describe("execution", () => {
         expect(written).toContain("prefers metric units")
         expect(written).toContain("2026-08-13")
         expect(written).toContain("prefs")
+    })
+
+    test("a workspace write target takes the note instead of the fallback file", async () => {
+        // The point of routing it here: this file is in slot 2, so the model sees on the next turn
+        // what it just wrote. The fallback file is in no slot at all.
+        const dir = mkdtempSync(join(tmpdir(), "memory-tool-"))
+        const target = join(dir, "MEMORY.md")
+        writeFileSync(target, "# Memory\n", "utf8")
+
+        const registry = await ToolRegistry.create({ local: ["memory_write"] })
+        const { outcome } = await runTools(
+            registry,
+            [intent("memory_write", { text: "lives in Dhaka" })],
+            { dir, writeTarget: { path: target, name: "MEMORY.md", mode: "append" } },
+        )
+
+        expect(outcome.results[0]?.ok).toBe(true)
+        expect(outcome.results[0]?.output).toContain("MEMORY.md")
+        expect(readFileSync(target, "utf8")).toContain("lives in Dhaka")
+        expect(existsSync(join(dir, "memory", "notes.md"))).toBe(false)
+    })
+
+    test("an editable: none target fails the call rather than writing elsewhere", async () => {
+        // The silent-fallback version of this would tell the model it had saved something, into a
+        // file the agent's own context never reads. `editable` is enforced, not advisory.
+        const dir = mkdtempSync(join(tmpdir(), "memory-tool-"))
+        const registry = await ToolRegistry.create({ local: ["memory_write"] })
+        const { outcome } = await runTools(registry, [intent("memory_write", { text: "x" })], {
+            dir,
+            writeTarget: { name: "MEMORY.md", mode: "refused", reason: "none" },
+        })
+
+        expect(outcome.results[0]?.ok).toBe(false)
+        expect(outcome.results[0]?.output).toContain("MEMORY.md")
+        expect(existsSync(join(dir, "memory", "notes.md"))).toBe(false)
     })
 
     test("a second note appends rather than replacing the first", async () => {

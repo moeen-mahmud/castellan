@@ -1,0 +1,395 @@
+/**
+ * The tiered workspace loader. Governed by docs/07-SPEC-WORKSPACE.md.
+ *
+ * Three tiers, and the tier decides prompt position:
+ *
+ *   static    slot 0   before cache breakpoint A   read-only
+ *   volatile  slot 2   after cache breakpoint A    writable
+ *   reminder  slot 7   after the conversation history, before the current input
+ *
+ * The positions are the reason the tiers exist, and none of the three is expressible by reordering
+ * a flat array. `static` and the tool catalogue form the cached prefix, so anything in it that
+ * changes between turns silently stops prompt caching working. `volatile` opens the uncached region,
+ * which is why `MEMORY.md` lives there: every write changes it. `reminder` sits at the recency
+ * position because rule adherence decays across a conversation and attention is stronger at both
+ * ends of a context than in the middle — a rule stated once at the top of a thirty-turn session is
+ * effectively in the middle.
+ *
+ * Everything here is synchronous and filesystem-only. It runs inside boot, where hard rule 4 puts
+ * the network entirely out of reach.
+ */
+
+import { readFileSync, statSync } from "node:fs"
+import { isAbsolute, resolve } from "node:path"
+import { estimateTokens } from "../context/tokens.ts"
+import {
+    type ConfigError,
+    type ErrorDetail,
+    workspaceAliasConflict,
+    workspaceBudgetExceeded,
+    workspaceFileMissing,
+    workspaceNotWritableTier,
+    workspaceRuleBudget,
+    workspaceTierMismatch,
+} from "../errors.ts"
+import type { WorkspaceWriteTarget } from "../tools/types.ts"
+import type { Editable, Eviction, Tier } from "./frontmatter.ts"
+import { parseWorkspaceFile } from "./frontmatter.ts"
+import { checkRules } from "./rules.ts"
+
+export type { Editable, Eviction, Tier } from "./frontmatter.ts"
+
+export interface WorkspaceBudgets {
+    readonly static: number
+    readonly volatile: number
+    readonly reminder: number
+    readonly total: number
+}
+
+export interface WorkspaceFileRef {
+    /** As written in the manifest, for errors the author can act on. */
+    readonly name: string
+    /** Absolute, already resolved against the workspace directory. */
+    readonly path: string
+    readonly tier: Tier
+    /** Which manifest field listed it, for the error path. */
+    readonly field: string
+}
+
+export interface WorkspaceFile extends WorkspaceFileRef {
+    readonly editable: Editable
+    readonly eviction: Eviction
+    /** Effective cap: the file's own frontmatter, else the tier's budget. */
+    readonly budget: number
+    /** Stripped of frontmatter and HTML comments. What the model sees. */
+    readonly content: string
+    readonly tokens: number
+}
+
+export interface Workspace {
+    readonly files: readonly WorkspaceFile[]
+    /** Slot 0. Byte-stable for the lifetime of the agent. */
+    readonly static: string
+    /** Slot 2. Re-read on demand; changing it must not disturb slots 0 and 1. */
+    readonly volatile: string
+    /** Slot 7. */
+    readonly reminder: string
+    readonly tokens: {
+        readonly static: number
+        readonly volatile: number
+        readonly reminder: number
+        readonly total: number
+    }
+}
+
+export const DEFAULT_WORKSPACE_BUDGETS: WorkspaceBudgets = {
+    static: 2000,
+    volatile: 3500,
+    reminder: 500,
+    total: 6000,
+}
+
+export interface LoadWorkspaceOptions {
+    readonly refs: readonly WorkspaceFileRef[]
+    readonly budgets?: WorkspaceBudgets
+}
+
+/**
+ * Read, strip, budget, and concatenate.
+ *
+ * The order matters: budgets are checked against the *stripped* text, because stripped text is what
+ * the model is billed for. Checking the raw file would charge the author for their own comments and
+ * make the templates' inline documentation expensive to write.
+ */
+export function loadWorkspace(options: LoadWorkspaceOptions): Workspace {
+    const budgets = options.budgets ?? DEFAULT_WORKSPACE_BUDGETS
+    const files: WorkspaceFile[] = []
+
+    for (const ref of options.refs) {
+        files.push(readOne(ref, budgets))
+    }
+
+    for (const file of files) {
+        if (file.tokens <= file.budget) continue
+        throw workspaceBudgetExceeded({
+            name: file.name,
+            scope: "file",
+            tier: file.tier,
+            tokens: file.tokens,
+            budget: file.budget,
+            field: file.field,
+        })
+    }
+
+    const byTier = (tier: Tier): readonly WorkspaceFile[] => files.filter((f) => f.tier === tier)
+    const tokensOf = (tier: Tier): number =>
+        byTier(tier).reduce((sum, file) => sum + file.tokens, 0)
+
+    for (const tier of ["static", "volatile", "reminder"] as const) {
+        const tokens = tokensOf(tier)
+        if (tokens <= budgets[tier]) continue
+        throw workspaceBudgetExceeded({
+            name: largest(byTier(tier)),
+            scope: "tier",
+            tier,
+            tokens,
+            budget: budgets[tier],
+            field: `context.budgets.${tier}`,
+        })
+    }
+
+    const total = files.reduce((sum, file) => sum + file.tokens, 0)
+    if (total > budgets.total) {
+        throw workspaceBudgetExceeded({
+            name: largest(files),
+            scope: "total",
+            tokens: total,
+            budget: budgets.total,
+            field: "context.budgets.total",
+        })
+    }
+
+    const join = (tier: Tier): string =>
+        byTier(tier)
+            .map((file) => file.content)
+            .filter((content) => content !== "")
+            .join("\n\n")
+
+    return {
+        files,
+        static: join("static"),
+        volatile: join("volatile"),
+        reminder: join("reminder"),
+        tokens: {
+            static: tokensOf("static"),
+            volatile: tokensOf("volatile"),
+            reminder: tokensOf("reminder"),
+            total,
+        },
+    }
+}
+
+export interface RulesConfig {
+    readonly perRuleSuccess: number
+    readonly reliabilityTarget: number
+    readonly onExceed: "fail" | "warn"
+}
+
+/**
+ * The rule-budget verdict, as data rather than as a throw.
+ *
+ * Returned rather than thrown so that both callers can apply the same finding under their own
+ * `onExceed`: `run` refuses, `validate` reports. That symmetry is the point — a validator that
+ * accepts what the runtime refuses is worse than no validator, and the only reliable way to keep
+ * the two honest is for them to share the check rather than to each implement it.
+ *
+ * Counted across `static` and `reminder` together, because the model does not know they came from
+ * different files. `volatile` is excluded: it holds facts about the person, not obligations.
+ */
+export function ruleBudgetFailure(
+    workspace: Workspace,
+    rules: RulesConfig,
+): ConfigError | undefined {
+    const check = checkRules([workspace.static, workspace.reminder].join("\n"), rules)
+    if (check.withinBudget) return undefined
+    return workspaceRuleBudget({
+        counted: check.counted.length,
+        allowed: check.allowed,
+        perRuleSuccess: rules.perRuleSuccess,
+        reliabilityTarget: rules.reliabilityTarget,
+        lines: check.counted.map((rule) => rule.text),
+    })
+}
+
+/**
+ * Where `memory_write` should land, given this workspace.
+ *
+ * The first volatile file wins, in declared order — an explicit order the author already wrote,
+ * rather than a filename convention the loader would have to know about. A workspace whose volatile
+ * files are all `editable: none` returns a refusal rather than `undefined`, because "you configured
+ * a memory file and made it read-only" and "you configured no memory file" call for different
+ * things being said to the model.
+ */
+export function writeTarget(workspace: Workspace): WorkspaceWriteTarget | undefined {
+    const volatiles = workspace.files.filter((file) => file.tier === "volatile")
+    if (volatiles.length === 0) return undefined
+
+    const writable = volatiles.find(
+        (file) => file.editable === "append" || file.editable === "replace",
+    )
+    if (writable !== undefined) {
+        return {
+            path: writable.path,
+            name: writable.name,
+            mode: writable.editable === "replace" ? "replace" : "append",
+        }
+    }
+
+    const first = volatiles[0]
+    if (first === undefined) return undefined
+    return { name: first.name, mode: "refused", reason: first.editable }
+}
+
+/** An agent with no workspace configured. Distinct from one whose workspace loaded empty. */
+export function emptyWorkspace(): Workspace {
+    return {
+        files: [],
+        static: "",
+        volatile: "",
+        reminder: "",
+        tokens: { static: 0, volatile: 0, reminder: 0, total: 0 },
+    }
+}
+
+/**
+ * Resolve declared names into refs.
+ *
+ * `base` is the workspace directory for tier lists and the manifest directory for the deprecated
+ * `context.files` alias. Keeping the distinction here rather than in the caller is what lets the
+ * alias keep its original resolution semantics: a manifest that worked before Phase 3.5 resolves the
+ * same paths after it, which is the whole promise of an alias.
+ */
+export function workspaceRefs(init: {
+    base: string
+    names: readonly string[]
+    tier: Tier
+    field: string
+}): WorkspaceFileRef[] {
+    return init.names.map((name, index) => ({
+        name,
+        path: isAbsolute(name) ? name : resolve(init.base, name),
+        tier: init.tier,
+        field: `${init.field}[${index}]`,
+    }))
+}
+
+export interface WorkspacePlan {
+    readonly refs: readonly WorkspaceFileRef[]
+    /** Non-fatal, surfaced as `agent.warning`. Currently only the `context.files` deprecation. */
+    readonly warnings: readonly ErrorDetail[]
+}
+
+/**
+ * Turn a manifest's context section into refs, honouring the `context.files` alias.
+ *
+ * Naming both `files` and `static` is a load failure rather than a merge. The two resolve against
+ * different directories, so merging them would produce an ordering nobody wrote and a set of paths
+ * nobody can predict from reading the manifest.
+ */
+export function planWorkspace(context: WorkspaceContextConfig, dir: string): WorkspacePlan {
+    const legacy = context.files ?? []
+    const declared = context.static ?? []
+
+    if (legacy.length > 0 && declared.length > 0) {
+        throw workspaceAliasConflict()
+    }
+
+    const workspaceDir = isAbsolute(context.workspace)
+        ? context.workspace
+        : resolve(dir, context.workspace)
+
+    const refs: WorkspaceFileRef[] = []
+    const warnings: ErrorDetail[] = []
+
+    if (legacy.length > 0) {
+        // Manifest-relative, as it always was. See the field's comment in schema.ts.
+        refs.push(
+            ...workspaceRefs({ base: dir, names: legacy, tier: "static", field: "context.files" }),
+        )
+        warnings.push({
+            code: "context_files_deprecated",
+            message: `context.files is deprecated; its ${legacy.length} file(s) were loaded as the static tier.`,
+            hint: "Move them to context.static and set context.workspace to the directory holding them. The tier lists say which files are cache-stable, which the agent may write to, and which sit after the conversation history — none of which an ordered array can express.",
+            field: "context.files",
+        })
+    }
+
+    refs.push(
+        ...workspaceRefs({
+            base: workspaceDir,
+            names: declared,
+            tier: "static",
+            field: "context.static",
+        }),
+    )
+    refs.push(
+        ...workspaceRefs({
+            base: workspaceDir,
+            names: context.volatile ?? [],
+            tier: "volatile",
+            field: "context.volatile",
+        }),
+    )
+    if (context.reminder !== undefined) {
+        refs.push(
+            ...workspaceRefs({
+                base: workspaceDir,
+                names: [context.reminder],
+                tier: "reminder",
+                field: "context.reminder",
+            }),
+        )
+    }
+
+    return { refs, warnings }
+}
+
+/** The slice of `context` this module reads. Narrowed so tests need not build a whole manifest. */
+export interface WorkspaceContextConfig {
+    readonly files?: readonly string[]
+    readonly workspace: string
+    readonly static?: readonly string[]
+    readonly volatile?: readonly string[]
+    readonly reminder?: string | undefined
+}
+
+function readOne(ref: WorkspaceFileRef, budgets: WorkspaceBudgets): WorkspaceFile {
+    let raw: string
+    try {
+        const stat = statSync(ref.path)
+        if (stat.isDirectory()) throw new Error("is a directory")
+        raw = readFileSync(ref.path, "utf8")
+    } catch {
+        throw workspaceFileMissing(ref.name, ref.path, ref.field)
+    }
+
+    const { frontmatter, body } = parseWorkspaceFile(ref.name, raw)
+
+    // A file that names its own tier and is listed under another is refused rather than resolved in
+    // either direction. Silently trusting the list would move a writable file ahead of the cache
+    // breakpoint; silently trusting the frontmatter would move a file out of the position its author
+    // chose in the manifest. Both are wrong in ways nothing reports.
+    if (frontmatter.tier !== undefined && frontmatter.tier !== ref.tier) {
+        throw workspaceTierMismatch(ref.name, frontmatter.tier, ref.tier)
+    }
+
+    // `static` and `reminder` are read-only by definition of their position: they sit inside the
+    // cached prefix, or are re-asserted verbatim after the history. A writable file in either place
+    // defeats the reason it is there — a static file that changes invalidates the cached prefix on
+    // every write, with no error and no symptom beyond the bill. So a frontmatter asking for it is
+    // refused rather than quietly downgraded to read-only.
+    if (
+        ref.tier !== "volatile" &&
+        frontmatter.editable !== undefined &&
+        frontmatter.editable !== "none"
+    ) {
+        throw workspaceNotWritableTier(ref.name, ref.tier, frontmatter.editable)
+    }
+
+    return {
+        ...ref,
+        editable: ref.tier === "volatile" ? (frontmatter.editable ?? "append") : "none",
+        eviction: frontmatter.eviction ?? "none",
+        budget: frontmatter.budget ?? budgets[ref.tier],
+        content: body,
+        tokens: estimateTokens(body),
+    }
+}
+
+function largest(files: readonly WorkspaceFile[]): string {
+    let biggest: WorkspaceFile | undefined
+    for (const file of files) {
+        if (biggest === undefined || file.tokens > biggest.tokens) biggest = file
+    }
+    return biggest?.name ?? "(none)"
+}

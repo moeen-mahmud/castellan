@@ -217,26 +217,31 @@ the provider caches nothing: DeepSeek caches context automatically server-side a
 | `window` | from capabilities | Total token budget. |
 | `reserveOutput` | 4096 | Held back for the response. |
 | `observationMaxTokens` | 2000 | Above this a single tool observation is trimmed to head+tail with an artifact pointer. |
-| `files` | `[]` | Ordered. Concatenated into context slot 0 (pinned, cache-stable). Relative to the manifest. Missing file = load failure. **Deprecated from Phase 3.5** — alias for `static`, warns. |
+| `files` | `[]` | **Deprecated.** Alias for `static`, warning at load and naming the replacement. Keeps resolving against the *manifest* directory rather than `workspace`, which is what makes it an alias rather than a rename. Setting both `files` and `static` is a load failure, not a merge. |
 | `thresholds` | see architecture | Compaction ladder trigger fractions. Must be strictly ascending; validated. |
 
-#### Workspace — Phase 3.5
+#### Workspace
 
-> **Specified, not implemented.** `files` above is what the runtime reads today. The fields below
-> are governed by `07-SPEC-WORKSPACE.md`, which supersedes the flat list: an ordered array cannot
-> say which files are cache-stable versus volatile, which sit after the conversation history, or
-> which the agent may write to — and each of those has a measured cost when got wrong.
+> Governed by `07-SPEC-WORKSPACE.md`, which supersedes the flat `files` list: an ordered array
+> cannot say which files are cache-stable versus volatile, which sit after the conversation
+> history, or which the agent may write to — and each of those has a measured cost when got wrong.
+> Implemented, except `soul`, which is refused at load until Phase 3.5's second half.
 
 | Field | Default | Notes |
 | --- | --- | --- |
-| `workspace` | `./workspace` | Directory holding the persistent files. Relative to the manifest. |
+| `workspace` | `./workspace` | Directory the tier lists resolve against. Relative to the manifest. |
 | `static` | `[]` | Tier 0, slot 0. Cache-stable, read-only, before breakpoint A. |
-| `volatile` | `[]` | Tier 1, slot 2. Agent-writable, **after** breakpoint A so a write does not invalidate the cached prefix. |
+| `volatile` | `[]` | Tier 1, slot 2. Agent-writable, **after** breakpoint A so a write does not invalidate the cached prefix. The **only** writable tier — a `static` or `reminder` file declaring `editable` is refused, not downgraded. |
 | `reminder` | none | Tier 2, slot 7. Injected after the conversation history, before the current input. |
-| `budgets` | `{static: 700, volatile: 500, reminder: 60, total: 1300}` | Hard caps. Over budget **fails the load naming the file** — never silent truncation. |
-| `rules` | `{perRuleSuccess: 0.90, reliabilityTarget: 0.80, onExceed: fail}` | Imperative-count guard across static + reminder. At 0.90 a 0.80 target permits two rules, not four. |
-| `soul` | none | Capability-gated long-form identity, with `requires` and `onUnmet: distill \| omit \| fail`. |
-| `compactionNotice` | true | Runtime-generated line telling the model context compacts automatically, so it does not wrap up work early on budget grounds. Phase 7. |
+| `budgets` | `{static: 2000, volatile: 3500, reminder: 500, total: 6000}` | Hard caps, measured on the *stripped* text. Over budget **fails the load naming the file** — never silent truncation. A ceiling, not a target: everything inside it is paid every turn. |
+| `rules` | `{perRuleSuccess: 0.90, reliabilityTarget: 0.80, onExceed: fail}` | Imperative-count guard across static + reminder. At 0.90 a 0.80 target permits two rules, not four. The count is a heuristic and reports every line it counted; `onExceed: warn` is the escape. |
+| `soul` | none | Capability-gated long-form identity, with `requires` and `onUnmet: distill \| omit \| fail`. **Phase 3.5 second half** — refused at load until then. |
+| `compactionNotice` | true | Runtime-generated line telling the model context compacts automatically, so it does not wrap up work early on budget grounds. **Phase 7** — refused at load until then. |
+
+Per-file frontmatter (`tier`, `editable`, `budget`, `eviction`) is stripped before injection, along
+with HTML comments — so authoring guidance in a template costs nothing at runtime. A file whose
+frontmatter `tier` disagrees with the list that named it fails the load rather than being resolved
+in either direction.
 
 A `knowledge` section sits alongside `skills` at the top level, and is Tier 3 — retrieved, never
 pinned, so it has no share of the 1,300:
@@ -246,6 +251,8 @@ pinned, so it has no share of the 1,300:
 | `knowledge.dir` | none | Directory of keyword-gated knowledge files. |
 | `knowledge.maxActive` | 2 | Entries activated in one turn. |
 | `knowledge.budget` | 600 | Total across activated entries. |
+
+**Phase 3.5 second half** — the section validates and is refused at load until then.
 
 ### `tools`
 

@@ -1,7 +1,7 @@
 ---
 tier: static
 editable: none
-budget: 200
+budget: 600
 ---
 
 <!--

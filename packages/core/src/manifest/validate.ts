@@ -8,9 +8,9 @@
  */
 
 import { accessSync, constants, statSync } from "node:fs"
-import { isAbsolute, resolve } from "node:path"
 import { BRAND } from "../brand.ts"
-import { apiVersionMismatch, type ErrorDetail } from "../errors.ts"
+import { apiVersionMismatch, type ErrorDetail, HarnessError } from "../errors.ts"
+import { planWorkspace, type WorkspaceFileRef } from "../workspace/load.ts"
 import type { AgentManifest } from "./schema.ts"
 
 /** Rule 1, checked against the raw document before the schema runs. */
@@ -166,36 +166,53 @@ function validateContextBudget(manifest: AgentManifest, resolvedWindow: number):
     ]
 }
 
-function validateContextFiles(manifest: AgentManifest, dir: string): ErrorDetail[] {
+/**
+ * Every workspace file exists and is readable, whichever tier listed it.
+ *
+ * Reported here rather than left to the loader so that a manifest with three missing files reports
+ * three, not one at a time across three edit-run cycles. `planWorkspace` is the single source of
+ * where each name resolves to — including the `context.files` alias, which keeps resolving against
+ * the manifest directory rather than the workspace one.
+ */
+function validateWorkspaceFiles(manifest: AgentManifest, dir: string): ErrorDetail[] {
     const found: ErrorDetail[] = []
 
-    for (const [index, file] of manifest.context.files.entries()) {
-        const field = `context.files[${index}]`
-        const path = isAbsolute(file) ? file : resolve(dir, file)
+    let refs: readonly WorkspaceFileRef[]
+    try {
+        refs = planWorkspace(manifest.context, dir).refs
+    } catch (error) {
+        // Currently only the files/static conflict, which is a configuration error in its own right.
+        return [error instanceof HarnessError ? error.toDetail() : rethrow(error)]
+    }
 
+    for (const ref of refs) {
         try {
-            const stat = statSync(path)
+            const stat = statSync(ref.path)
             if (stat.isDirectory()) {
                 found.push({
                     code: "manifest_context_file_not_readable",
-                    message: `${field} points at a directory: ${path}`,
-                    hint: "context.files takes individual markdown files, in the order they should appear in the system prompt.",
-                    field,
+                    message: `${ref.field} points at a directory: ${ref.path}`,
+                    hint: "The tier lists take individual markdown files, in the order they should appear in the prompt.",
+                    field: ref.field,
                 })
                 continue
             }
-            accessSync(path, constants.R_OK)
+            accessSync(ref.path, constants.R_OK)
         } catch {
             found.push({
                 code: "manifest_context_file_missing",
-                message: `${field} is not readable: ${path}`,
-                hint: "Paths in context.files are relative to the manifest. These files are the agent's identity and are pinned in context slot 0, so a missing one is a load failure rather than a warning.",
-                field,
+                message: `${ref.field} is not readable: ${ref.path}`,
+                hint: `${ref.field.startsWith("context.files") ? "Paths in the deprecated context.files resolve against the manifest." : "Tier paths resolve against context.workspace, which resolves against the manifest."} These files are the agent's instructions, so a missing one is a load failure rather than a warning.`,
+                field: ref.field,
             })
         }
     }
 
     return found
+}
+
+function rethrow(error: unknown): never {
+    throw error
 }
 
 /**
@@ -285,6 +302,11 @@ function validateBaseUrls(manifest: AgentManifest): ErrorDetail[] {
 const UNSUPPORTED_SECTIONS: readonly { key: string; feature: string; phase: string }[] = [
     { key: "channels", feature: "channels", phase: "Phase 4" },
     { key: "skills", feature: "skills", phase: "Phase 5" },
+    {
+        key: "knowledge",
+        feature: "keyword-gated knowledge files",
+        phase: "Phase 3.5's second half",
+    },
     { key: "memory", feature: "memory", phase: "Phase 6" },
     { key: "phases", feature: "phase-scoped tool visibility", phase: "Phase 7" },
     { key: "schedules", feature: "schedules", phase: "Phase 8" },
@@ -327,6 +349,30 @@ function validateSupportedSections(
                     "This build does not implement the HTTP server, but the manifest enables it.",
                 hint: "The server arrives in Phase 4. Set server.enabled to false or remove the section — it is refused rather than ignored, because a manifest that asks for a listening port and gets silence is worse than one that fails to load.",
                 field: "server.enabled",
+            })
+        }
+    }
+
+    // Nested under `context`, so the section-level loop above cannot see them. Both are fully
+    // specified in 07-SPEC-WORKSPACE.md and neither is built, which is exactly the case where
+    // silence would be read as support.
+    const context = raw.context
+    if (context !== null && typeof context === "object" && !Array.isArray(context)) {
+        const keys = context as Record<string, unknown>
+        if (keys.soul !== undefined && keys.soul !== null) {
+            found.push({
+                code: "not_implemented_yet",
+                message: "This build does not implement context.soul.",
+                hint: "Capability-gated long-form identity arrives in the second half of Phase 3.5. Until then put the compact identity in context.static — which is what onUnmet: distill would ship to a small model anyway.",
+                field: "context.soul",
+            })
+        }
+        if (keys.compactionNotice !== undefined) {
+            found.push({
+                code: "not_implemented_yet",
+                message: "This build does not implement context.compactionNotice.",
+                hint: "It is generated by the compaction ladder that explains it, which arrives in Phase 7. Remove the field — a notice about automatic compaction from a runtime that does not compact would be untrue.",
+                field: "context.compactionNotice",
             })
         }
     }
@@ -397,7 +443,7 @@ function validateDialectSupport(
 }
 
 export interface ValidateOptions {
-    /** Directory the manifest was loaded from; `context.files` resolve against it. */
+    /** Directory the manifest was loaded from; workspace paths resolve against it. */
     dir: string
     /** The window after capability resolution, used by rule 11. */
     resolvedWindow: number
@@ -424,7 +470,7 @@ export function validateManifest(manifest: AgentManifest, options: ValidateOptio
         ...validateThresholds(manifest),
         ...validateToolBudget(manifest),
         ...validateContextBudget(manifest, options.resolvedWindow),
-        ...validateContextFiles(manifest, options.dir),
+        ...validateWorkspaceFiles(manifest, options.dir),
         ...validateBaseUrls(manifest),
         ...validateApiKeyEnv(manifest, options.env),
         ...validateDialectSupport(manifest, options.capabilities),

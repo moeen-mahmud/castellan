@@ -245,5 +245,30 @@ export type {
     ToolProviderRefresh,
     ToolResult,
     ToolSpec,
+    WorkspaceWriteTarget,
 } from "./tools/types.ts"
 export { VERSION } from "./version.ts"
+export type { Editable, Frontmatter, ParsedFile, Tier } from "./workspace/frontmatter.ts"
+export { parseWorkspaceFile, strip as stripWorkspaceText } from "./workspace/frontmatter.ts"
+export {
+    DEFAULT_WORKSPACE_BUDGETS,
+    emptyWorkspace,
+    loadWorkspace,
+    planWorkspace,
+    type RulesConfig,
+    ruleBudgetFailure,
+    type Workspace,
+    type WorkspaceBudgets,
+    type WorkspaceFile,
+    type WorkspaceFileRef,
+    type WorkspacePlan,
+    workspaceRefs,
+    writeTarget,
+} from "./workspace/load.ts"
+export {
+    allowedRules,
+    type CountedRule,
+    checkRules,
+    countRules,
+    type RuleCheck,
+} from "./workspace/rules.ts"

@@ -5,7 +5,7 @@
 # See README.md in this directory for the three env presets.
 apiVersion: castellan/v1
 id: minimal
-name: Minimal Assistant
+name: Vela (Minimal Assistant)
 
 model:
   main:
@@ -16,8 +16,24 @@ model:
     temperature: 0.3
 
 context:
-  files:
+  # The workspace directory the tier lists resolve against. This example keeps its files beside
+  # the manifest rather than in a ./workspace subdirectory, so it is the manifest's own directory.
+  workspace: .
+
+  # Tier 0 — pinned in slot 0, before cache breakpoint A, read-only to the agent.
+  # Order matters: earlier instructions are favoured under moderate instruction density.
+  static:
     - IDENTITY.md
+    - AGENT.md
+    - README.md
+  # The imperative count across static + reminder, against what the reliability target affords.
+  # `warn` rather than `fail` here **only** because this example's static tier includes README.md,
+  # which is documentation for a human reader and states rules of its own — six counted against a
+  # budget of two, an expected all-rules compliance of 0.53. A real agent should either drop the
+  # README from the tier or delete rules; `fail` is the shipped default for that reason.
+  rules:
+    onExceed: warn
+
   # Held back from the window for the reply. Generous because a reasoning model bills its
   # thinking to this same budget: too small and the answer comes back empty with
   # finish_reason=length, which the runtime reports as a failure rather than a blank reply.

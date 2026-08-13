@@ -19,6 +19,7 @@
 
 import { z } from "zod"
 import { BRAND } from "../brand.ts"
+import { DEFAULT_WORKSPACE_BUDGETS } from "../workspace/load.ts"
 
 const slug = z.string().min(1)
 
@@ -79,14 +80,109 @@ export const ThresholdsSchema = z
     })
     .strict()
 
+/**
+ * Hard caps per tier and overall. Over budget fails the load naming the file — never truncation.
+ *
+ * The defaults come from `DEFAULT_WORKSPACE_BUDGETS` rather than being repeated here, so the figure
+ * a manifest gets by omitting the section and the figure the loader applies without one cannot
+ * drift apart. They are still a ceiling rather than a target: what a window *fits* and what a model
+ * still *follows* are different numbers, and only the second one matters. Every token added here is
+ * paid on every turn of every session.
+ */
+export const WorkspaceBudgetsSchema = z
+    .object({
+        static: z.number().int().positive().default(DEFAULT_WORKSPACE_BUDGETS.static),
+        volatile: z.number().int().positive().default(DEFAULT_WORKSPACE_BUDGETS.volatile),
+        reminder: z.number().int().positive().default(DEFAULT_WORKSPACE_BUDGETS.reminder),
+        total: z.number().int().positive().default(DEFAULT_WORKSPACE_BUDGETS.total),
+    })
+    .strict()
+
+export const RulesSchema = z
+    .object({
+        /**
+         * Probability the model follows any one rule. Measure it with `eval rules` rather than
+         * guessing — small models run well below 0.90, and a guessed figure produces a guard that
+         * validates nothing.
+         */
+        perRuleSuccess: z.number().gt(0).lte(1).default(0.9),
+        /** Probability that *all* stated rules are followed together. */
+        reliabilityTarget: z.number().gt(0).lt(1).default(0.8),
+        /**
+         * `warn` exists because the imperative count is a heuristic and a wrong count must not be a
+         * wall. It is deliberately not "raise reliabilityTarget", which changes the number without
+         * changing the behaviour it is supposed to describe.
+         */
+        onExceed: z.enum(["fail", "warn"]).default("fail"),
+    })
+    .strict()
+
+/**
+ * A long-form identity document, shipped only to models that can carry one.
+ *
+ * The premise of a document this size is that a model given enough understanding of the goals will
+ * derive rules the author never wrote. Derivation is precisely what small models cannot do, and the
+ * document consumes a prohibitive share of their window while they fail to do it — so it is gated
+ * rather than recommended or banned.
+ */
+export const SoulSchema = z
+    .object({
+        file: z.string().min(1),
+        requires: z
+            .object({
+                /** A comparison such as `">=200000"`, against the resolved window. */
+                contextWindow: z.string().min(1).optional(),
+                class: z.string().min(1).optional(),
+            })
+            .strict()
+            .optional(),
+        /** `distill` ships the committed compact file; summarising an identity automatically drops
+         * exactly the parts that produce voice, so it is never done at runtime. */
+        onUnmet: z.enum(["distill", "omit", "fail"]).default("distill"),
+        /** The hand-edited compact file `soul distill` scaffolds. Required by `onUnmet: distill`. */
+        distilled: z.string().min(1).optional(),
+    })
+    .strict()
+
+export const KnowledgeSchema = z
+    .object({
+        dir: z.string().min(1),
+        /** Entries activated in one turn. */
+        maxActive: z.number().int().nonnegative().default(2),
+        /** Total across activated entries. Tier 3 is retrieved, never pinned, so it is outside
+         * the workspace's 1,300-token cap. */
+        budget: z.number().int().positive().default(600),
+    })
+    .strict()
+
 export const ContextSchema = z
     .object({
         /** Total token budget. Defaults to the model's `contextWindow` capability. */
         window: z.number().int().positive().optional(),
         reserveOutput: z.number().int().positive().default(4096),
         observationMaxTokens: z.number().int().positive().default(2000),
-        /** Ordered, concatenated into slot 0. Relative to the manifest. Missing file = failure. */
+        /**
+         * **Deprecated from Phase 3.5** — an alias for `static`, warning at load.
+         *
+         * Kept resolving against the *manifest* directory rather than the workspace directory, which
+         * is what makes it an alias rather than a rename: a manifest that worked before Phase 3.5
+         * finds the same files after it.
+         */
         files: z.array(z.string().min(1)).default([]),
+        /** Directory the tier lists resolve against. Relative to the manifest. */
+        workspace: z.string().min(1).default("./workspace"),
+        /** Tier 0, slot 0. Cache-stable, read-only, before breakpoint A. */
+        static: z.array(z.string().min(1)).default([]),
+        /** Tier 1, slot 2. Writable, *after* breakpoint A so a write leaves the cache intact. */
+        volatile: z.array(z.string().min(1)).default([]),
+        /** Tier 2, slot 7. After the history, before the current input. One or two rules. */
+        reminder: z.string().min(1).optional(),
+        budgets: WorkspaceBudgetsSchema.prefault({}),
+        rules: RulesSchema.prefault({}),
+        /** Capability-gated long-form identity. Second half of Phase 3.5; refused until then. */
+        soul: SoulSchema.optional(),
+        /** Runtime-generated line about automatic compaction. Phase 7; refused until then. */
+        compactionNotice: z.boolean().optional(),
         thresholds: ThresholdsSchema.prefault({}),
     })
     .strict()
@@ -227,6 +323,7 @@ export const AgentManifestSchema = z
         tools: ToolsSchema.prefault({}),
         phases: z.record(z.string(), PhaseSchema).optional(),
         skills: SkillsSchema.optional(),
+        knowledge: KnowledgeSchema.optional(),
         memory: MemorySchema.optional(),
         channels: z.array(ChannelSchema).default([]),
         delivery: DeliverySchema.optional(),
@@ -241,10 +338,14 @@ export type ModelCapabilitiesOverride = z.infer<typeof ModelCapabilitiesSchema>
 export type ModelRoleConfig = z.infer<typeof ModelRoleSchema>
 export type ModelConfig = z.infer<typeof ModelSchema>
 export type ContextConfig = z.infer<typeof ContextSchema>
+export type WorkspaceBudgetsConfig = z.infer<typeof WorkspaceBudgetsSchema>
+export type RulesConfig = z.infer<typeof RulesSchema>
 export type ThresholdsConfig = z.infer<typeof ThresholdsSchema>
 export type ToolsConfig = z.infer<typeof ToolsSchema>
 export type PhaseConfig = z.infer<typeof PhaseSchema>
 export type SkillsConfig = z.infer<typeof SkillsSchema>
+export type KnowledgeConfig = z.infer<typeof KnowledgeSchema>
+export type SoulConfig = z.infer<typeof SoulSchema>
 export type MemoryConfig = z.infer<typeof MemorySchema>
 export type ChannelConfig = z.infer<typeof ChannelSchema>
 export type DeliveryConfig = z.infer<typeof DeliverySchema>

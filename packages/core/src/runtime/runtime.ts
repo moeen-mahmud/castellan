@@ -234,7 +234,7 @@ export class Runtime {
             // Whatever the budget trimmed, and whatever tool arrived without negative guidance, is
             // said out loud here. A catalogue quietly smaller than the manifest asked for is the
             // exact failure the loud resolution path exists to prevent.
-            for (const warning of agent.tools.warnings) {
+            for (const warning of [...agent.warnings, ...agent.tools.warnings]) {
                 bus.emit("agent.warning", warning, { agentId: agent.id })
             }
 

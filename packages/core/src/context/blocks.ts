@@ -17,11 +17,11 @@ import type { ChatMessage } from "../model/provider.ts"
 
 export const SLOT = {
     /**
-     * system: identity, from `context.files`. Pinned, cache breakpoint A.
+     * system: the workspace's `static` tier. Pinned, cache breakpoint A.
      *
-     * Phase 3.5 supersedes `context.files` with the workspace's `static` tier — same position, same
-     * cache role. The name stays `identity` until that lands, because a slot named for behaviour the
-     * runtime does not have yet is worse than one named for what it actually holds.
+     * The slot keeps the name `identity` while the tier is called `static`, and the two names are
+     * doing different jobs: the tier says where the text came from, the slot says what it is for.
+     * A manifest still using the deprecated `context.files` lands here by the same path.
      */
     identity: 0,
     /** Tool dialect preamble and catalogue. Pinned, cache breakpoint A. Phase 3. */
