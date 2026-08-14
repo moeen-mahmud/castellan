@@ -350,9 +350,7 @@ async function runPlain(wired: Wired): Promise<number> {
         // more than a person does.
         runtime.bus.on("tool.gated", (event: AnyEvent) => {
             if (event.type !== "tool.gated") return
-            row(
-                `  · ${event.data.slug} — blocked: ${event.data.reason} (tools.untrusted.onMutate is ${event.data.policy})`,
-            )
+            row(`  · ${event.data.slug} — blocked: ${event.data.reason}`)
         }),
     ]
     const unsubscribe = () => {

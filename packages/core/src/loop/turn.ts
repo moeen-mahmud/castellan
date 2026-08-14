@@ -21,8 +21,10 @@ import type { TurnEndReason } from "../events/types.ts"
 import type { ChatMessage, ToolDefinition } from "../model/provider.ts"
 import { type ResolvedRole, requestParamsFor } from "../model/roles.ts"
 import type { ParsedOutput, StepOutput, ToolDialect } from "../tools/dialect/dialect.ts"
-import { executeIntents } from "../tools/execute.ts"
+import { type ApprovalRequest, executeIntents } from "../tools/execute.ts"
+import type { PolicyConfig } from "../tools/policy.ts"
 import type { ToolRegistry } from "../tools/registry.ts"
+import type { OnMutate } from "../tools/trust.ts"
 import type { ToolResult, WorkspaceWriteTarget } from "../tools/types.ts"
 import { newStepId, newTurnId } from "./ids.ts"
 import { runStep } from "./step.ts"
@@ -70,7 +72,15 @@ export interface ToolRuntime {
      * Resolved once at agent construction, like `writeTarget`. `confirm` is settled before it gets
      * here — it needs an approver, which is a question about the front end rather than the loop.
      */
-    readonly untrustedOnMutate: "refuse" | "allow"
+    readonly untrustedOnMutate: OnMutate
+    /** Which calls run, ask, or are refused. Resolved once at agent construction. */
+    readonly policy: PolicyConfig
+    /**
+     * How to ask a person, when one is reachable. Supplied by the front end — a terminal, a
+     * channel, an HTTP surface — and absent for an unattended run, which is what makes
+     * `tools.policy.onNoApprover` the answer there rather than an indefinite wait.
+     */
+    readonly approve?: (request: ApprovalRequest) => Promise<boolean>
     /** Injected so a tool that reads the clock is testable. */
     readonly now?: () => Date
 }
@@ -359,6 +369,8 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
                           observationMaxTokens: tools.observationMaxTokens,
                           untrustedInTurn: untrustedSeen,
                           onMutate: tools.untrustedOnMutate,
+                          policy: tools.policy,
+                          ...(tools.approve === undefined ? {} : { approve: tools.approve }),
                           ...(untrustedSource === undefined ? {} : { untrustedSource }),
                       })
 

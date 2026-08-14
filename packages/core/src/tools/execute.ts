@@ -34,8 +34,9 @@ import { type ErrorDetail, toolFailed, toolTimedOut } from "../errors.ts"
 import type { EventBus } from "../events/bus.ts"
 import type { EventContext } from "../events/types.ts"
 import { coerceArgs } from "./coerce.ts"
+import { authorize, type PolicyConfig } from "./policy.ts"
 import type { ToolRegistry } from "./registry.ts"
-import { gatedResult } from "./trust.ts"
+import { gatedResult, type OnMutate, refusedResult } from "./trust.ts"
 import type { FieldError, Tool, ToolContext, ToolIntent, ToolResult } from "./types.ts"
 
 export interface ExecuteInput {
@@ -56,10 +57,31 @@ export interface ExecuteInput {
      * error, not a silently open one.
      */
     readonly untrustedInTurn: boolean
-    /** `tools.untrusted.onMutate`. `confirm` needs an approver and is resolved before it reaches here. */
-    readonly onMutate: "refuse" | "allow"
+    /** `tools.untrusted.onMutate`. */
+    readonly onMutate: OnMutate
     /** Which slug tainted the turn, so the refusal can name a cause rather than a policy. */
     readonly untrustedSource?: string
+    /** Rules deciding which calls run, ask, or are refused. */
+    readonly policy: PolicyConfig
+    /**
+     * Ask a person. Absent means nobody is reachable — an unattended run, a schedule, a pipe — and
+     * `tools.policy.onNoApprover` settles what `ask` means there.
+     *
+     * Returning false denies; throwing is treated as a denial too, because a broken approver must
+     * not read as consent.
+     */
+    readonly approve?: (request: ApprovalRequest) => Promise<boolean>
+}
+
+/** What a person is being asked to allow. */
+export interface ApprovalRequest {
+    readonly slug: string
+    readonly callId: string
+    /** The command or path a rule would match — what the person actually needs to read. */
+    readonly match?: string
+    readonly mutating: boolean
+    /** Why it is being asked rather than allowed outright. */
+    readonly reason: string
 }
 
 export interface ExecuteOutcome {
@@ -76,6 +98,11 @@ export interface PlannedCall {
     readonly intent: ToolIntent
     readonly tool: Tool
     readonly args: Readonly<Record<string, unknown>>
+}
+
+/** The match argument as text. A non-string argument cannot be pattern-matched, so it is not. */
+function stringArg(value: unknown): string | undefined {
+    return typeof value === "string" ? value : undefined
 }
 
 /** Stable across key order, because the same call written two ways is the same call. */
@@ -162,6 +189,68 @@ export function planIntents(
     return { planned, repair }
 }
 
+/**
+ * Authorise one call, then run it or refuse it.
+ *
+ * Both refusal shapes answer with the intent's own `callId`, which is what keeps the native
+ * protocol's "every announced call is answered" invariant true whichever way this goes.
+ */
+async function decideAndRun(
+    entry: PlannedCall,
+    input: ExecuteInput,
+    tainted: boolean,
+    source: string,
+): Promise<ToolResult> {
+    const { spec } = entry.tool
+    const call = { callId: entry.intent.callId, slug: spec.slug }
+    const match = spec.policyArg === undefined ? undefined : stringArg(entry.args[spec.policyArg])
+
+    let decision = authorize({
+        policy: input.policy,
+        query: { slug: spec.slug, ...(match === undefined ? {} : { match }) },
+        mutating: spec.mutating,
+        tainted,
+        onMutate: input.onMutate,
+        approver: input.approve !== undefined,
+    })
+
+    if (decision.effect === "ask" && input.approve !== undefined) {
+        // A thrown approver denies. A prompt that crashed is not consent, and treating it as such
+        // is the one failure mode this whole layer exists to prevent.
+        const granted = await input
+            .approve({
+                ...call,
+                ...(match === undefined ? {} : { match }),
+                mutating: spec.mutating,
+                reason: decision.reason,
+            })
+            .catch(() => false)
+        decision = granted
+            ? { effect: "allow", reason: "A person approved this call." }
+            : { effect: "deny", reason: `${spec.slug} was not approved.` }
+    }
+
+    if (decision.effect === "allow") return runOne(entry, input)
+
+    // Both refusal shapes emit `tool.gated` and nothing else. No `tool.call` and no `tool.result`:
+    // nothing ran, and a consumer pairing the two would otherwise hold an orphan forever. A policy
+    // refusal reports here too — a blocked call that emits no event at all is invisible to every
+    // surface at once, which is the failure this whole layer exists to prevent.
+    input.bus.emit(
+        "tool.gated",
+        {
+            slug: call.slug,
+            callId: call.callId,
+            reason: decision.reason,
+            policy: input.onMutate,
+        },
+        input.eventContext,
+    )
+    return decision.gated === true
+        ? gatedResult(call, source, input.onMutate)
+        : refusedResult(call, decision.reason)
+}
+
 export async function executeIntents(input: ExecuteInput): Promise<ExecuteOutcome> {
     const { planned, repair } = planIntents(input.registry, input.intents)
 
@@ -185,33 +274,11 @@ export async function executeIntents(input: ExecuteInput): Promise<ExecuteOutcom
         // `all` rather than `allSettled`: runOne never rejects, so a rejection here is a bug in the
         // harness and should surface as one instead of being folded into a tool failure.
         const settled = await Promise.all(
-            group.map((entry) => {
-                // Filtered per entry rather than per group. `batch` puts a mutating call alone
-                // today, and the gate must not quietly depend on that staying true. Position is
-                // preserved either way, so `results` still answers every announced call in order —
-                // which the native protocol requires.
-                const blocked = tainted && input.onMutate === "refuse" && entry.tool.spec.mutating
-                if (!blocked) return runOne(entry, input)
-
-                const gated = gatedResult(
-                    { callId: entry.intent.callId, slug: entry.tool.spec.slug },
-                    source,
-                    input.onMutate,
-                )
-                // The only event a gated call emits. No `tool.call` and no `tool.result`: nothing
-                // ran, and a consumer pairing the two would otherwise hold an orphan forever.
-                input.bus.emit(
-                    "tool.gated",
-                    {
-                        slug: gated.slug,
-                        callId: gated.callId,
-                        reason: `${source} returned untrusted content earlier in this turn.`,
-                        policy: input.onMutate,
-                    },
-                    input.eventContext,
-                )
-                return Promise.resolve(gated)
-            }),
+            // Decided per entry rather than per group. `batch` puts a mutating call alone today,
+            // and neither the gate nor the policy should quietly depend on that staying true.
+            // Position is preserved either way, so `results` still answers every announced call in
+            // order — which the native protocol requires.
+            group.map((entry) => decideAndRun(entry, input, tainted, source)),
         )
         results.push(...settled)
 

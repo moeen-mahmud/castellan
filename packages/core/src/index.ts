@@ -221,6 +221,7 @@ export {
     renderNltEntry,
 } from "./tools/dialect/nlt.ts"
 export {
+    type ApprovalRequest,
     batch,
     type ExecuteInput,
     type ExecuteOutcome,
@@ -237,6 +238,9 @@ export {
     toolContext,
 } from "./tools/local.ts"
 export {
+    type Authorization,
+    type AuthorizeInput,
+    authorize,
     DEFAULT_POLICY,
     decidePolicy,
     NEVER_STRIPPED,
@@ -264,6 +268,7 @@ export {
     gateRefusalText,
     neutraliseMarkers,
     type OnMutate,
+    refusedResult,
     renderTrusted,
     type Trust,
     untrustedFence,

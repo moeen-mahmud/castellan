@@ -282,7 +282,10 @@ case-insensitive and whole-word against the current input. See `07-SPEC-WORKSPAC
 | `local` | `[]` | Built-in tools: `memory_write`, `phase_set`, `handoff`, `now`. |
 | `providers` | `{}` | **Phase 3.6.** Map of provider id → its config, so more than one can be used at once. `provider` + `providerConfig` remain as the single-provider alias and warn. |
 | `web` | none | **Phase 3.6.** `backend` (`tavily \| brave \| exa`), `apiKeyEnv`, `maxBytes`, `timeoutMs`, `allowPrivateHosts`. |
-| `untrusted.onMutate` | `refuse` | **Phase 3.6.** What to do when untrusted content is in the turn and a mutating tool is requested: `refuse \| confirm \| allow`. `confirm` needs Phase 9's approval middleware. |
+| `policy.mode` | `allow` | What happens to a call no rule mentions. `allow` because **pinning is the primary authorization** — an agent has only the tools its manifest pinned. `ask` on an unattended run means `onNoApprover` answers it, so a schedule would do nothing. |
+| `policy.allow` / `policy.deny` | `[]` | `Tool` or `Tool(pattern)`. Evaluated **deny → allow, first match, specificity never reorders** — so a deny carries no exceptions. A rule naming a primary content field (`exec(command:…)`) is refused: a compound command defeats it. |
+| `policy.onNoApprover` | `deny` | What `ask` means with nobody to ask — a schedule, a pipe, a channel with no approver. |
+| `untrusted.onMutate` | `refuse` | What to do when untrusted content is in the turn and a mutating tool is requested: `refuse \| confirm \| allow`. A tainted mutating call needs **explicit** authorization — a matching `policy.allow` rule or a live approval; `mode: allow` is the absence of a rule, not one. `confirm` asks when an approver is reachable and refuses when none is. |
 
 **`tools.search` is about finding a *tool*, not searching the web.** It exposes a meta-tool over the
 provider's own catalogue — 25,438 entries, for Composio — so the model can discover a tool it was not

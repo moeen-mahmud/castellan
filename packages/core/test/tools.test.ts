@@ -13,9 +13,17 @@ import { join } from "node:path"
 import { EventBus } from "../src/events/bus.ts"
 import type { AnyEvent } from "../src/events/types.ts"
 import { coerceArgs } from "../src/tools/coerce.ts"
-import { batch, executeIntents, hashArgs, planIntents } from "../src/tools/execute.ts"
+import {
+    type ApprovalRequest,
+    batch,
+    executeIntents,
+    hashArgs,
+    planIntents,
+} from "../src/tools/execute.ts"
 import { localProvider, toolContext } from "../src/tools/local.ts"
+import { DEFAULT_POLICY, type PolicyConfig } from "../src/tools/policy.ts"
 import { applyBudget, ToolRegistry } from "../src/tools/registry.ts"
+import type { OnMutate } from "../src/tools/trust.ts"
 import type {
     Tool,
     ToolIntent,
@@ -443,8 +451,10 @@ async function runTools(
         dir?: string
         writeTarget?: WorkspaceWriteTarget
         untrustedInTurn?: boolean
-        onMutate?: "refuse" | "allow"
+        onMutate?: OnMutate
         untrustedSource?: string
+        policy?: PolicyConfig
+        approve?: (request: ApprovalRequest) => Promise<boolean>
     } = {},
 ) {
     const bus = new EventBus({ runtimeId: "rt_test" })
@@ -463,6 +473,10 @@ async function runTools(
         maxParallel: over.maxParallel ?? 4,
         untrustedInTurn: over.untrustedInTurn ?? false,
         onMutate: over.onMutate ?? "refuse",
+        // `allow` by default so the existing suite keeps testing execution rather than policy; the
+        // policy's own behaviour is exercised where it is the subject.
+        policy: over.policy ?? { ...DEFAULT_POLICY, mode: "allow" },
+        ...(over.approve === undefined ? {} : { approve: over.approve }),
         ...(over.untrustedSource === undefined ? {} : { untrustedSource: over.untrustedSource }),
         observationMaxTokens: over.observationMaxTokens ?? 2000,
     })
@@ -782,6 +796,7 @@ describe("execution", () => {
             observationMaxTokens: 2000,
             untrustedInTurn: false,
             onMutate: "refuse",
+            policy: { ...DEFAULT_POLICY, mode: "allow" },
         })
         controller.abort()
         const outcome = await running

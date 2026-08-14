@@ -107,14 +107,14 @@ export interface EventDataMap {
         trust: Trust
     }
     /**
-     * A mutating call was refused because untrusted content entered the turn.
+     * A call was blocked before it ran — by the trust gate, or by a `tools.policy` rule.
      *
-     * **Not an error.** The model is told to say what it would have done and ask, and the turn
-     * continues. `policy` names the `tools.untrusted.onMutate` setting that decided it, so a
-     * surprised operator can see whether they were on the default.
+     * **Not an error.** The model is told and the turn continues. `reason` says which of the two
+     * decided and why; `policy` carries the `tools.untrusted.onMutate` setting, so a surprised
+     * operator can see whether they were on the default.
      *
-     * A gated call emits this and nothing else — no `tool.call`, no `tool.result` — because nothing
-     * ran, and a consumer pairing call with result would otherwise be left holding an orphan.
+     * A blocked call emits this and nothing else — no `tool.call`, no `tool.result` — because
+     * nothing ran, and a consumer pairing call with result would otherwise hold an orphan.
      */
     "tool.gated": { slug: string; callId: string; reason: string; policy: OnMutate }
     /**

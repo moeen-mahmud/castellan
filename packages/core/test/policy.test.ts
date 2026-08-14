@@ -7,6 +7,7 @@
  */
 
 import {
+    authorize,
     DEFAULT_POLICY,
     decidePolicy,
     type PolicyConfig,
@@ -18,6 +19,17 @@ import { describe, expect, test } from "./_harness.ts"
 
 function config(over: Partial<PolicyConfig> = {}): PolicyConfig {
     return { ...DEFAULT_POLICY, ...over }
+}
+
+/**
+ * A config whose mode makes "no rule matched" observable.
+ *
+ * The shipped default is `allow`, which is right — pinning already authorised the catalogue — but
+ * it makes a matching bug invisible, because a rule that failed to match looks exactly like one
+ * that matched an allow. These tests are about matching, so they ask.
+ */
+function matching(over: Partial<PolicyConfig> = {}): PolicyConfig {
+    return { ...DEFAULT_POLICY, mode: "ask", ...over }
 }
 
 describe("evaluation order", () => {
@@ -55,7 +67,7 @@ describe("evaluation order", () => {
 
     test("a rule for another tool is ignored", () => {
         expect(
-            decidePolicy(config({ deny: ["file_write"] }), { slug: "exec", match: "ls" }).effect,
+            decidePolicy(matching({ deny: ["file_write"] }), { slug: "exec", match: "ls" }).effect,
         ).toBe("ask")
     })
 })
@@ -73,7 +85,7 @@ describe("patterns", () => {
         // `exec(git:* push)` naming a real colon is nonsense, and treating it as a wildcard would
         // silently widen a rule its author read as narrow.
         expect(
-            decidePolicy(config({ allow: ["exec(git:* push)"] }), {
+            decidePolicy(matching({ allow: ["exec(git:* push)"] }), {
                 slug: "exec",
                 match: "git remote push",
             }).effect,
@@ -82,7 +94,7 @@ describe("patterns", () => {
 
     test("a wildcard does not cross into a different command", () => {
         expect(
-            decidePolicy(config({ allow: ["exec(git *)"] }), { slug: "exec", match: "gitleaks" })
+            decidePolicy(matching({ allow: ["exec(git *)"] }), { slug: "exec", match: "gitleaks" })
                 .effect,
         ).toBe("ask")
     })
@@ -101,7 +113,7 @@ describe("compound commands", () => {
     })
 
     test("an allow must cover every part — half an allowlisted compound is not allowlisted", () => {
-        const decision = decidePolicy(config({ allow: ["exec(git *)"] }), {
+        const decision = decidePolicy(matching({ allow: ["exec(git *)"] }), {
             slug: "exec",
             match: "git status && rm -rf ~/work",
         })
@@ -138,7 +150,7 @@ describe("compound commands", () => {
         // `docker exec … sh` is not the allowlisted command wearing a hat; it is a shell somewhere
         // else. Stripping it would turn `exec(docker *)` into arbitrary execution.
         expect(
-            decidePolicy(config({ allow: ["exec(npm test)"] }), {
+            decidePolicy(matching({ allow: ["exec(npm test)"] }), {
                 slug: "exec",
                 match: "docker exec box npm test",
             }).effect,
@@ -193,7 +205,7 @@ describe("failing closed", () => {
 
     test("a rule with a pattern cannot match a tool that offers nothing to match against", () => {
         expect(
-            decidePolicy(config({ allow: ["memory_write(*)"] }), { slug: "memory_write" }).effect,
+            decidePolicy(matching({ allow: ["memory_write(*)"] }), { slug: "memory_write" }).effect,
         ).toBe("ask")
     })
 })
@@ -228,8 +240,8 @@ describe("rules that are refused rather than honoured", () => {
 describe("when nobody can be asked", () => {
     test("ask becomes deny by default, and says why", () => {
         const decision = resolveWithoutApprover(
-            decidePolicy(config(), { slug: "exec", match: "ls" }),
-            config(),
+            decidePolicy(matching(), { slug: "exec", match: "ls" }),
+            matching(),
         )
         expect(decision.effect).toBe("deny")
         expect(decision.reason).toContain("no terminal")
@@ -237,7 +249,7 @@ describe("when nobody can be asked", () => {
     })
 
     test("onNoApprover: allow is honoured, and also says why", () => {
-        const wide = config({ onNoApprover: "allow" })
+        const wide = matching({ onNoApprover: "allow" })
         const decision = resolveWithoutApprover(
             decidePolicy(wide, { slug: "exec", match: "ls" }),
             wide,
@@ -248,5 +260,83 @@ describe("when nobody can be asked", () => {
     test("a decision that was never `ask` is untouched", () => {
         const denied = decidePolicy(config({ deny: ["exec"] }), { slug: "exec", match: "ls" })
         expect(resolveWithoutApprover(denied, config()).effect).toBe("deny")
+    })
+})
+
+describe("the shipped default", () => {
+    test("is allow, because pinning is what authorised the catalogue", () => {
+        // `ask` would be wrong here in a way that looks safe: most runs are unattended, so
+        // `onNoApprover` would answer it `deny` and the agent would silently do nothing at all.
+        // The manifest schema must agree — a library default and a config default that disagree is
+        // two behaviours nobody can predict from reading either one.
+        expect(DEFAULT_POLICY.mode).toBe("allow")
+        expect(DEFAULT_POLICY.onNoApprover).toBe("deny")
+    })
+})
+
+describe("authorize — the gate and the policy together", () => {
+    const base = {
+        query: { slug: "memory_write" },
+        mutating: true,
+        onMutate: "refuse" as const,
+        approver: false,
+    }
+
+    test("an untainted turn runs on the policy alone", () => {
+        expect(authorize({ ...base, policy: config(), tainted: false }).effect).toBe("allow")
+    })
+
+    test("a tainted mutating call is gated even under mode: allow", () => {
+        // The distinction that matters: `mode: allow` is the ABSENCE of a rule — "don't ask me
+        // about tools" — not permission for a stranger's page to drive a write.
+        const decision = authorize({ ...base, policy: config({ mode: "allow" }), tainted: true })
+        expect(decision.effect).toBe("deny")
+        expect(decision.gated).toBe(true)
+    })
+
+    test("a matching allow rule IS explicit authorization, and satisfies the gate", () => {
+        const decision = authorize({
+            ...base,
+            policy: config({ allow: ["memory_write"] }),
+            tainted: true,
+        })
+        expect(decision.effect).toBe("allow")
+        expect(decision.gated).toBe(undefined)
+    })
+
+    test("confirm asks when somebody is there, and refuses when nobody is", () => {
+        const policy = config()
+        expect(
+            authorize({ ...base, policy, tainted: true, onMutate: "confirm", approver: true })
+                .effect,
+        ).toBe("ask")
+        expect(
+            authorize({ ...base, policy, tainted: true, onMutate: "confirm", approver: false })
+                .effect,
+        ).toBe("deny")
+    })
+
+    test("refuse never asks, even with somebody there — that is what makes it the default", () => {
+        expect(authorize({ ...base, policy: config(), tainted: true, approver: true }).effect).toBe(
+            "deny",
+        )
+    })
+
+    test("onMutate: allow lets a tainted write through", () => {
+        expect(
+            authorize({ ...base, policy: config(), tainted: true, onMutate: "allow" }).effect,
+        ).toBe("allow")
+    })
+
+    test("a policy deny outranks everything, including onMutate: allow", () => {
+        const decision = authorize({
+            ...base,
+            policy: config({ deny: ["memory_write"] }),
+            tainted: false,
+            onMutate: "allow",
+        })
+        expect(decision.effect).toBe("deny")
+        // Not the trust gate — the user's own standing rule, which is refused differently.
+        expect(decision.gated).toBe(undefined)
     })
 })

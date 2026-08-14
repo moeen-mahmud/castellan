@@ -234,7 +234,7 @@ export function nextQuestion(
             case "apiKey":
                 return {
                     step,
-                    prompt: "API key (stored in .env beside the manifest, never in agent.yaml)",
+                    prompt: `Model API key`,
                     // Empty is allowed and means "I supply it another way" — the next steps then
                     // say where to put it. There is deliberately no flag for this: a key passed on
                     // the command line lands in shell history, which is why `--yes` takes the empty

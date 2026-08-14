@@ -370,8 +370,10 @@ describe("tool rows", () => {
         ])
         expect(state.items[0]?.role).toBe("note")
         expect(state.items[0]?.text).toContain("memory_write — blocked")
+        // The reason says what decided — the trust gate or a policy rule. The row does not assert
+        // one of them, because it cannot tell and guessing produced a line that named the wrong
+        // setting on every policy refusal.
         expect(state.items[0]?.text).toContain("web_fetch")
-        expect(state.items[0]?.text).toContain("refuse")
     })
 
     test("a cancellation already requested survives a tool starting", () => {

@@ -63,6 +63,15 @@ export interface ToolSpec {
      * and warned about, so opting out of the boundary is visible at load.
      */
     readonly trust?: Trust
+    /**
+     * Which argument a `tools.policy` pattern matches against — `command` for a shell tool, `path`
+     * for a file tool.
+     *
+     * Named by the tool rather than guessed by the engine, because only the tool knows which of its
+     * arguments *is* the call. A tool that names none can still be addressed by a bare `Tool` rule;
+     * it simply cannot be narrowed, which is honest for something like `now`.
+     */
+    readonly policyArg?: string
     /** Matched by `phases.*.allow` as `tag:<name>`. */
     readonly tags: readonly string[]
     readonly parameters: ToolParameters

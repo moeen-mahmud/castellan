@@ -164,3 +164,42 @@ export function gatedResult(
         truncated: false,
     }
 }
+
+/**
+ * The result a **policy** refusal produces.
+ *
+ * Separate from `gatedResult` because the two say genuinely different things. A gated call was
+ * stopped by the trust boundary and might succeed in a later turn; a policy refusal is the user's
+ * own standing instruction, and telling the model to "ask whether to go ahead" would invite it to
+ * argue with a rule its owner already wrote. So this one says the rule exists and moves on.
+ */
+export function refusedResult(
+    call: { readonly callId: string; readonly slug: string },
+    reason: string,
+): ToolResult {
+    const output = [
+        `${call.slug} was not run, and nothing was changed.`,
+        "",
+        reason,
+        "",
+        "This is a standing rule set by the person you work for, not a temporary failure. Retrying will not change it. Say what you were about to do and why, and let them decide whether to change the rule.",
+    ].join("\n")
+
+    return {
+        callId: call.callId,
+        slug: call.slug,
+        ok: false,
+        gated: true,
+        trust: "trusted",
+        output,
+        error: {
+            code: "tool_refused_by_policy",
+            message: `${call.slug} was refused: ${reason}`,
+            hint: "Change tools.policy — its allow, deny, and mode fields decide this. A rule on the hardline floor cannot be overridden at all.",
+            field: "tools.policy",
+        },
+        latencyMs: 0,
+        bytes: output.length,
+        truncated: false,
+    }
+}

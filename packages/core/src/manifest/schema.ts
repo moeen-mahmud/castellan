@@ -241,6 +241,25 @@ export const ToolsUntrustedSchema = z
     })
     .strict()
 
+/**
+ * Which calls run, which ask, and which are refused.
+ *
+ * Named `policy` rather than `permissions` deliberately: `permissions` is already the plugin
+ * manifest's block, where it is advisory and unenforced. Giving an enforced control the same word
+ * as the project's one famously unenforced block is the worst available name.
+ */
+export const ToolsPolicySchema = z
+    .object({
+        // `allow` matches DEFAULT_POLICY, and for the same reason: pinning is the primary
+        // authorization, and `ask` would mean every unattended run denies every call.
+        mode: z.enum(["ask", "allow", "deny"]).default("allow"),
+        allow: z.array(z.string().min(1)).default([]),
+        deny: z.array(z.string().min(1)).default([]),
+        /** What `ask` means with nobody to ask — a schedule, a pipe, a channel with no approver. */
+        onNoApprover: z.enum(["deny", "allow"]).default("deny"),
+    })
+    .strict()
+
 export const ToolsSchema = z
     .object({
         /** Config only — never auto-detected, so behaviour cannot drift with the model. */
@@ -255,6 +274,7 @@ export const ToolsSchema = z
             .prefault({}),
         local: z.array(z.string().min(1)).default([]),
         untrusted: ToolsUntrustedSchema.prefault({}),
+        policy: ToolsPolicySchema.prefault({}),
     })
     .strict()
 

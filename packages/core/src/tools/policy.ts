@@ -43,6 +43,8 @@
  * rather than discovered later.
  */
 
+import type { OnMutate } from "./trust.ts"
+
 /** What happens to calls no rule mentions. */
 export type PolicyMode = "ask" | "allow" | "deny"
 
@@ -57,8 +59,23 @@ export interface PolicyConfig {
     readonly onNoApprover: "deny" | "allow"
 }
 
+/**
+ * The default, and why it is `allow` rather than `ask`.
+ *
+ * **Pinning is the primary authorization here.** Unlike a coding agent that starts with a shell and
+ * the whole filesystem, a Castellan agent has exactly the tools its manifest pinned — an author who
+ * wrote `tools.local: [now, memory_write]` has already said what this agent may do. Defaulting to
+ * `ask` would re-ask that question on every call, and since most runs are unattended (a schedule, a
+ * channel, a pipe) `onNoApprover` would then answer it `deny` and the agent would do nothing at all.
+ *
+ * So the policy is a *second* layer, for tools too broad to authorize wholesale — `exec` above all.
+ * A manifest that pins one narrows it with `deny` rules or flips `mode` outright.
+ *
+ * The trust gate is unaffected either way: a tainted mutating call still needs a matching `allow`
+ * rule or a live approval, and `mode: allow` is the absence of a rule rather than one.
+ */
 export const DEFAULT_POLICY: PolicyConfig = {
-    mode: "ask",
+    mode: "allow",
     allow: [],
     deny: [],
     onNoApprover: "deny",
@@ -341,4 +358,80 @@ export function resolveWithoutApprover(
         effect: "deny",
         reason: `${decision.reason} Nobody is available to ask — this run has no terminal — so it is refused. Add a tools.policy.allow rule for it, or set onNoApprover to allow.`,
     }
+}
+
+// ─── composing the policy with the trust gate ────────────────────────────────────────────
+
+export interface AuthorizeInput {
+    readonly policy: PolicyConfig
+    readonly query: PolicyQuery
+    readonly mutating: boolean
+    /** Untrusted content has already entered this turn. */
+    readonly tainted: boolean
+    readonly onMutate: OnMutate
+    /** Whether anything can actually reach a person right now. */
+    readonly approver: boolean
+}
+
+export interface Authorization {
+    readonly effect: PolicyEffect
+    readonly reason: string
+    readonly rule?: string
+    /**
+     * The **trust gate** stopped this, not a policy rule. The two are refused differently: a gated
+     * call emits `tool.gated` and tells the model the rule is standing, because retrying is the
+     * observed failure mode there.
+     */
+    readonly gated?: boolean
+}
+
+/**
+ * The one place the write gate and the policy meet.
+ *
+ * Adding a shell tool breaks a naive gate, and the collision is worth naming: `exec` is `mutating`
+ * *and* its output is `untrusted` — `curl` is the whole internet and `cat` reads whatever was
+ * downloaded. Under a flat "a tainted turn refuses mutating calls" rule the first `exec` taints the
+ * turn and every later one is refused, so the feature is dead on arrival.
+ *
+ * The resolution is not a weaker gate but a precise one. The gate exists because **the model** may
+ * be talked into something by a stranger's text. It is not there to veto **the user**:
+ *
+ * > A tainted mutating call needs *explicit authorization* — a rule the user wrote, or an approval
+ * > the user gave. It may not proceed on the model's say-so alone.
+ *
+ * So a matching `allow` rule satisfies it; `confirm` asks when someone is there; `refuse` never
+ * asks, which is what makes it the right default for the unattended runs this runtime exists for.
+ */
+export function authorize(input: AuthorizeInput): Authorization {
+    const decision = decidePolicy(input.policy, input.query)
+
+    // A policy denial outranks everything: it is the user's own standing instruction, and the
+    // hardline floor arrives through here too.
+    if (decision.effect === "deny") return decision
+
+    const needsAuthorization = input.tainted && input.mutating && input.onMutate !== "allow"
+
+    // `decision.rule`, not `decision.effect`. A blanket `mode: allow` is the *absence* of a rule —
+    // "do not ask me about tools" — and reading it as authorisation for a stranger's page to drive
+    // a write would be the gate quietly turning itself off. `tools.untrusted.onMutate` is the knob
+    // that says that on purpose.
+    if (needsAuthorization && decision.rule === undefined) {
+        // `confirm` may still ask — but only if there is somebody to ask.
+        if (input.onMutate === "confirm" && input.approver) {
+            return {
+                effect: "ask",
+                reason: `${input.query.slug} changes something, and untrusted content reached this turn — asking before it runs.`,
+            }
+        }
+        return {
+            effect: "deny",
+            gated: true,
+            reason: `${input.query.slug} was blocked: untrusted content entered this turn, and tools.untrusted.onMutate is "${input.onMutate}" with no rule or approval authorising it.`,
+        }
+    }
+
+    if (decision.effect === "ask" && !input.approver) {
+        return resolveWithoutApprover(decision, input.policy)
+    }
+    return decision
 }

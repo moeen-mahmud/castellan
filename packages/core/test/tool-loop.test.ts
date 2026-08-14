@@ -663,3 +663,77 @@ describe("untrusted content and the write gate", () => {
         }
     })
 })
+
+describe("the tool policy, end to end", () => {
+    const script = ["ACTION: memory_write\ntext: a durable note\nEND", "Saved."]
+
+    async function runWithPolicy(policy: string) {
+        const dir = workspace(`  local:\n    - memory_write\n  policy:\n${policy}`)
+        const { fetch } = scripted(script)
+        const runtime = await Runtime.create({ agents: [join(dir, "agent.yaml")], env: ENV, fetch })
+        const events: AnyEvent[] = []
+        runtime.bus.on("*", (event) => events.push(event))
+        const result = await runtime.agent("test").send("remember something")
+        return { events, result, dir, runtime }
+    }
+
+    test("a deny rule stops the call, and nothing reaches disk", async () => {
+        const { result, dir, runtime } = await runWithPolicy("    deny:\n      - memory_write\n")
+        try {
+            // Asserted on the filesystem: the observation text could say anything.
+            expect(existsSync(join(dir, MEMORY_DIR, MEMORY_FILE))).toBe(false)
+            // Refused, not errored — the model is told and the turn finishes.
+            expect(result.reason).toBe("final")
+        } finally {
+            await runtime.stop("test")
+        }
+    })
+
+    test("the model is told the rule is standing, not that the tool failed", async () => {
+        const { runtime } = await runWithPolicy("    deny:\n      - memory_write\n")
+        try {
+            const history = await runtime.agent("test").history()
+            const observation = history.find((message) => message.content.includes("was not run"))
+            expect(observation?.content).toContain("standing rule")
+            // A policy refusal points at the person, not at a retry: the rule is theirs.
+            expect(observation?.content).toContain("let them decide")
+        } finally {
+            await runtime.stop("test")
+        }
+    })
+
+    test("with no rule against it, the same script writes the note", async () => {
+        const { dir, runtime } = await runWithPolicy("    mode: allow\n")
+        try {
+            expect(existsSync(join(dir, MEMORY_DIR, MEMORY_FILE))).toBe(true)
+        } finally {
+            await runtime.stop("test")
+        }
+    })
+
+    test("a policy refusal is reported on the bus, not silently absent", async () => {
+        // Without this the refusal is invisible to every surface at once: no tool.call, no
+        // tool.result, and the row the CLI draws comes from tool.gated.
+        const { events, runtime } = await runWithPolicy("    deny:\n      - memory_write\n")
+        try {
+            const blocked = events.find((event) => event.type === "tool.gated")
+            expect(payload<{ slug: string; reason: string }>(blocked).slug).toBe("memory_write")
+            expect(payload<{ slug: string; reason: string }>(blocked).reason).toContain(
+                "memory_write",
+            )
+        } finally {
+            await runtime.stop("test")
+        }
+    })
+
+    test("mode: deny with nobody to ask refuses every call", async () => {
+        // The unattended shape: a schedule or a pipe has no approver, so this is what an
+        // over-tightened policy actually does. Worth knowing it fails closed rather than hanging.
+        const { dir, runtime } = await runWithPolicy("    mode: deny\n")
+        try {
+            expect(existsSync(join(dir, MEMORY_DIR, MEMORY_FILE))).toBe(false)
+        } finally {
+            await runtime.stop("test")
+        }
+    })
+})
