@@ -91,9 +91,16 @@ adjectives can only describe.
 
 {{VOICE_PARAGRAPH}}
 
-<!-- Rules, each with its reason. Two to four. -->
+<!-- Rules, each with its reason. Two to four.
 
+     The <rules> delimiters are the authored form, like <example> below. The runtime varies only
+     the framing *around* this block per model — a 7B model gets imperative framing that a frontier
+     model no longer needs, because current models overtrigger on it. Your sentences are never
+     touched, so what you write here is what the model reads. -->
+
+<rules>
 {{RULES_PARAGRAPH}}
+</rules>
 
 ## Examples
 

@@ -136,7 +136,9 @@ inbound (channel | API | schedule)
 - **Vendor prompting guidance is encoded as a capability, never a constant.** Published advice is
   written for frontier models and a good fraction of it inverts at 3–8B — Anthropic now says to
   *remove* emphatic phrasing because models overtrigger on it; a 7B model needs it. That lives in
-  `capabilities.promptStyle`.
+  `capabilities.promptStyle`, which is **derived from the model id** rather than stored on a
+  capability-registry row: `qwen3.5*` matches a 9B and a 72B, and those want opposite `intensity`
+  values. Size predicts the inversion and size is in the id.
 
 Full detail: `docs/01-ARCHITECTURE.md`.
 
@@ -177,8 +179,10 @@ and gets fixed**. Do not add a private escape hatch.
 
 - `bun test` for core logic
 - `bun run bench:boot` for every phase, not just the last
-- Real endpoints for the model layer: OpenAI, an Anthropic-compat base URL, and local Ollama.
-  Three providers unchanged is the bar.
+- Real endpoints for the model layer: OpenAI, an Anthropic-compat base URL, and a host serving open
+  weights (`SMALL_MODEL_BASE_URL`). Three independent implementations unchanged is the bar — the
+  claim is portability across implementations, not across machines, so a hosted open-weight endpoint
+  serves it as well as a local one and returns in seconds rather than minutes.
 - A real Telegram bot for channel work
 - Committed eval fixtures for anything claiming small-model improvement
 
@@ -251,6 +255,39 @@ Never claim a performance property without a number in `evals/` and a script to 
   lived in `Agent.create` alone, and `validate` reported ok on a manifest `run` refused. Anything
   load-bearing goes in one function both call — `ruleBudgetFailure` returns the finding rather than
   throwing it, so each caller applies its own `onExceed`.
+- **The renderer never rewrites a sentence.** `promptStyle` transforms delimiters and structure —
+  `<example>` and `<rules>` markers, heading syntax — and nothing else. `intensity` varies one
+  generated line in front of an author-marked `<rules>` block. Automatic rewriting of an instruction
+  is decision 4.19's failure applied to a file whose rendered form nobody ever looks at, and the
+  prose being byte-identical across all three renderings is asserted rather than assumed.
+- **Rendering and rule-counting need different versions of the same text.** The model is billed for
+  the *rendered* form, but the example exclusion in `countRules` is a property of the **authored**
+  form — under `delimiters: markdown` the renderer turns `<example>` into a heading, and counting
+  that text made every imperative inside a worked example look like a rule. A shipped example went
+  from 1 rule to 4 with no edit, and only `bench:boot` noticed. `WorkspaceFile` carries both.
+- **`validate` and `workspace` are different questions.** `validate` asks whether the manifest loads
+  and fails when it does not; `workspace` asks whether the files are written well and only ever
+  warns, because a heuristic judgement that refuses to load a file is a heuristic nobody keeps. Both
+  call the same `ruleBudgetFailure` — a check only one of them performs is a check they disagree on.
+- **A reasoning model thinks harder the more you constrain it, and bills that to the output budget.**
+  Measured on `qwen3.5:9b`, same machine, same prompt: 151 reasoning tokens unconstrained, 387 under
+  one rule, 1,778 under six — at which point it consumed a 2,000-token ceiling and returned **empty
+  content**. `reasoningEffort: none` on the model role answered correctly in 2.1 s. This is the other
+  half of the `reserveOutput` lever, and it is why an eval that looked like "local inference is too
+  slow" was nothing of the kind — throughput was a normal 16–20 tok/s throughout.
+- **An endpoint that ignores a request parameter says nothing about it.** On the same Ollama `/v1`
+  endpoint, `reasoning_effort` took effect while `chat_template_kwargs` and `think` were accepted and
+  silently discarded — same 200, same token count, full reasoning. Verify a control took effect by
+  measuring its effect, never by the absence of an error.
+- **An empty reply is not a passing reply.** A check like "no commas" or "under forty words" is
+  satisfied trivially by the empty string, so a run where the model returned nothing scores near
+  perfect on everything except the one check that requires content. `eval rules` excludes empties and
+  counts them, and refuses to report a figure above 20%. The cause is almost always the reasoning
+  budget: a reasoning model bills thinking against `maxTokens`, and the ceiling that worked for a
+  bare question is not the one that survives a longer system prompt.
+- **A saturated eval is not a measurement.** `eval rules` returning 1.000 says the probe was easy for
+  that model, and printing `perRuleSuccess: 1.00` as a recommendation would put a guard-*disabling*
+  figure in a manifest. It reports saturation and names the smallest model instead.
 - **`memory_write` has no file argument, and must not grow one.** The runtime resolves a single
   write target from the `volatile` tier. Letting the model name a file adds a second decision to
   every save, and a second decision is the two-hop shape small models fail — the same reasoning that

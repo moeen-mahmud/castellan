@@ -107,6 +107,22 @@ export const COMMANDS: readonly CommandSpec[] = [
         flags: [JSON_FLAG],
     },
     {
+        // Distinct from `validate`, which asks whether the manifest loads. This asks whether the
+        // *writing* is any good — the authoring rules of 07-SPEC-WORKSPACE.md, which are judgements
+        // rather than facts and are therefore warnings that never fail the command.
+        name: "workspace",
+        summary: "check the workspace files against the authoring rules",
+        args: [MANIFEST],
+        flags: [
+            {
+                name: "strict",
+                kind: "boolean",
+                help: "exit non-zero when any authoring warning is reported",
+            },
+            JSON_FLAG,
+        ],
+    },
+    {
         name: "agents",
         summary: "list the agents one or more manifests produce",
         args: [{ ...MANIFEST, variadic: true, help: "one or more paths to an agent.yaml" }],

@@ -74,7 +74,12 @@ export function requestParamsFor(
     role: ResolvedRole,
     window: number,
     reserveOutput: number,
-): { temperature?: number; topP?: number; maxTokens: number } {
+): {
+    temperature?: number
+    topP?: number
+    maxTokens: number
+    reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high"
+} {
     // Never derive max output from the window — a reasoning model given `window / 4` returns
     // empty with `finishReason: length`, and that failure looks like a broken agent rather than
     // a misconfigured limit.
@@ -84,6 +89,9 @@ export function requestParamsFor(
     return {
         ...(role.config.temperature === undefined ? {} : { temperature: role.config.temperature }),
         ...(role.config.topP === undefined ? {} : { topP: role.config.topP }),
+        ...(role.config.reasoningEffort === undefined
+            ? {}
+            : { reasoningEffort: role.config.reasoningEffort }),
         maxTokens: Math.max(1, maxTokens),
     }
 }

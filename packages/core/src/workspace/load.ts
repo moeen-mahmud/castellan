@@ -32,6 +32,7 @@ import {
     workspaceRuleBudget,
     workspaceTierMismatch,
 } from "../errors.ts"
+import { DEFAULT_PROMPT_STYLE, type PromptStyle, renderPromptStyle } from "../model/prompt-style.ts"
 import type { WorkspaceWriteTarget } from "../tools/types.ts"
 import type { Editable, Eviction, Tier } from "./frontmatter.ts"
 import { parseWorkspaceFile } from "./frontmatter.ts"
@@ -61,8 +62,19 @@ export interface WorkspaceFile extends WorkspaceFileRef {
     readonly eviction: Eviction
     /** Effective cap: the file's own frontmatter, else the tier's budget. */
     readonly budget: number
-    /** Stripped of frontmatter and HTML comments. What the model sees. */
+    /** Stripped of frontmatter and comments, then rendered for the model. What it actually sees. */
     readonly content: string
+    /**
+     * Stripped but **not** rendered — the author's own form, `<example>` markers intact.
+     *
+     * Kept because the rule count reads it. Counting the rendered form was a real bug: the renderer
+     * turns `<example>` into a heading under `delimiters: markdown`, `countRules` excludes examples
+     * by looking for those markers, and so every imperative inside a worked example started counting
+     * as a rule the moment rendering landed — a shipped example went from 1 rule to 4 with no edit
+     * to the file. The exclusion is a property of the authored form, so it has to read the authored
+     * form.
+     */
+    readonly authored: string
     readonly tokens: number
 }
 
@@ -92,6 +104,14 @@ export const DEFAULT_WORKSPACE_BUDGETS: WorkspaceBudgets = {
 export interface LoadWorkspaceOptions {
     readonly refs: readonly WorkspaceFileRef[]
     readonly budgets?: WorkspaceBudgets
+    /**
+     * How the authored text is rendered for the model in front of it.
+     *
+     * Applied before tokens are counted, because the rendered form is what gets billed. Counting
+     * the authored form would let a file pass its budget and then exceed it on the wire, which is
+     * the same class of invisible failure the budgets exist to prevent.
+     */
+    readonly style?: PromptStyle
 }
 
 /**
@@ -103,10 +123,11 @@ export interface LoadWorkspaceOptions {
  */
 export function loadWorkspace(options: LoadWorkspaceOptions): Workspace {
     const budgets = options.budgets ?? DEFAULT_WORKSPACE_BUDGETS
+    const style = options.style ?? DEFAULT_PROMPT_STYLE
     const files: WorkspaceFile[] = []
 
     for (const ref of options.refs) {
-        files.push(readOne(ref, budgets))
+        files.push(readOne(ref, budgets, style))
     }
 
     for (const file of files) {
@@ -190,7 +211,11 @@ export function ruleBudgetFailure(
     workspace: Workspace,
     rules: RulesConfig,
 ): ConfigError | undefined {
-    const check = checkRules([workspace.static, workspace.reminder].join("\n"), rules)
+    const counted = workspace.files
+        .filter((file) => file.tier === "static" || file.tier === "reminder")
+        .map((file) => file.authored)
+        .join("\n")
+    const check = checkRules(counted, rules)
     if (check.withinBudget) return undefined
     return workspaceRuleBudget({
         counted: check.counted.length,
@@ -343,7 +368,11 @@ export interface WorkspaceContextConfig {
     readonly reminder?: string | undefined
 }
 
-function readOne(ref: WorkspaceFileRef, budgets: WorkspaceBudgets): WorkspaceFile {
+function readOne(
+    ref: WorkspaceFileRef,
+    budgets: WorkspaceBudgets,
+    style: PromptStyle,
+): WorkspaceFile {
     let raw: string
     try {
         const stat = statSync(ref.path)
@@ -376,13 +405,19 @@ function readOne(ref: WorkspaceFileRef, budgets: WorkspaceBudgets): WorkspaceFil
         throw workspaceNotWritableTier(ref.name, ref.tier, frontmatter.editable)
     }
 
+    // Rendered here rather than at assembly for the same reason the catalogue is rendered at load:
+    // slot 0 is half of the cache-stable prefix, and a per-turn transformation of it — however
+    // deterministic — is one refactor away from varying.
+    const content = renderPromptStyle(body, style)
+
     return {
         ...ref,
+        authored: body,
         editable: ref.tier === "volatile" ? (frontmatter.editable ?? "append") : "none",
         eviction: frontmatter.eviction ?? "none",
         budget: frontmatter.budget ?? budgets[ref.tier],
-        content: body,
-        tokens: estimateTokens(body),
+        content,
+        tokens: estimateTokens(content),
     }
 }
 

@@ -26,6 +26,22 @@ The manifest never changes between providers. Only the environment does:
 | DeepSeek | `https://api.deepseek.com/v1` | `deepseek-chat` / `deepseek-reasoner` | required |
 | Ollama, local | `http://localhost:11434/v1` | `qwen3.5:9b` | none — delete `apiKeyEnv` |
 
+A model that reasons — `deepseek-reasoner`, `qwen3.5`, most recent open-weight releases — bills its
+thinking against the output budget, and thinks *more* the more constrained the request. Measured on
+`qwen3.5:9b`: six simultaneous instructions produced 2,000 tokens of deliberation in 104 s and an
+**empty reply**; `reasoningEffort: none` answered correctly in 2.1 s. Set it under the model role
+when the work is short and well specified:
+
+```yaml
+model:
+  main:
+    id: ${MODEL_ID}
+    baseUrl: ${MODEL_BASE_URL}
+    reasoningEffort: none   # none | minimal | low | medium | high
+```
+
+Not every endpoint honours it, and one that does not says nothing — verify rather than assume.
+
 `baseUrl` ends at the version segment. The runtime appends `/chat/completions` itself, and
 including it in `baseUrl` is refused at load rather than producing a 404 later.
 

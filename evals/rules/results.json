@@ -1,0 +1,894 @@
+{
+  "model": "qwen3.5:9b",
+  "baseUrl": "http://localhost:11434/v1",
+  "promptStyle": {
+    "delimiters": "plain",
+    "intensity": "emphatic",
+    "examplesIn": "system",
+    "skillsIn": "system"
+  },
+  "tasks": 6,
+  "pooledPerRuleSuccess": 0.9895833333333334,
+  "saturated": false,
+  "emptyReplies": 0,
+  "emptyRate": 0,
+  "usable": true,
+  "maxTokens": 2000,
+  "reasoningEffort": "none",
+  "permittedAt080": 21,
+  "aboveProbeCeiling": true,
+  "byCount": [
+    {
+      "n": 1,
+      "observations": 6,
+      "satisfied": 6,
+      "perRule": 1,
+      "allFollowed": 6,
+      "replies": 6,
+      "observedAll": 1,
+      "predictedAll": 1
+    },
+    {
+      "n": 2,
+      "observations": 12,
+      "satisfied": 12,
+      "perRule": 1,
+      "allFollowed": 6,
+      "replies": 6,
+      "observedAll": 1,
+      "predictedAll": 1
+    },
+    {
+      "n": 3,
+      "observations": 18,
+      "satisfied": 18,
+      "perRule": 1,
+      "allFollowed": 6,
+      "replies": 6,
+      "observedAll": 1,
+      "predictedAll": 1
+    },
+    {
+      "n": 4,
+      "observations": 24,
+      "satisfied": 24,
+      "perRule": 1,
+      "allFollowed": 6,
+      "replies": 6,
+      "observedAll": 1,
+      "predictedAll": 1
+    },
+    {
+      "n": 6,
+      "observations": 36,
+      "satisfied": 35,
+      "perRule": 0.9722222222222222,
+      "allFollowed": 5,
+      "replies": 6,
+      "observedAll": 0.8333333333333334,
+      "predictedAll": 0.8444875698403314
+    }
+  ],
+  "byRule": [
+    {
+      "id": "suffix",
+      "observations": 30,
+      "rate": 1
+    },
+    {
+      "id": "brevity",
+      "observations": 24,
+      "rate": 1
+    },
+    {
+      "id": "no-commas",
+      "observations": 18,
+      "rate": 1
+    },
+    {
+      "id": "lowercase",
+      "observations": 12,
+      "rate": 1
+    },
+    {
+      "id": "no-questions",
+      "observations": 6,
+      "rate": 1
+    },
+    {
+      "id": "digits",
+      "observations": 6,
+      "rate": 0.8333333333333334
+    }
+  ],
+  "observations": [
+    {
+      "n": 1,
+      "task": "What is the capital of Portugal?",
+      "ruleId": "suffix",
+      "satisfied": true
+    },
+    {
+      "n": 1,
+      "task": "How many days are in February in a leap year?",
+      "ruleId": "suffix",
+      "satisfied": true
+    },
+    {
+      "n": 1,
+      "task": "Name a programming language created at Bell Labs.",
+      "ruleId": "suffix",
+      "satisfied": true
+    },
+    {
+      "n": 1,
+      "task": "What does HTTP stand for?",
+      "ruleId": "suffix",
+      "satisfied": true
+    },
+    {
+      "n": 1,
+      "task": "Which planet is closest to the Sun?",
+      "ruleId": "suffix",
+      "satisfied": true
+    },
+    {
+      "n": 1,
+      "task": "What is the boiling point of water at sea level in Celsius?",
+      "ruleId": "suffix",
+      "satisfied": true
+    },
+    {
+      "n": 2,
+      "task": "What is the capital of Portugal?",
+      "ruleId": "suffix",
+      "satisfied": true
+    },
+    {
+      "n": 2,
+      "task": "What is the capital of Portugal?",
+      "ruleId": "brevity",
+      "satisfied": true
+    },
+    {
+      "n": 2,
+      "task": "How many days are in February in a leap year?",
+      "ruleId": "suffix",
+      "satisfied": true
+    },
+    {
+      "n": 2,
+      "task": "How many days are in February in a leap year?",
+      "ruleId": "brevity",
+      "satisfied": true
+    },
+    {
+      "n": 2,
+      "task": "Name a programming language created at Bell Labs.",
+      "ruleId": "suffix",
+      "satisfied": true
+    },
+    {
+      "n": 2,
+      "task": "Name a programming language created at Bell Labs.",
+      "ruleId": "brevity",
+      "satisfied": true
+    },
+    {
+      "n": 2,
+      "task": "What does HTTP stand for?",
+      "ruleId": "suffix",
+      "satisfied": true
+    },
+    {
+      "n": 2,
+      "task": "What does HTTP stand for?",
+      "ruleId": "brevity",
+      "satisfied": true
+    },
+    {
+      "n": 2,
+      "task": "Which planet is closest to the Sun?",
+      "ruleId": "suffix",
+      "satisfied": true
+    },
+    {
+      "n": 2,
+      "task": "Which planet is closest to the Sun?",
+      "ruleId": "brevity",
+      "satisfied": true
+    },
+    {
+      "n": 2,
+      "task": "What is the boiling point of water at sea level in Celsius?",
+      "ruleId": "suffix",
+      "satisfied": true
+    },
+    {
+      "n": 2,
+      "task": "What is the boiling point of water at sea level in Celsius?",
+      "ruleId": "brevity",
+      "satisfied": true
+    },
+    {
+      "n": 3,
+      "task": "What is the capital of Portugal?",
+      "ruleId": "suffix",
+      "satisfied": true
+    },
+    {
+      "n": 3,
+      "task": "What is the capital of Portugal?",
+      "ruleId": "brevity",
+      "satisfied": true
+    },
+    {
+      "n": 3,
+      "task": "What is the capital of Portugal?",
+      "ruleId": "no-commas",
+      "satisfied": true
+    },
+    {
+      "n": 3,
+      "task": "How many days are in February in a leap year?",
+      "ruleId": "suffix",
+      "satisfied": true
+    },
+    {
+      "n": 3,
+      "task": "How many days are in February in a leap year?",
+      "ruleId": "brevity",
+      "satisfied": true
+    },
+    {
+      "n": 3,
+      "task": "How many days are in February in a leap year?",
+      "ruleId": "no-commas",
+      "satisfied": true
+    },
+    {
+      "n": 3,
+      "task": "Name a programming language created at Bell Labs.",
+      "ruleId": "suffix",
+      "satisfied": true
+    },
+    {
+      "n": 3,
+      "task": "Name a programming language created at Bell Labs.",
+      "ruleId": "brevity",
+      "satisfied": true
+    },
+    {
+      "n": 3,
+      "task": "Name a programming language created at Bell Labs.",
+      "ruleId": "no-commas",
+      "satisfied": true
+    },
+    {
+      "n": 3,
+      "task": "What does HTTP stand for?",
+      "ruleId": "suffix",
+      "satisfied": true
+    },
+    {
+      "n": 3,
+      "task": "What does HTTP stand for?",
+      "ruleId": "brevity",
+      "satisfied": true
+    },
+    {
+      "n": 3,
+      "task": "What does HTTP stand for?",
+      "ruleId": "no-commas",
+      "satisfied": true
+    },
+    {
+      "n": 3,
+      "task": "Which planet is closest to the Sun?",
+      "ruleId": "suffix",
+      "satisfied": true
+    },
+    {
+      "n": 3,
+      "task": "Which planet is closest to the Sun?",
+      "ruleId": "brevity",
+      "satisfied": true
+    },
+    {
+      "n": 3,
+      "task": "Which planet is closest to the Sun?",
+      "ruleId": "no-commas",
+      "satisfied": true
+    },
+    {
+      "n": 3,
+      "task": "What is the boiling point of water at sea level in Celsius?",
+      "ruleId": "suffix",
+      "satisfied": true
+    },
+    {
+      "n": 3,
+      "task": "What is the boiling point of water at sea level in Celsius?",
+      "ruleId": "brevity",
+      "satisfied": true
+    },
+    {
+      "n": 3,
+      "task": "What is the boiling point of water at sea level in Celsius?",
+      "ruleId": "no-commas",
+      "satisfied": true
+    },
+    {
+      "n": 4,
+      "task": "What is the capital of Portugal?",
+      "ruleId": "suffix",
+      "satisfied": true
+    },
+    {
+      "n": 4,
+      "task": "What is the capital of Portugal?",
+      "ruleId": "brevity",
+      "satisfied": true
+    },
+    {
+      "n": 4,
+      "task": "What is the capital of Portugal?",
+      "ruleId": "no-commas",
+      "satisfied": true
+    },
+    {
+      "n": 4,
+      "task": "What is the capital of Portugal?",
+      "ruleId": "lowercase",
+      "satisfied": true
+    },
+    {
+      "n": 4,
+      "task": "How many days are in February in a leap year?",
+      "ruleId": "suffix",
+      "satisfied": true
+    },
+    {
+      "n": 4,
+      "task": "How many days are in February in a leap year?",
+      "ruleId": "brevity",
+      "satisfied": true
+    },
+    {
+      "n": 4,
+      "task": "How many days are in February in a leap year?",
+      "ruleId": "no-commas",
+      "satisfied": true
+    },
+    {
+      "n": 4,
+      "task": "How many days are in February in a leap year?",
+      "ruleId": "lowercase",
+      "satisfied": true
+    },
+    {
+      "n": 4,
+      "task": "Name a programming language created at Bell Labs.",
+      "ruleId": "suffix",
+      "satisfied": true
+    },
+    {
+      "n": 4,
+      "task": "Name a programming language created at Bell Labs.",
+      "ruleId": "brevity",
+      "satisfied": true
+    },
+    {
+      "n": 4,
+      "task": "Name a programming language created at Bell Labs.",
+      "ruleId": "no-commas",
+      "satisfied": true
+    },
+    {
+      "n": 4,
+      "task": "Name a programming language created at Bell Labs.",
+      "ruleId": "lowercase",
+      "satisfied": true
+    },
+    {
+      "n": 4,
+      "task": "What does HTTP stand for?",
+      "ruleId": "suffix",
+      "satisfied": true
+    },
+    {
+      "n": 4,
+      "task": "What does HTTP stand for?",
+      "ruleId": "brevity",
+      "satisfied": true
+    },
+    {
+      "n": 4,
+      "task": "What does HTTP stand for?",
+      "ruleId": "no-commas",
+      "satisfied": true
+    },
+    {
+      "n": 4,
+      "task": "What does HTTP stand for?",
+      "ruleId": "lowercase",
+      "satisfied": true
+    },
+    {
+      "n": 4,
+      "task": "Which planet is closest to the Sun?",
+      "ruleId": "suffix",
+      "satisfied": true
+    },
+    {
+      "n": 4,
+      "task": "Which planet is closest to the Sun?",
+      "ruleId": "brevity",
+      "satisfied": true
+    },
+    {
+      "n": 4,
+      "task": "Which planet is closest to the Sun?",
+      "ruleId": "no-commas",
+      "satisfied": true
+    },
+    {
+      "n": 4,
+      "task": "Which planet is closest to the Sun?",
+      "ruleId": "lowercase",
+      "satisfied": true
+    },
+    {
+      "n": 4,
+      "task": "What is the boiling point of water at sea level in Celsius?",
+      "ruleId": "suffix",
+      "satisfied": true
+    },
+    {
+      "n": 4,
+      "task": "What is the boiling point of water at sea level in Celsius?",
+      "ruleId": "brevity",
+      "satisfied": true
+    },
+    {
+      "n": 4,
+      "task": "What is the boiling point of water at sea level in Celsius?",
+      "ruleId": "no-commas",
+      "satisfied": true
+    },
+    {
+      "n": 4,
+      "task": "What is the boiling point of water at sea level in Celsius?",
+      "ruleId": "lowercase",
+      "satisfied": true
+    },
+    {
+      "n": 6,
+      "task": "What is the capital of Portugal?",
+      "ruleId": "suffix",
+      "satisfied": true
+    },
+    {
+      "n": 6,
+      "task": "What is the capital of Portugal?",
+      "ruleId": "brevity",
+      "satisfied": true
+    },
+    {
+      "n": 6,
+      "task": "What is the capital of Portugal?",
+      "ruleId": "no-commas",
+      "satisfied": true
+    },
+    {
+      "n": 6,
+      "task": "What is the capital of Portugal?",
+      "ruleId": "lowercase",
+      "satisfied": true
+    },
+    {
+      "n": 6,
+      "task": "What is the capital of Portugal?",
+      "ruleId": "no-questions",
+      "satisfied": true
+    },
+    {
+      "n": 6,
+      "task": "What is the capital of Portugal?",
+      "ruleId": "digits",
+      "satisfied": true
+    },
+    {
+      "n": 6,
+      "task": "How many days are in February in a leap year?",
+      "ruleId": "suffix",
+      "satisfied": true
+    },
+    {
+      "n": 6,
+      "task": "How many days are in February in a leap year?",
+      "ruleId": "brevity",
+      "satisfied": true
+    },
+    {
+      "n": 6,
+      "task": "How many days are in February in a leap year?",
+      "ruleId": "no-commas",
+      "satisfied": true
+    },
+    {
+      "n": 6,
+      "task": "How many days are in February in a leap year?",
+      "ruleId": "lowercase",
+      "satisfied": true
+    },
+    {
+      "n": 6,
+      "task": "How many days are in February in a leap year?",
+      "ruleId": "no-questions",
+      "satisfied": true
+    },
+    {
+      "n": 6,
+      "task": "How many days are in February in a leap year?",
+      "ruleId": "digits",
+      "satisfied": true
+    },
+    {
+      "n": 6,
+      "task": "Name a programming language created at Bell Labs.",
+      "ruleId": "suffix",
+      "satisfied": true
+    },
+    {
+      "n": 6,
+      "task": "Name a programming language created at Bell Labs.",
+      "ruleId": "brevity",
+      "satisfied": true
+    },
+    {
+      "n": 6,
+      "task": "Name a programming language created at Bell Labs.",
+      "ruleId": "no-commas",
+      "satisfied": true
+    },
+    {
+      "n": 6,
+      "task": "Name a programming language created at Bell Labs.",
+      "ruleId": "lowercase",
+      "satisfied": true
+    },
+    {
+      "n": 6,
+      "task": "Name a programming language created at Bell Labs.",
+      "ruleId": "no-questions",
+      "satisfied": true
+    },
+    {
+      "n": 6,
+      "task": "Name a programming language created at Bell Labs.",
+      "ruleId": "digits",
+      "satisfied": false
+    },
+    {
+      "n": 6,
+      "task": "What does HTTP stand for?",
+      "ruleId": "suffix",
+      "satisfied": true
+    },
+    {
+      "n": 6,
+      "task": "What does HTTP stand for?",
+      "ruleId": "brevity",
+      "satisfied": true
+    },
+    {
+      "n": 6,
+      "task": "What does HTTP stand for?",
+      "ruleId": "no-commas",
+      "satisfied": true
+    },
+    {
+      "n": 6,
+      "task": "What does HTTP stand for?",
+      "ruleId": "lowercase",
+      "satisfied": true
+    },
+    {
+      "n": 6,
+      "task": "What does HTTP stand for?",
+      "ruleId": "no-questions",
+      "satisfied": true
+    },
+    {
+      "n": 6,
+      "task": "What does HTTP stand for?",
+      "ruleId": "digits",
+      "satisfied": true
+    },
+    {
+      "n": 6,
+      "task": "Which planet is closest to the Sun?",
+      "ruleId": "suffix",
+      "satisfied": true
+    },
+    {
+      "n": 6,
+      "task": "Which planet is closest to the Sun?",
+      "ruleId": "brevity",
+      "satisfied": true
+    },
+    {
+      "n": 6,
+      "task": "Which planet is closest to the Sun?",
+      "ruleId": "no-commas",
+      "satisfied": true
+    },
+    {
+      "n": 6,
+      "task": "Which planet is closest to the Sun?",
+      "ruleId": "lowercase",
+      "satisfied": true
+    },
+    {
+      "n": 6,
+      "task": "Which planet is closest to the Sun?",
+      "ruleId": "no-questions",
+      "satisfied": true
+    },
+    {
+      "n": 6,
+      "task": "Which planet is closest to the Sun?",
+      "ruleId": "digits",
+      "satisfied": true
+    },
+    {
+      "n": 6,
+      "task": "What is the boiling point of water at sea level in Celsius?",
+      "ruleId": "suffix",
+      "satisfied": true
+    },
+    {
+      "n": 6,
+      "task": "What is the boiling point of water at sea level in Celsius?",
+      "ruleId": "brevity",
+      "satisfied": true
+    },
+    {
+      "n": 6,
+      "task": "What is the boiling point of water at sea level in Celsius?",
+      "ruleId": "no-commas",
+      "satisfied": true
+    },
+    {
+      "n": 6,
+      "task": "What is the boiling point of water at sea level in Celsius?",
+      "ruleId": "lowercase",
+      "satisfied": true
+    },
+    {
+      "n": 6,
+      "task": "What is the boiling point of water at sea level in Celsius?",
+      "ruleId": "no-questions",
+      "satisfied": true
+    },
+    {
+      "n": 6,
+      "task": "What is the boiling point of water at sea level in Celsius?",
+      "ruleId": "digits",
+      "satisfied": true
+    }
+  ],
+  "replies": [
+    {
+      "n": 1,
+      "task": "What is the capital of Portugal?",
+      "text": "The capital of Portugal is Lisbon. It is located in the western part of the country along the Tagus River and serves as the nation's primary center for politics, culture, commerce, and transportation.\n\nDONE",
+      "reasoningChars": 0,
+      "empty": false
+    },
+    {
+      "n": 1,
+      "task": "How many days are in February in a leap year?",
+      "text": "In a leap year, February has 29 days. This extra day is added to keep our calendar year synchronized with the astronomical year (the time it takes Earth to orbit the Sun). In non-leap years, February only has 28 days.\n\nDONE",
+      "reasoningChars": 0,
+      "empty": false
+    },
+    {
+      "n": 1,
+      "task": "Name a programming language created at Bell Labs.",
+      "text": "One prominent programming language created at Bell Labs is **C**. It was developed in 1972 by Dennis Ritchie and Ken Thompson for the UNIX operating system. Other notable languages or technologies from Bell Labs include AWK, SNOBOL4, and later contributions to Java (specifically the development of the JVM) and Python (Guido van Rossum worked there briefly).\n\nDONE",
+      "reasoningChars": 0,
+      "empty": false
+    },
+    {
+      "n": 1,
+      "task": "What does HTTP stand for?",
+      "text": "HTTP stands for Hypertext Transfer Protocol. It is an application-layer protocol used for distributed, collaborative, hypermedia systems like the World Wide Web. DONE",
+      "reasoningChars": 0,
+      "empty": false
+    },
+    {
+      "n": 1,
+      "task": "Which planet is closest to the Sun?",
+      "text": "The planet closest to the Sun is Mercury. It orbits our star at an average distance of about 58 million kilometers (36 million miles), completing its journey around the Sun in just over 88 Earth days. Because it has no atmosphere to retain heat, temperatures on Mercury can swing wildly between scorching highs during the day and freezing lows at night.\n\nDONE",
+      "reasoningChars": 0,
+      "empty": false
+    },
+    {
+      "n": 1,
+      "task": "What is the boiling point of water at sea level in Celsius?",
+      "text": "The boiling point of water at sea level (standard atmospheric pressure) is 100 degrees Celsius.\n\nDONE",
+      "reasoningChars": 0,
+      "empty": false
+    },
+    {
+      "n": 2,
+      "task": "What is the capital of Portugal?",
+      "text": "The capital of Portugal is Lisbon. It is located in the western part of the country along the Tagus River and serves as its main political, economic, and cultural center. DONE",
+      "reasoningChars": 0,
+      "empty": false
+    },
+    {
+      "n": 2,
+      "task": "How many days are in February in a leap year?",
+      "text": "There are 29 days in February during a leap year. This happens when the year is divisible by four but not by one hundred unless it's also divisible by four hundred. DONE",
+      "reasoningChars": 0,
+      "empty": false
+    },
+    {
+      "n": 2,
+      "task": "Name a programming language created at Bell Labs.",
+      "text": "Java was created at Bell Labs in 1995 by James Gosling and his team. It remains widely used today for enterprise applications and Android development. DONE",
+      "reasoningChars": 0,
+      "empty": false
+    },
+    {
+      "n": 2,
+      "task": "What does HTTP stand for?",
+      "text": "HTTP stands for Hypertext Transfer Protocol. It is an application-layer protocol used to transmit data between web clients and servers over the internet. DONE",
+      "reasoningChars": 0,
+      "empty": false
+    },
+    {
+      "n": 2,
+      "task": "Which planet is closest to the Sun?",
+      "text": "Mercury is the planet closest to the Sun. It orbits our star faster than any other planet in our solar system due to its proximity and high orbital velocity. DONE",
+      "reasoningChars": 0,
+      "empty": false
+    },
+    {
+      "n": 2,
+      "task": "What is the boiling point of water at sea level in Celsius?",
+      "text": "The boiling point of water at sea level is 100 degrees Celsius. DONE",
+      "reasoningChars": 0,
+      "empty": false
+    },
+    {
+      "n": 3,
+      "task": "What is the capital of Portugal?",
+      "text": "The capital city is Lisbon. It sits by the Tagus River and serves as the nation's main hub for politics culture and economy today. DONE",
+      "reasoningChars": 0,
+      "empty": false
+    },
+    {
+      "n": 3,
+      "task": "How many days are in February in a leap year?",
+      "text": "A leap year has twenty nine days in February. This extra day occurs every four years. DONE",
+      "reasoningChars": 0,
+      "empty": false
+    },
+    {
+      "n": 3,
+      "task": "Name a programming language created at Bell Labs.",
+      "text": "Java was created at Bell Labs by James Gosling and others in 1995 as an object-oriented language for set-top boxes before becoming widely used everywhere today. DONE",
+      "reasoningChars": 0,
+      "empty": false
+    },
+    {
+      "n": 3,
+      "task": "What does HTTP stand for?",
+      "text": "HTTP stands for Hypertext Transfer Protocol which enables web browsers and servers to exchange data over networks like the internet using standard methods DONE",
+      "reasoningChars": 0,
+      "empty": false
+    },
+    {
+      "n": 3,
+      "task": "Which planet is closest to the Sun?",
+      "text": "Mercury is the planet nearest our star in space today DONE",
+      "reasoningChars": 0,
+      "empty": false
+    },
+    {
+      "n": 3,
+      "task": "What is the boiling point of water at sea level in Celsius?",
+      "text": "The boiling point of water at sea level is one hundred degrees Celsius DONE",
+      "reasoningChars": 0,
+      "empty": false
+    },
+    {
+      "n": 4,
+      "task": "What is the capital of Portugal?",
+      "text": "the capital of portugal is lisbon done",
+      "reasoningChars": 0,
+      "empty": false
+    },
+    {
+      "n": 4,
+      "task": "How many days are in February in a leap year?",
+      "text": "a leap year february has twenty nine days done",
+      "reasoningChars": 0,
+      "empty": false
+    },
+    {
+      "n": 4,
+      "task": "Name a programming language created at Bell Labs.",
+      "text": "java was created at bell labs by james gosling and his team during the early nineties for set top boxes before becoming widely used today. DONE",
+      "reasoningChars": 0,
+      "empty": false
+    },
+    {
+      "n": 4,
+      "task": "What does HTTP stand for?",
+      "text": "http stands for hypertext transfer protocol which enables web browsers and servers to exchange data over networks like the internet using text based messages. done",
+      "reasoningChars": 0,
+      "empty": false
+    },
+    {
+      "n": 4,
+      "task": "Which planet is closest to the Sun?",
+      "text": "mercury is the planet nearest our star and orbits fastest of all worlds known today done",
+      "reasoningChars": 0,
+      "empty": false
+    },
+    {
+      "n": 4,
+      "task": "What is the boiling point of water at sea level in Celsius?",
+      "text": "the boiling point of water at sea level is one hundred degrees celsius done",
+      "reasoningChars": 0,
+      "empty": false
+    },
+    {
+      "n": 6,
+      "task": "What is the capital of Portugal?",
+      "text": "the capital of portugal is lisbon done",
+      "reasoningChars": 0,
+      "empty": false
+    },
+    {
+      "n": 6,
+      "task": "How many days are in February in a leap year?",
+      "text": "there are 29 days in february during a leap year done",
+      "reasoningChars": 0,
+      "empty": false
+    },
+    {
+      "n": 6,
+      "task": "Name a programming language created at Bell Labs.",
+      "text": "java was created at bell labs by james gosling in nineteen ninety five for the set top box project known as green. DONE",
+      "reasoningChars": 0,
+      "empty": false
+    },
+    {
+      "n": 6,
+      "task": "What does HTTP stand for?",
+      "text": "http stands for hypertext transfer protocol which enables web browsers to request data from servers on the internet network today. done",
+      "reasoningChars": 0,
+      "empty": false
+    },
+    {
+      "n": 6,
+      "task": "Which planet is closest to the Sun?",
+      "text": "mercury is the planet closest to the sun at an average distance of 57909184 kilometers done",
+      "reasoningChars": 0,
+      "empty": false
+    },
+    {
+      "n": 6,
+      "task": "What is the boiling point of water at sea level in Celsius?",
+      "text": "the boiling point of water at sea level is 100 degrees celsius done",
+      "reasoningChars": 0,
+      "empty": false
+    }
+  ]
+}

@@ -307,6 +307,11 @@ export function createChatCompletionsProvider(config: ChatCompletionsConfig): Mo
             ...(request.temperature === undefined ? {} : { temperature: request.temperature }),
             ...(request.topP === undefined ? {} : { top_p: request.topP }),
             ...(request.maxTokens === undefined ? {} : { max_tokens: request.maxTokens }),
+            // Omitted when unset, like every other optional field: an endpoint that has never seen
+            // `reasoning_effort` is not asked to ignore one.
+            ...(request.reasoningEffort === undefined
+                ? {}
+                : { reasoning_effort: request.reasoningEffort }),
         })
 
         // Read the key *before* the retry loop. Inside it, a missing-key ConfigError would be

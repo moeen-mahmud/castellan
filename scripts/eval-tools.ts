@@ -28,7 +28,7 @@
  * interleaved per fixture rather than run as two blocks, so endpoint drift lands on both dialects.
  *
  * Usage:
- *   bun scripts/eval-tools.ts                    # every model in MODELS that has its key set
+ *   bun scripts/eval-tools.ts                    # every configured model whose key is set
  *   bun scripts/eval-tools.ts --model qwen3.5:9b # one model
  *   bun scripts/eval-tools.ts --repeats 3        # median of N passes per fixture
  *   bun scripts/eval-tools.ts --tasks route,abstain
@@ -59,6 +59,17 @@ interface ModelUnderTest {
     readonly apiKeyEnv?: string
     /** Roughly, for ordering the report. The gate applies to the smallest that ran. */
     readonly params: number
+    /** Sent as OpenAI's `reasoning_effort`. `none` on a thinking model is the difference between
+     * a two-second call and a two-minute one. */
+    readonly reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high"
+    /**
+     * True only for a model whose weights and size are published.
+     *
+     * The gate turns on this rather than on `params` alone, because `params` for a closed model is a
+     * guess. `gpt-4o-mini` sits here at 8B on nothing but rumour, and letting a guessed 8 satisfy a
+     * claim about small models would decide the gate on a number nobody can check.
+     */
+    readonly openWeight?: boolean
     readonly streamUsage?: boolean
 }
 
@@ -66,15 +77,64 @@ interface ModelUnderTest {
  * Ordered smallest first, because the gate is about the smallest model that actually ran and the
  * report should read in the direction the claim is strongest.
  */
-const MODELS: readonly ModelUnderTest[] = [
-    {
-        label: "qwen3.5:9b (local Ollama)",
-        id: "qwen3.5:9b",
-        baseUrl: "http://localhost:11434/v1",
-        params: 9.7,
-        // Ollama reports no usage at all without this, so token figures would be the estimator's.
+/**
+ * The small open-weight slot, configured by environment rather than hardcoded.
+ *
+ * This is the model the Phase 3 gate is about — NLT's claim is specifically that it helps *small*
+ * models, and a sweep of frontier models tests nothing that decision rests on.
+ *
+ * Not pinned to a provider or a model id, because those are exactly the details that go stale
+ * without anyone noticing — a hardcoded id that a host has since renamed fails as "model not found"
+ * halfway through a sweep. Any OpenAI-compatible host serving open weights works:
+ *
+ *   SMALL_MODEL_BASE_URL=http://localhost:11434/v1     SMALL_MODEL_ID=qwen3.5:9b
+ *   SMALL_MODEL_BASE_URL=https://api.groq.com/openai/v1  SMALL_MODEL_ID=...  SMALL_MODEL_API_KEY=...
+ *
+ * **Local Ollama is viable, and the thing that made it look otherwise was reasoning.** A sweep once
+ * took eighteen minutes, which was read as local inference being too slow. It was not: throughput
+ * measured 16–20 tok/s, normal for an M1 Pro on a 9B Q4, and the model was fully GPU-resident. The
+ * cost was that `qwen3.5` thinks by default and thinks *more* the more constrained the request —
+ * 151 reasoning tokens unconstrained, 1,778 under six simultaneous rules, at which point it burned
+ * a 2,000-token budget and returned empty. With `reasoning_effort: "none"` the same call is 2.1 s.
+ * Set `SMALL_MODEL_REASONING=none` for a model that thinks and does not need to here.
+ *
+ * Unset, the slot is skipped like any other model whose key is missing — and the gate reports that
+ * it could not run rather than quietly passing on frontier models alone.
+ */
+function smallModel(env: Record<string, string | undefined>): ModelUnderTest | undefined {
+    const id = env.SMALL_MODEL_ID
+    const baseUrl = env.SMALL_MODEL_BASE_URL
+    if (id === undefined || id === "" || baseUrl === undefined || baseUrl === "") return undefined
+    const params = Number(env.SMALL_MODEL_PARAMS ?? "9")
+    return {
+        label: `${id} (open-weight)`,
+        id,
+        baseUrl,
+        // Only when a key exists. Declaring `apiKeyEnv` unconditionally made the candidate filter
+        // skip every keyless endpoint — which is every local one — so configuring a local Ollama
+        // correctly still produced "skipping … SMALL_MODEL_API_KEY is not set".
+        ...(env.SMALL_MODEL_API_KEY === undefined || env.SMALL_MODEL_API_KEY === ""
+            ? {}
+            : { apiKeyEnv: "SMALL_MODEL_API_KEY" }),
+        params: Number.isFinite(params) ? params : 9,
+        openWeight: true,
+        ...(env.SMALL_MODEL_REASONING === undefined
+            ? {}
+            : {
+                  reasoningEffort: env.SMALL_MODEL_REASONING as
+                      | "none"
+                      | "minimal"
+                      | "low"
+                      | "medium"
+                      | "high",
+              }),
+        // Ask for usage explicitly: several open-weight hosts report none without it, and token
+        // figures would silently fall back to the estimator.
         streamUsage: true,
-    },
+    }
+}
+
+const MODELS: readonly ModelUnderTest[] = [
     {
         label: "deepseek-chat",
         id: "deepseek-chat",
@@ -94,6 +154,8 @@ const MODELS: readonly ModelUnderTest[] = [
         id: "gpt-4o-mini",
         baseUrl: "https://api.openai.com/v1",
         apiKeyEnv: "OPENAI_API_KEY",
+        // Unpublished. 8 is a widely repeated guess and is here only to order the report — it is
+        // explicitly not open-weight, so it can never stand in for the gate's small model.
         params: 8,
     },
 ]
@@ -278,6 +340,13 @@ function makeRunner(
                         ...(requestTools === undefined ? {} : { tools: requestTools }),
                         temperature: 0,
                         maxTokens: Math.min(2048, capabilities.maxOutput),
+                        // Left to the endpoint unless a model asks otherwise. Unlike `eval-rules`,
+                        // this one measures routing — deciding *which* tool and *which* arguments —
+                        // and deliberation is part of that decision rather than overhead on it.
+                        // Forcing it off here would measure a different question than the gate asks.
+                        ...(model.reasoningEffort === undefined
+                            ? {}
+                            : { reasoningEffort: model.reasoningEffort }),
                     },
                     AbortSignal.timeout(180_000),
                 )
@@ -401,6 +470,10 @@ function markdown(results: readonly ModelResult[], meta: Record<string, unknown>
         "",
         `Run ${String(meta.startedAt)} · ${String(meta.tasks)} of ${String(meta.totalFixtures)} fixtures × ${String(meta.repeats)} pass(es) · temperature 0`,
         "",
+        `reasoning_effort: ${Object.entries((meta.reasoning ?? {}) as Record<string, string>)
+            .map(([id, effort]) => `${id}=${effort}`)
+            .join(" · ")}`,
+        "",
         ...(meta.tasks === meta.totalFixtures
             ? []
             : [
@@ -487,18 +560,34 @@ function markdown(results: readonly ModelResult[], meta: Record<string, unknown>
         // Same rule as the exit code: a narrowed run reports the comparison but is not allowed to call
         // itself the gate, because the heading is what gets quoted rather than the banner above it.
         const whole = meta.tasks === meta.totalFixtures
+        // And the gate needs a model the claim is actually about. NLT's advantage is specifically a
+        // small-open-weight result; deciding it on a closed model whose size is a rumour would be a
+        // pass nobody could check.
+        const decidable = whole && meta.smallOpenWeight === true
+
         lines.push(
-            whole
-                ? "## Phase 3 gate"
-                : "## Dialect comparison on this subset — not the Phase 3 gate",
+            decidable ? "## Phase 3 gate" : "## Dialect comparison — not the Phase 3 gate",
             "",
-            `> NLT ≥ native on the smallest model tested — if not, stop and investigate before proceeding.`,
-            "",
-            whole
-                ? `Smallest model tested: **${smallest.model}**. NLT ${pct(smallest.nlt.summary.accuracy)} vs native ${pct(smallest.native.summary.accuracy)} — **${pass ? "PASS" : "FAIL"}**.`
-                : `Smallest model tested: **${smallest.model}**. NLT ${pct(smallest.nlt.summary.accuracy)} vs native ${pct(smallest.native.summary.accuracy)} over the \`${String(meta.groups)}\` group(s) only. The gate is defined over all ${String(meta.totalFixtures)} fixtures; run without \`--tasks\` to decide it.`,
+            `> NLT ≥ native on the smallest open-weight model tested — if not, stop and investigate before proceeding.`,
             "",
         )
+
+        if (decidable) {
+            lines.push(
+                `Smallest model tested: **${smallest.model}**. NLT ${pct(smallest.nlt.summary.accuracy)} vs native ${pct(smallest.native.summary.accuracy)} — **${pass ? "PASS" : "FAIL"}**.`,
+                "",
+            )
+        } else if (!whole) {
+            lines.push(
+                `Smallest model tested: **${smallest.model}**. NLT ${pct(smallest.nlt.summary.accuracy)} vs native ${pct(smallest.native.summary.accuracy)} over the \`${String(meta.groups)}\` group(s) only. The gate is defined over all ${String(meta.totalFixtures)} fixtures; run without \`--tasks\` to decide it.`,
+                "",
+            )
+        } else {
+            lines.push(
+                `**Undecided — no open-weight model ran.** Smallest tested was **${smallest.model}**, whose parameter count is unpublished. Set \`SMALL_MODEL_ID\` and \`SMALL_MODEL_BASE_URL\` to a hosted open-weight endpoint and run again.`,
+                "",
+            )
+        }
     }
 
     return `${lines.join("\n")}\n`
@@ -559,17 +648,31 @@ async function main(): Promise<number> {
         return 1
     }
 
-    const candidates = MODELS.filter((model) => only === undefined || model.id === only).filter(
-        (model) => {
+    // The small slot leads, because the whole ordering is smallest-first and the gate is about it.
+    const small = smallModel(env)
+    const all: readonly ModelUnderTest[] = small === undefined ? MODELS : [small, ...MODELS]
+    if (small === undefined) {
+        console.log(
+            "no small open-weight model configured — set SMALL_MODEL_ID and SMALL_MODEL_BASE_URL.",
+        )
+        console.log(
+            "The gate is about small models specifically, so a sweep without one cannot settle it.",
+        )
+    }
+
+    const candidates = all
+        .filter((model) => only === undefined || model.id === only)
+        .filter((model) => {
             if (model.apiKeyEnv === undefined) return true
             const present = (env[model.apiKeyEnv] ?? "") !== ""
             if (!present) console.log(`skipping ${model.label} — ${model.apiKeyEnv} is not set`)
             return present
-        },
-    )
+        })
 
     if (candidates.length === 0) {
-        console.error("eval-tools: no model is reachable. Set an API key, or start Ollama.")
+        console.error(
+            "eval-tools: no model is reachable. Set an API key, or configure SMALL_MODEL_BASE_URL.",
+        )
         return 1
     }
 
@@ -637,6 +740,17 @@ async function main(): Promise<number> {
         groups: groups ?? "all",
         repeats,
         fixtures: "evals/fixtures",
+        // Whether the run included a model the gate is actually about. Recorded rather than derived
+        // later: a sweep of closed models can produce every other number in this file and still be
+        // unable to decide the one claim Phase 3 turns on.
+        smallOpenWeight: candidates.some((model) => model.openWeight === true),
+        // Recorded because it changes what the numbers mean. A run with reasoning suppressed is not
+        // comparable to one without it — measured on qwen3.5:9b, `none` traded two correct enum
+        // fixtures for two empty replies — and a report that omits the setting invites exactly that
+        // comparison.
+        reasoning: Object.fromEntries(
+            candidates.map((model) => [model.id, model.reasoningEffort ?? "endpoint default"]),
+        ),
     }
     mkdirSync(outDir, { recursive: true })
     writeFileSync(join(outDir, "results.json"), `${JSON.stringify({ meta, results }, null, 2)}\n`)
@@ -669,6 +783,18 @@ async function main(): Promise<number> {
             }`,
         )
         return 1
+    }
+
+    // A clean sweep with no open-weight model is not a pass, it is an undecided gate — and it exits
+    // 0, because nothing regressed. Saying so out loud is the difference between "we checked" and
+    // "we ran something green".
+    if (!meta.smallOpenWeight && !partial) {
+        console.log(
+            "\neval-tools: gate UNDECIDED — no open-weight model ran, and NLT's claim is about those specifically.",
+        )
+        console.log(
+            "  Set SMALL_MODEL_ID, SMALL_MODEL_BASE_URL and SMALL_MODEL_API_KEY to a hosted open-weight endpoint.",
+        )
     }
     return 0
 }

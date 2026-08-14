@@ -42,6 +42,20 @@ function textOf(chunks: ChatChunk[]): string {
 
 const REQUEST: ChatRequest = { model: "m", messages: [{ role: "user", content: "hi" }] }
 
+/** The JSON body one request produced, for asserting what does and does not reach the wire. */
+async function captureBody(over: Partial<ChatRequest>): Promise<Record<string, unknown>> {
+    let body: Record<string, unknown> = {}
+    const provider = createChatCompletionsProvider({
+        baseUrl: "https://api.example.com/v1",
+        fetch: async (_url, init) => {
+            body = JSON.parse(String(init?.body)) as Record<string, unknown>
+            return sseResponse(["data: [DONE]\n\n"])
+        },
+    })
+    await drain(provider.chat({ ...REQUEST, ...over }, new AbortController().signal))
+    return body
+}
+
 describe("request shape", () => {
     test("the endpoint path is appended to baseUrl", async () => {
         let seen = ""
@@ -629,5 +643,24 @@ describe("reassembling streamed tool_calls", () => {
             controller.abort()
         }
         expect(callsOf(chunks)).toEqual([])
+    })
+})
+
+describe("reasoning effort", () => {
+    test("reasoning_effort is sent when set, and absent when not", async () => {
+        // Absent rather than null: an endpoint that has never seen the field is not asked to ignore
+        // one, which is the same rule `tools` and `stream_options` follow.
+        const withEffort = await captureBody({ reasoningEffort: "none" })
+        expect(withEffort.reasoning_effort).toBe("none")
+
+        const without = await captureBody({})
+        expect("reasoning_effort" in without).toBe(false)
+    })
+
+    test("every effort level reaches the wire verbatim", async () => {
+        for (const level of ["none", "minimal", "low", "medium", "high"] as const) {
+            const body = await captureBody({ reasoningEffort: level })
+            expect(body.reasoning_effort).toBe(level)
+        }
     })
 })

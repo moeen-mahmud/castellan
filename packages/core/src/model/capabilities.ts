@@ -18,6 +18,7 @@
  */
 
 import type { ModelCapabilitiesOverride } from "../manifest/schema.ts"
+import { defaultPromptStyle, type PromptStyle } from "./prompt-style.ts"
 
 export interface ModelCapabilities {
     /** Whether the endpoint implements the `tools` parameter and `tool_calls` responses. */
@@ -52,12 +53,27 @@ export interface ModelCapabilities {
     readonly contextWindow: number
     /** Max completion tokens. Never derive this from the window — see the note above. */
     readonly maxOutput: number
+    /**
+     * How authored workspace files are rendered for this model.
+     *
+     * Derived from the model id rather than tabulated per row, and that is not a shortcut: the
+     * registry's patterns cannot express it. `qwen3.5*` matches both `qwen3.5:9b` and
+     * `qwen3.5:72b`, and those two want opposite `intensity` values — size is what predicts the
+     * inversion, and size is in the id, not in the pattern. See `prompt-style.ts`.
+     */
+    readonly promptStyle: PromptStyle
 }
+
+/**
+ * A registry row. Everything in `ModelCapabilities` except the parts that are derived from the
+ * model id rather than looked up by it.
+ */
+export type RegistryCapabilities = Omit<ModelCapabilities, "promptStyle">
 
 export interface CapabilityEntry {
     /** Glob over the model id. `*` matches any run of characters. */
     readonly pattern: string
-    readonly capabilities: ModelCapabilities
+    readonly capabilities: RegistryCapabilities
     readonly note?: string
     /**
      * Provenance. Set when the values were measured against a live endpoint, with the date —
@@ -67,7 +83,7 @@ export interface CapabilityEntry {
     readonly verified?: string
 }
 
-const CONSERVATIVE: ModelCapabilities = {
+const CONSERVATIVE: RegistryCapabilities = {
     nativeTools: false,
     strictSchema: false,
     thinking: "none",
@@ -484,12 +500,34 @@ export function resolveCapabilities(
     modelId: string,
     override?: ModelCapabilitiesOverride,
 ): ModelCapabilities {
-    const base = matchCapabilities(modelId).capabilities
+    const base: ModelCapabilities = {
+        ...matchCapabilities(modelId).capabilities,
+        promptStyle: defaultPromptStyle(modelId),
+    }
     if (override === undefined) return base
 
     const defined: Record<string, unknown> = {}
     for (const [key, value] of Object.entries(override)) {
+        if (key === "promptStyle") continue
         if (value !== undefined) defined[key] = value
     }
-    return { ...base, ...defined } as ModelCapabilities
+
+    // `promptStyle` merges field by field rather than replacing wholesale. An author setting
+    // `intensity: emphatic` for a small model is not thereby asking for the default `delimiters`,
+    // and making them restate all four to change one is how a config grows stale copies of a
+    // default that has since moved.
+    const style = override.promptStyle
+    return {
+        ...base,
+        ...defined,
+        promptStyle:
+            style === undefined
+                ? base.promptStyle
+                : {
+                      delimiters: style.delimiters ?? base.promptStyle.delimiters,
+                      intensity: style.intensity ?? base.promptStyle.intensity,
+                      examplesIn: style.examplesIn ?? base.promptStyle.examplesIn,
+                      skillsIn: style.skillsIn ?? base.promptStyle.skillsIn,
+                  },
+    } as ModelCapabilities
 }

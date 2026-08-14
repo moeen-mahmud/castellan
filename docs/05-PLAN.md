@@ -556,15 +556,20 @@ First half — **done**:
 - [x] `context.files` → deprecated alias for `static`, warning naming the replacement
 - [x] `examples/workspace-template/` and a filled-in `examples/telegram-assistant/workspace/`
 
-Second half — **not started**:
+Second half — in progress:
 
-- [ ] `model/prompt-style.ts` — render authored markdown per `delimiters` / `intensity` /
-  `examplesIn`
+- [x] `model/prompt-style.ts` — `delimiters` and `intensity` rendering, model classification, and
+  `promptStyle` as a resolved capability merged field by field over a manifest override
+- [x] `workspace/authoring.ts` and the `workspace` command — the authoring rules of
+  `07-SPEC-WORKSPACE.md`, reported as warnings with `--strict` for CI
+- [x] `scripts/eval-rules.ts` and `evals/fixtures/rules.ts` — measures `perRuleSuccess` against a
+  real endpoint, and checks the guard's independence assumption while it is there
+- [ ] `examplesIn` / `skillsIn` placement — the capability is resolved and carried; moving example
+  blocks into a user message needs the assembly change and the eval that settles the default
 - [ ] `knowledge/` — Tier 3, activation by frontmatter keyword gate, `maxActive`, own budget.
   Schema is in place and refused at load
-- [ ] `SOUL.md` — `requires` / `onUnmet`, plus `castellan soul distill` emitting an editable
-  scaffold. Schema is in place and refused at load
-- [ ] `castellan workspace validate` and `castellan eval rules`
+- [ ] `SOUL.md` — `requires` / `onUnmet`, plus `soul distill` emitting an editable scaffold.
+  Schema is in place and refused at load
 - [ ] `evals/prompt-style/` — the two unresolved `promptStyle` questions, with committed numbers
 
 **Files.** `packages/core/src/workspace/`, `model/prompt-style.ts`, `manifest/schema.ts`,
@@ -574,7 +579,7 @@ Second half — **not started**:
 
 - [x] Frontmatter and HTML comments never reach the model — asserted on the assembled prefix
 - [x] A workspace over total budget fails the load naming the offending file; nothing is truncated
-- [ ] The same `AGENT.md` renders with XML delimiters under `delimiters: xml` and plain sections
+- [x] The same `AGENT.md` renders with XML delimiters under `delimiters: xml` and plain sections
       under `plain`, from one authored source
 - [x] `MEMORY.md` is in slot 2, after breakpoint A: a `memory_write` leaves slots 0–1 byte-identical
 - [x] `REMINDER.md` lands in slot 7 — after the history, before the input
@@ -582,12 +587,15 @@ Second half — **not started**:
 - [x] A manifest using `context.files` still loads, with a warning naming `static`
 - [x] Rule guard: three rules at `perRuleSuccess: 0.90` / `reliabilityTarget: 0.80` fails the load
       quoting the computed figure; two pass
-- [ ] `castellan eval rules` reports a measured `perRuleSuccess` for the configured model
+- [x] `eval rules` reports a measured `perRuleSuccess` for the configured model
 - [ ] `evals/prompt-style/` settles both open questions on ≥2 models: (a) `examplesIn: system` vs
       `user`, where Anthropic and OpenAI give opposite guidance; (b) `intensity: emphatic` vs
       `neutral` on the smallest model, confirming the inversion is real rather than assumed
-- [ ] `castellan workspace validate` flags a bulleted `AGENT.md` when every bound channel is
-      `markdown: none|basic`, and flags a rule with no rationale clause
+- [~] `workspace` flags a rule with no rationale clause, an undiverse or miscounted example set,
+      heavy negative framing, an unfilled template placeholder, and a bulleted `AGENT.md`. The
+      bullet check is **unconditional** rather than gated on every bound channel being
+      `markdown: none|basic` — channels arrive in Phase 4 and the manifest section is refused
+      until then, so gating it now would ship a check that can never fire. Deferred to Phase 4.
 - [ ] `SOUL.md` on a model failing `requires` behaves per `onUnmet`; `distill` ships the compact file
 - [ ] `knowledge/` activates on keyword, respects `maxActive` and its budget, and is **not** pinned
 - [x] `bun run bench:boot` still under 1000 ms with a full workspace loaded — median 52.1 ms,
@@ -632,14 +640,80 @@ budgets and the alias form the first half and are independently useful; renderin
 - **`validate` now loads the workspace instead of counting names.** Every interesting failure —
   budget, tier mismatch, unreadable file — happens during the load, so a validator that only counted
   would report ok on a manifest `run` refuses. It prints tokens-against-budget per tier.
-- **Both shipped examples set `onExceed: warn`, and this is a finding rather than a fix.** Their
-  `static` tier includes `README.md` — documentation for a human reader, which states rules of its
-  own. `examples/minimal` counts 6 rules against a budget of 2 (expected all-rules compliance 0.53);
-  `examples/reference` counts 8 (0.43). The real remedy is dropping the README from the tier or
-  deleting rules; `warn` keeps the examples loading while the decision is open.
+- **The guard found a real cost in the shipped examples, and it was fixed rather than relaxed.**
+  Both had `README.md` and `IDENTITY.md` in their `static` tier — several hundred tokens of
+  human-facing documentation in the system prompt on every turn, stating rules of its own.
+  `examples/minimal` counted 6 rules against a budget of 2 (expected all-rules compliance 0.53);
+  `examples/reference` counted 8 (0.43). Both now list `AGENT.md` alone: 554 tokens, **1 rule of 2**,
+  compliance 0.90, `onExceed` back at the shipped default `fail`. Dropping `IDENTITY.md` also
+  settles what `07-SPEC-WORKSPACE.md` already said — it is folded into `AGENT.md`, and split, the
+  two contradict each other.
 - **`memory_write` takes no `file` argument.** The runtime resolves one write target from the
   workspace. Choosing a file would be a second decision on every save, which is the two-hop shape
   small models fail.
+- **`promptStyle` is derived from the model id, not carried on capability-registry rows.** The
+  registry's patterns cannot express it: `qwen3.5*` matches `qwen3.5:9b` and `qwen3.5:72b`, and those
+  want opposite `intensity` values. Size predicts the inversion and size is in the id, so
+  `CapabilityEntry.capabilities` is now `RegistryCapabilities` — everything except the derived field
+  — and `resolveCapabilities` composes the two. A manifest override merges the four fields
+  individually rather than replacing the object.
+- **`intensity` frames an author-marked `<rules>` block; it never rewrites a sentence.** The spec
+  described it as adding "imperative framing and repetition". The framing is one generated line
+  before the block; the repetition is the `reminder` tier, which already does it at the recency
+  position and does it better than duplicating a block inside slot 0 would. Authors mark rules the
+  way they already mark examples, so no heuristic decides where the framing goes. The two `AGENT.md`
+  templates and the three shipped identity files gained `<rules>` wrappers.
+- **Rendering exposed a real bug in the rule count, caught by `bench:boot` rather than by a test.**
+  Rules were counted on the rendered text, but `countRules` excludes examples by looking for
+  `<example>` markers — which the renderer had just turned into headings. Every imperative inside a
+  worked example started counting, and `examples/minimal` went from 1 rule to 4 with no edit to the
+  file. `WorkspaceFile` now carries `authored` beside `content`, and the count reads the former.
+- **`workspace` is a separate command from `validate`, and its findings never fail by default.**
+  `validate` answers "does this load?", which has a yes or a no; `workspace` answers "is this
+  written well?", which is a judgement, and a heuristic judgement that refuses to load a file is a
+  heuristic nobody keeps. `--strict` exists for CI, where a warning nobody has read and a warning
+  someone has accepted look identical.
+- **An unfilled template placeholder is its own finding.** Before that check existed, the template
+  reported as an example-*diversity* failure — its `{{PLACEHOLDER}}` examples are identical to each
+  other — which sends the author to fix the wrong thing. It also suppresses the other checks for that
+  file, so one finding that matters does not arrive buried under four that restate it.
+- **`eval rules` reports saturation rather than a perfect score.** Against `deepseek-v4-pro` the
+  probe returns 1.000 on every rule, which says the instructions were easy for that model and
+  nothing about the model's rule budget. Printing `perRuleSuccess: 1.00` as a recommendation would
+  put a guard-*disabling* figure in a manifest — the same failure as a guessed input, by another
+  route. It now says the probe saturated and points at the smallest model in use.
+- **The first `eval rules` run against a local model measured nothing, and said 0.688 confidently.**
+  `qwen3.5:9b` reasons about 380 tokens under a rules prompt and the script capped output at 300, so
+  **every one of thirty replies came back empty** — the `deepseek` reasoning-budget failure already in
+  `CLAUDE.md`, on a model whose capability row does not mention reasoning. Five of the six checks pass
+  vacuously on an empty string (`no-commas`, `lowercase`, `brevity`, `no-questions`, `digits`), only
+  `suffix` fails, and the arithmetic produced a plausible-looking 0.688 with an equally plausible
+  independence verdict attached. The signature was visible in the per-rule table — one rule at 0/30
+  while every other sat at 1.000 is a broken check, not a model — and the diagnosis took one probe
+  that printed the raw reply, which the script was not recording. Three fixes: `--max-tokens`
+  defaulting to 2000, empty replies excluded and counted rather than scored, and raw replies written
+  to `results.json`. Above 20% empty the script refuses to report a figure at all. **The lesson is
+  Phase 3's, unlearned and relearned: read what the model actually wrote before believing a number.**
+- **Local Ollama is out of the loop, and the gate learned to say when it cannot be decided.**
+  A single `eval-tools` sweep against `qwen3.5:9b` on local Ollama took about eighteen minutes, and
+  an eval nobody will wait for is an eval nobody runs. The small slot is now `SMALL_MODEL_ID` /
+  `SMALL_MODEL_BASE_URL` / `SMALL_MODEL_API_KEY` — any OpenAI-compatible host serving open weights —
+  and `verify-endpoints` uses the same three variables for Phase 1's third implementation.
+
+  Removing it exposed something that had been true all along: with no small model configured, the
+  smallest that runs is `gpt-4o-mini`, whose parameter count is **unpublished** and sat in the table
+  as a guessed `8`. The gate would have quoted it as "the smallest model tested" and passed. So
+  `ModelUnderTest` gained `openWeight`, the gate turns on that rather than on `params`, and a clean
+  sweep with no open-weight model now reports **UNDECIDED** rather than green. Exit code stays 0 —
+  nothing regressed — but "we checked" and "we ran something green" are different sentences.
+
+  The committed `evals/tools/` figures are **not** rewritten. They record what was measured on the
+  hardware it was measured on; a note above the table says the target has moved and re-measurement
+  is pending. Phase 1's and Phase 3's completion notes keep their Ollama references for the same
+  reason — they are history, not configuration.
+- **`eval rules` also checks the guard's independence assumption.** `perRuleSuccess ** n` assumes
+  rules fail independently, which is load-bearing and was nowhere verified. The run reports observed
+  all-followed beside predicted at each n, so the assumption is evidence rather than arithmetic.
 - **Slot 2 is read at load, not re-read per turn.** The tier's *position* is what the first half
   delivers. A `memory_write` therefore reaches the model's slot 2 on the next agent load rather than
   the next turn; the re-read belongs with the second half, since a re-read with nothing writing is a

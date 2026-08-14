@@ -1,8 +1,8 @@
 # The smallest useful manifest: one model, one identity file, no tools or channels.
 #
 # Everything endpoint-specific comes from the environment, so this one file works unchanged
-# against OpenAI, an Anthropic-compatible base URL, and a local Ollama — which is the point.
-# See README.md in this directory for the three env presets.
+# against OpenAI, an Anthropic-compatible base URL, and any host serving open weights — which is
+# the point. See README.md in this directory for the env presets.
 apiVersion: castellan/v1
 id: minimal
 name: Vela (Minimal Assistant)
@@ -23,17 +23,7 @@ context:
   # Tier 0 — pinned in slot 0, before cache breakpoint A, read-only to the agent.
   # Order matters: earlier instructions are favoured under moderate instruction density.
   static:
-    - IDENTITY.md
     - AGENT.md
-    - README.md
-  # The imperative count across static + reminder, against what the reliability target affords.
-  # `warn` rather than `fail` here **only** because this example's static tier includes README.md,
-  # which is documentation for a human reader and states rules of its own — six counted against a
-  # budget of two, an expected all-rules compliance of 0.53. A real agent should either drop the
-  # README from the tier or delete rules; `fail` is the shipped default for that reason.
-  rules:
-    onExceed: warn
-
   # Held back from the window for the reply. Generous because a reasoning model bills its
   # thinking to this same budget: too small and the answer comes back empty with
   # finish_reason=length, which the runtime reports as a failure rather than a blank reply.

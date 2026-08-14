@@ -3,9 +3,11 @@
 The persistent files an agent carries: identity, policy, user model, memory, knowledge, and
 skills. This document supersedes the flat `context.files` list in `02-SPEC-MANIFEST.md`.
 
-**Status.** Tiers, stripping, budgets, the rule guard, and the `context.files` alias are
-implemented (Phase 3.5, first half). Still design-only: `promptStyle` rendering, `SOUL.md`,
-`knowledge/`, `workspace validate`, and `eval rules` — the second half.
+**Status.** Implemented: tiers, stripping, budgets, the rule guard, the `context.files` alias,
+`promptStyle` rendering for `delimiters` and `intensity`, the authoring checks behind the
+`workspace` command, and `eval rules`. Still design-only: `examplesIn` / `skillsIn` placement (the
+capability resolves and is carried, but nothing moves examples into a user message yet), `SOUL.md`,
+and `knowledge/`.
 
 **Why it replaced the flat list.** A flat ordered array cannot express three things that
 turned out to matter: which files are cache-stable versus volatile, which sit after the
@@ -191,8 +193,31 @@ the resolution is per-model rendering rather than a house style.
 **`intensity`.** Anthropic's current guidance is to *remove* emphatic phrasing — "CRITICAL:
 You MUST use this tool when…" becomes "Use this tool when…" — because frontier models now
 overtrigger on it, and prompts tuned for older models cause over-verification and
-over-exploration. A 7B model has the inverse failure mode. `emphatic` adds imperative
-framing and repetition to rule blocks; `soft` strips it.
+over-exploration. A 7B model has the inverse failure mode.
+
+It varies **one generated line** in front of an author-marked `<rules>` block, and touches nothing
+inside it:
+
+```
+<rules>
+I cite a source, so you can check it.
+</rules>
+```
+
+| intensity | what precedes the block |
+| --- | --- |
+| `emphatic` | `Follow these rules exactly. They are not suggestions.` |
+| `neutral` | nothing |
+| `soft` | `Where it helps:` |
+
+Authors mark rules the way they already mark examples, so no heuristic decides where the framing
+goes — and the author's sentences are byte-identical under all three, which is asserted. The
+alternative, rewriting rule text automatically, is decision 4.19's failure applied to a file whose
+rendered form nobody ever looks at.
+
+The "repetition" half of the original description is the `reminder` tier. It already re-asserts one
+or two rules at the recency position, where attention is strongest; duplicating a block inside slot
+0 would pay twice to say the same thing in the same place.
 
 This is the general shape of a problem worth naming: **published prompting guidance is
 written for frontier models, and a significant fraction of it inverts at 3–8B.** Anywhere
@@ -253,9 +278,17 @@ At 0.90 per rule, a 0.80 target permits **two** rules, not four. The guard exist
 this arithmetic is unintuitive and authors consistently overestimate their budget. The
 runtime computes it rather than trusting a table.
 
-`castellan eval rules` measures `perRuleSuccess` against the configured model with a
-verifiable-instruction probe. Guessing produces a guard that validates nothing, and small
-models run well below 0.90.
+`eval rules` measures `perRuleSuccess` against the configured model with a verifiable-instruction
+probe — orthogonal rules whose compliance is checked by a function, never by a second model call,
+because the number goes straight into a guard that refuses manifests. Guessing produces a guard that
+validates nothing, and small models run well below 0.90.
+
+It reports two things beyond the rate. **Saturation:** a perfect score says the probe was easy for
+that model, not that the model will follow any rule you write, and `perRuleSuccess: 1.00` in a
+manifest switches the guard off entirely — so a saturated run says so and points at the smallest
+model in use rather than printing a recommendation. **Independence:** the guard's `p ** n` assumes
+rules fail independently, which is load-bearing and was nowhere verified, so each run reports the
+observed all-followed rate beside the predicted one.
 
 The count is a **heuristic**: a line is a rule if it carries an obligation marker (`must`,
 `never`, `always`, `do not`, …) or opens with a recognised imperative verb. Fenced code and
@@ -299,15 +332,35 @@ tokens and buys no reliable compliance.
 ## Validation
 
 ```bash
-castellan workspace validate ./workspace
+castellan validate  ./agent.yaml    # does it load?
+castellan workspace ./agent.yaml    # is it written well?
 ```
 
-Checks frontmatter validity, per-file and total budgets, tier ordering, rule count against
-the reliability target, `editable` coherence, example count and diversity, prose/structure
-match against bound channel capabilities, and duplication between workspace files and
-registered tools or skills.
+The split is deliberate. `validate` reports mechanical facts — frontmatter validity, per-file and
+total budgets, tier coherence, `editable` coherence, the rule count against the reliability target —
+and being wrong about one of those breaks the agent, so they fail the load.
 
-Every failure names file, line, and fix. Runs in CI.
+`workspace` reports judgements about writing, and every one is a warning:
+
+| Check | Fires when |
+| --- | --- |
+| `workspace_unfilled_placeholder` | `{{PLACEHOLDER}}` survives into a file. Suppresses the rest for that file — an unfilled template trips every other check for the same reason. |
+| `workspace_example_count` | Fewer than three examples, or more than five. |
+| `workspace_example_diversity` | Two examples share more than 40% of their distinctive words. |
+| `workspace_rule_no_rationale` | A counted rule carries no connective (`because`, `so that`, `rather than`, an em dash). |
+| `workspace_negative_framing` | More than five prohibitions. |
+| `workspace_bullet_density` | More than 40% of a static file's lines are list items. |
+
+A heuristic judgement that refuses to load a file is a heuristic nobody keeps, so the command exits
+0 by default. `--strict` exits non-zero for CI, where a warning someone has accepted and a warning
+nobody has read look identical.
+
+The bullet-density check is currently **unconditional** rather than gated on every bound channel
+having `markdown: none | basic`. Channels arrive in Phase 4 and the manifest section is refused
+until then, so gating it now would ship a check that could never fire.
+
+Not yet checked: duplication between workspace files and registered tools or skills, which needs
+both to exist (Phases 3.6 and 5).
 
 The framing here follows OpenAI's guidance on prompts generally — treat them as application
 code: versioned in git, reviewed in the PR that changes the behaviour they support, covered

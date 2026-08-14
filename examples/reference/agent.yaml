@@ -28,13 +28,20 @@ model:
     # The *name* of an env var. A literal key here fails validation — rule 2.
     apiKeyEnv: MODEL_API_KEY
     temperature: 0.3
+
+    # How much the model may deliberate before answering. Sent as OpenAI's `reasoning_effort`,
+    # omitted entirely when unset. Worth setting to `none` on a reasoning model doing short,
+    # well-specified work: measured on qwen3.5:9b, six simultaneous rules with reasoning on burned
+    # 2000 output tokens in 104s and returned EMPTY content, while `none` answered in 2.1s.
+    # Not every endpoint honours it, and one that ignores it says nothing — verify per endpoint.
+    # reasoningEffort: none      # none | minimal | low | medium | high
     # topP: 0.95
     # maxTokens: 4096
     # headers:
     #   x-my-gateway-tenant: ${TENANT_ID}
 
     # `stream_options: {include_usage: true}` — an OpenAI extension, so off by default because an
-    # endpoint that does not know it may reject the whole request. Ollama reports no usage at all
+    # endpoint that does not know it may reject the whole request. Measured: Ollama reports no usage
     # without it, so local token counts come from the estimator until this is set. Turn it on when a
     # token figure is being compared rather than displayed.
     # streamUsage: true
@@ -91,9 +98,7 @@ context:
   # Tier 0 — slot 0, before cache breakpoint A, read-only. Byte-stable across turns, or prompt
   # caching stops working with no error anywhere.
   static:
-    - IDENTITY.md
     - AGENT.md
-    - README.md
 
   # Tier 1 — slot 2, AFTER the breakpoint, so a memory write leaves the cached prefix untouched.
   # `memory_write` lands in the first file here whose frontmatter allows it.
@@ -124,11 +129,7 @@ context:
   rules:
     perRuleSuccess: 0.90        # measure it with `eval rules`, do not guess
     reliabilityTarget: 0.80     # at 0.90 per rule this permits TWO rules, not four
-    # `warn` rather than the shipped default `fail`, and only because this example's static tier
-    # carries README.md — documentation for a human reader, which states rules of its own. Six
-    # counted against a budget of two: expected all-rules compliance 0.53. A real agent drops the
-    # README from the tier or deletes rules rather than relaxing this.
-    onExceed: warn              # fail | warn
+    onExceed: fail              # fail | warn
   # soul:
   #   file: SOUL.md
   #   requires: { contextWindow: ">=200000", class: frontier }

@@ -23,6 +23,22 @@ import { DEFAULT_WORKSPACE_BUDGETS } from "../workspace/load.ts"
 
 const slug = z.string().min(1)
 
+/**
+ * How authored workspace files are rendered for this model.
+ *
+ * Every field optional: this is an override of a derived default, not a declaration. Published
+ * prompting guidance is written for frontier models and a good fraction of it inverts at 3–8B,
+ * so it is encoded as a capability rather than a constant.
+ */
+export const PromptStyleSchema = z
+    .object({
+        delimiters: z.enum(["xml", "markdown", "plain"]).optional(),
+        intensity: z.enum(["emphatic", "neutral", "soft"]).optional(),
+        examplesIn: z.enum(["system", "user"]).optional(),
+        skillsIn: z.enum(["system", "user"]).optional(),
+    })
+    .strict()
+
 export const ModelCapabilitiesSchema = z
     .object({
         nativeTools: z.boolean().optional(),
@@ -32,6 +48,8 @@ export const ModelCapabilitiesSchema = z
         parallelToolCalls: z.boolean().optional(),
         contextWindow: z.number().int().positive().optional(),
         maxOutput: z.number().int().positive().optional(),
+        /** Merged field by field over the shipped default — set one without restating the rest. */
+        promptStyle: PromptStyleSchema.optional(),
     })
     .strict()
 
@@ -46,6 +64,19 @@ export const ModelRoleSchema = z
         temperature: z.number().min(0).max(2).optional(),
         topP: z.number().min(0).max(1).optional(),
         maxTokens: z.number().int().positive().optional(),
+        /**
+         * How much the model may deliberate. Sent as OpenAI's `reasoning_effort`; omitted when unset.
+         *
+         * Worth setting on any reasoning model doing short, well-specified work. Measured on
+         * `qwen3.5:9b`: six simultaneous rules with reasoning on burned 2,000 output tokens in 104 s
+         * and returned **empty content**; `none` answered correctly in 2.1 s. The failure mode is
+         * the one `reserveOutput` already warns about — reasoning is billed to the output budget —
+         * so this is the other half of that lever.
+         *
+         * Not universally honoured, and an endpoint that ignores it says nothing. Verify per
+         * endpoint rather than assuming.
+         */
+        reasoningEffort: z.enum(["none", "minimal", "low", "medium", "high"]).optional(),
         headers: z.record(z.string(), z.string()).optional(),
         /**
          * Ask the endpoint to report token usage in a streamed response.

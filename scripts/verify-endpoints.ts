@@ -5,9 +5,15 @@
  *   bun scripts/verify-endpoints.ts
  *
  * Phase 1's criterion is that the *same code and the same manifest shape* work unchanged against
- * OpenAI, an Anthropic-compatible base URL, and a local Ollama. That is a claim about
- * portability, so it has to be run rather than asserted — and it needs credentials this
- * repository does not and should not contain.
+ * three independently-implemented OpenAI-compatible endpoints: OpenAI, an Anthropic-compatible base
+ * URL, and a host serving open weights. That is a claim about portability, so it has to be run
+ * rather than asserted — and it needs credentials this repository does not and should not contain.
+ *
+ * The third slot is whichever open-weight endpoint `SMALL_MODEL_BASE_URL` names — hosted or local.
+ * It used to be a hardcoded local Ollama, which was fine until a run took minutes and the blame
+ * landed on the wrong thing: local throughput measured 16–20 tok/s, entirely normal, and the cost
+ * was a model that thinks by default. `SMALL_MODEL_REASONING=none` removes it. Both work; the slot
+ * is a variable so the choice is the operator's rather than this file's.
  *
  * Configure whichever endpoints you have and run it. Anything unconfigured is reported as
  * SKIPPED, and the script says plainly whether the criterion was met, because "2 of 3 passed and
@@ -16,7 +22,11 @@
  *   OPENAI_API_KEY=...      [OPENAI_MODEL=gpt-4o-mini]
  *   ANTHROPIC_API_KEY=...   [ANTHROPIC_MODEL=claude-sonnet-4-20250514]
  *   DEEPSEEK_API_KEY=...     [DEEPSEEK_MODEL=deepseek-v4-flash]
- *   OLLAMA_BASE_URL=http://localhost:11434/v1   [OLLAMA_MODEL=qwen3.5:9b]
+ *   SMALL_MODEL_BASE_URL=...  SMALL_MODEL_ID=...  [SMALL_MODEL_API_KEY=...]
+ *       any OpenAI-compatible host serving open weights — a local Ollama at
+ *       http://localhost:11434/v1, or Groq / Together / OpenRouter / vLLM.
+ *       Add SMALL_MODEL_REASONING=none for a thinking model, or every call pays for deliberation
+ *       this check does not read.
  *
  * Add `--mock` to include the local mock endpoint from `scripts/mock-endpoint.ts`, which proves
  * the transport without proving portability.
@@ -54,9 +64,13 @@ const targets: Target[] = [
         required: true,
     },
     {
-        label: "Ollama (local)",
-        modelId: env.OLLAMA_MODEL ?? "qwen3.5:9b",
-        baseUrl: env.OLLAMA_BASE_URL ?? "http://localhost:11434/v1",
+        label: "Open-weight host",
+        modelId: env.SMALL_MODEL_ID ?? "",
+        baseUrl: env.SMALL_MODEL_BASE_URL ?? "",
+        // No default base URL on purpose. A default pointing at localhost turns "you have not
+        // configured this" into "connection refused", which reads as a failure of the runtime
+        // rather than of the setup.
+        ...(env.SMALL_MODEL_API_KEY === undefined ? {} : { apiKeyEnv: "SMALL_MODEL_API_KEY" }),
         required: true,
     },
     // Not one of the three the acceptance criterion names, but a fourth provider on the same code
@@ -93,6 +107,16 @@ type Outcome =
     | { status: "skip"; label: string; detail: string }
 
 async function check(target: Target): Promise<Outcome> {
+    // Unconfigured is a skip, not a failure. Without this an empty base URL reaches the provider and
+    // comes back as a connection error, which reads as "the runtime is broken" rather than "you have
+    // not set this up" — and those two need entirely different responses.
+    if (target.baseUrl === "" || target.modelId === "") {
+        return {
+            status: "skip",
+            label: target.label,
+            detail: "SMALL_MODEL_BASE_URL and SMALL_MODEL_ID are not set",
+        }
+    }
     if (target.apiKeyEnv !== undefined && (env[target.apiKeyEnv] ?? "") === "") {
         return { status: "skip", label: target.label, detail: `${target.apiKeyEnv} is not set` }
     }
@@ -162,7 +186,7 @@ async function check(target: Target): Promise<Outcome> {
  * Positional arguments filter by label substring, case-insensitively:
  *
  *   bun scripts/verify-endpoints.ts deepseek     just DeepSeek
- *   bun scripts/verify-endpoints.ts openai ollama
+ *   bun scripts/verify-endpoints.ts openai anthropic
  *
  * Filtering exists because the unfiltered run is a *criterion* check and exits non-zero until all
  * three required endpoints answer — correct for the acceptance gate, and useless as feedback when

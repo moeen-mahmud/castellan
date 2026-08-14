@@ -12,11 +12,13 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { HarnessError } from "../src/errors.ts"
+import { DEFAULT_PROMPT_STYLE } from "../src/model/prompt-style.ts"
 import { parseWorkspaceFile, strip } from "../src/workspace/frontmatter.ts"
 import {
     DEFAULT_WORKSPACE_BUDGETS,
     loadWorkspace,
     planWorkspace,
+    ruleBudgetFailure,
     workspaceRefs,
     writeTarget,
 } from "../src/workspace/load.ts"
@@ -41,6 +43,8 @@ function load(dir: string, overrides: Partial<Parameters<typeof planWorkspace>[0
     const plan = planWorkspace(context(overrides), dir)
     return { plan, workspace: loadWorkspace({ refs: plan.refs }) }
 }
+
+const RULES = { perRuleSuccess: 0.9, reliabilityTarget: 0.8, onExceed: "fail" } as const
 
 function caught(fn: () => unknown): HarnessError {
     try {
@@ -337,5 +341,66 @@ describe("the memory_write target", () => {
         const dir = workspaceDir({ "AGENT.md": "Identity." })
         const { workspace } = load(dir, { static: ["AGENT.md"] })
         expect(writeTarget(workspace)).toBe(undefined)
+    })
+})
+
+describe("rendering and the rule count", () => {
+    const AUTHORED = [
+        "# Vex",
+        "Always cite a source, so the reader can check it.",
+        "## Examples",
+        "<example>",
+        "moeen: send it",
+        "Vex: Always confirm before sending, and never guess a recipient.",
+        "</example>",
+    ].join("\n")
+
+    test("rules are counted on the authored form, not the rendered one", () => {
+        // The regression this exists for: `delimiters: markdown` turns `<example>` into a heading,
+        // `countRules` excludes examples by looking for that marker, and so the two imperatives
+        // inside the worked example started counting as rules the moment rendering landed. A shipped
+        // example went from 1 rule to 4 with no edit to the file, and nothing but the boot bench
+        // noticed.
+        const dir = workspaceDir({ "AGENT.md": AUTHORED })
+        const plan = planWorkspace(context({ static: ["AGENT.md"] }), dir)
+        const workspace = loadWorkspace({
+            refs: plan.refs,
+            style: { ...DEFAULT_PROMPT_STYLE, delimiters: "markdown" },
+        })
+
+        // Rendered: the example is a heading, so the authored marker is gone from `content`.
+        expect(workspace.static.includes("<example>")).toBe(false)
+        expect(workspace.static).toContain("#### Example 1")
+
+        // Counted: one rule, the one outside the example.
+        expect(ruleBudgetFailure(workspace, RULES)).toBe(undefined)
+    })
+
+    test("the authored form is kept beside the rendered one", () => {
+        const dir = workspaceDir({ "AGENT.md": AUTHORED })
+        const plan = planWorkspace(context({ static: ["AGENT.md"] }), dir)
+        const workspace = loadWorkspace({
+            refs: plan.refs,
+            style: { ...DEFAULT_PROMPT_STYLE, delimiters: "plain" },
+        })
+        const file = workspace.files[0]
+        expect(file?.authored.includes("<example>")).toBe(true)
+        expect(file?.content.includes("<example>")).toBe(false)
+    })
+
+    test("budgets are measured on the rendered text, which is what gets billed", () => {
+        const dir = workspaceDir({ "AGENT.md": AUTHORED })
+        const plan = planWorkspace(context({ static: ["AGENT.md"] }), dir)
+        const xml = loadWorkspace({
+            refs: plan.refs,
+            style: { ...DEFAULT_PROMPT_STYLE, delimiters: "xml" },
+        })
+        const plain = loadWorkspace({
+            refs: plan.refs,
+            style: { ...DEFAULT_PROMPT_STYLE, delimiters: "plain" },
+        })
+        // Not an arbitrary assertion: `plain` exists partly because structured formats cost tokens,
+        // so if the two ever measured the same the rendering would not be reaching the counter.
+        expect(plain.tokens.static < xml.tokens.static).toBe(true)
     })
 })

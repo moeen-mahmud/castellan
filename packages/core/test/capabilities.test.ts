@@ -188,16 +188,27 @@ describe("manifest override merge", () => {
         expect(merged.maxOutput).toBe(16_384)
     })
 
+    // `promptStyle` is derived from the model id rather than carried on a registry row — the
+    // registry's patterns cannot express it, since `qwen3.5*` covers models that want opposite
+    // values. So the resolved object is the row plus that one field, and these two compare the row.
+    const row = (id: string) => {
+        const { promptStyle, ...rest } = resolveCapabilities(id)
+        return rest
+    }
+
     test("an empty override changes nothing", () => {
-        expect(resolveCapabilities("gpt-4o-mini", {})).toEqual(
-            matchCapabilities("gpt-4o-mini").capabilities,
-        )
+        expect(row("gpt-4o-mini")).toEqual(matchCapabilities("gpt-4o-mini").capabilities)
+        expect(resolveCapabilities("gpt-4o-mini", {})).toEqual(resolveCapabilities("gpt-4o-mini"))
     })
 
     test("an absent override changes nothing", () => {
-        expect(resolveCapabilities("gpt-4o-mini")).toEqual(
-            matchCapabilities("gpt-4o-mini").capabilities,
-        )
+        expect(row("gpt-4o-mini")).toEqual(matchCapabilities("gpt-4o-mini").capabilities)
+    })
+
+    test("promptStyle is present on every resolution, derived rather than looked up", () => {
+        expect(resolveCapabilities("gpt-4o-mini").promptStyle.delimiters).toBe("markdown")
+        const registryRow: Record<string, unknown> = matchCapabilities("gpt-4o-mini").capabilities
+        expect("promptStyle" in registryRow).toBe(false)
     })
 
     test("an override can correct a wrong registry entry entirely", () => {
@@ -215,6 +226,12 @@ describe("manifest override merge", () => {
             parallelToolCalls: true,
             contextWindow: 32_768,
             maxOutput: 2048,
+            promptStyle: {
+                delimiters: "xml",
+                intensity: "neutral",
+                examplesIn: "system",
+                skillsIn: "system",
+            },
         })
     })
 

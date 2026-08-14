@@ -42,10 +42,14 @@ context:
   window: 32768
   reserveOutput: 4096
   observationMaxTokens: 2000
-  files:
-    - IDENTITY.md
-    - GUARDRAILS.md
+  workspace: ./workspace
+  static:
+    - AGENT.md
+    - POLICY.md
+  volatile:
+    - USER.md
     - MEMORY.md
+  reminder: REMINDER.md
   thresholds:
     trim: 0.60
     snip: 0.70
@@ -145,6 +149,7 @@ Three roles. `main` required; `selector` and `compactor` fall back to `main`.
 | `baseUrl` | string | Must end at the version segment, e.g. `.../v1`. Requests go to `{baseUrl}/chat/completions`. |
 | `apiKeyEnv` | string | **Name of the env var**, never the key itself. A literal key in the manifest fails validation. |
 | `temperature`, `topP`, `maxTokens` | number | Optional passthrough. |
+| `reasoningEffort` | `none \| minimal \| low \| medium \| high` | Sent as OpenAI's `reasoning_effort`; omitted entirely when unset. Worth setting to `none` on a reasoning model doing short, well-specified work — measured on `qwen3.5:9b`, six simultaneous rules with reasoning on burned 2,000 output tokens in 104 s and returned **empty content**, while `none` answered correctly in 2.1 s. It is the other half of the `reserveOutput` lever. Not universally honoured, and an endpoint that ignores it is silent about it. |
 | `headers` | map | Extra headers. Values may use `${ENV_VAR}`. |
 | `streamUsage` | bool | Ask for token usage in a streamed response. Off by default. |
 | `capabilities` | object | Override the shipped registry. See below. |
@@ -171,15 +176,21 @@ capabilities:
   parallelToolCalls: false
   contextWindow: 32768
   maxOutput: 4096
-  promptStyle:            # Phase 3.5 — workspace rendering
+  promptStyle:            # workspace rendering. Every field optional and merged individually
     delimiters: plain     # xml | markdown | plain
     intensity: emphatic   # emphatic | neutral | soft
-    examplesIn: system    # system | user
-    skillsIn: system      # system | user
+    examplesIn: system    # system | user — carried, not yet acted on
+    skillsIn: system      # system | user — carried, not yet acted on
 ```
 
 Capabilities affect thinking-block replay, cache-breakpoint placement, and workspace rendering
 **only**. They never change the tool dialect.
+
+`promptStyle` is **derived from the model id** and each field is merged individually over that
+default, so setting `intensity` alone does not silently pin the other three to whatever they were
+the day the manifest was written. It is derived rather than tabulated because the capability
+registry's patterns cannot express it: `qwen3.5*` matches a 9B and a 72B, which want opposite
+`intensity` values, and size — the thing that predicts the inversion — is in the id.
 
 `promptStyle` exists because published prompting guidance is written for frontier models and a
 significant fraction of it inverts at 3–8B. Anthropic advises removing emphatic phrasing because

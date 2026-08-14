@@ -105,6 +105,16 @@ export {
     DEFAULT_RETRY,
     type RetryPolicy,
 } from "./model/chat-completions.ts"
+export {
+    DEFAULT_PROMPT_STYLE,
+    defaultPromptStyle,
+    type PromptStyle,
+    type PromptStyleClass,
+    parameterBillions,
+    promptStyleClass,
+    renderPromptStyle,
+    SMALL_MODEL_BILLIONS,
+} from "./model/prompt-style.ts"
 export type {
     ChatChunk,
     ChatMessage,
@@ -248,6 +258,15 @@ export type {
     WorkspaceWriteTarget,
 } from "./tools/types.ts"
 export { VERSION } from "./version.ts"
+export {
+    type AuthoringInput,
+    BULLET_DENSITY_LIMIT,
+    checkAuthoring,
+    EXAMPLE_OVERLAP_LIMIT,
+    EXAMPLES_MAX,
+    EXAMPLES_MIN,
+    PROHIBITION_LIMIT,
+} from "./workspace/authoring.ts"
 export type { Editable, Frontmatter, ParsedFile, Tier } from "./workspace/frontmatter.ts"
 export { parseWorkspaceFile, strip as stripWorkspaceText } from "./workspace/frontmatter.ts"
 export {

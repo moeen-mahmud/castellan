@@ -29,6 +29,7 @@ import { runCommand } from "#run"
 import { sessionsCommand } from "#sessions"
 import { toolsCommand } from "#tools"
 import { validateCommand } from "#validate"
+import { workspaceCommand } from "#workspace"
 
 function report(error: unknown): number {
     if (error instanceof HarnessError) {
@@ -104,6 +105,13 @@ async function dispatch(argv: readonly string[]): Promise<number> {
 
         case "validate":
             return validateCommand({ manifestPath, json: flags.bool("json") })
+
+        case "workspace":
+            return workspaceCommand({
+                manifestPath,
+                json: flags.bool("json"),
+                strict: flags.bool("strict"),
+            })
 
         case "agents":
             return await agentsCommand({ manifestPaths: positionals, json: flags.bool("json") })

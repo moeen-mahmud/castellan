@@ -18,6 +18,7 @@ import { newTurnId } from "../loop/ids.ts"
 import { runTurn, type ToolRuntime, type TurnResult } from "../loop/turn.ts"
 import type { LoadedManifest } from "../manifest/load.ts"
 import type { AgentManifest } from "../manifest/schema.ts"
+import type { PromptStyle } from "../model/prompt-style.ts"
 import type { ChatMessage } from "../model/provider.ts"
 import { type ResolvedRoles, type ResolveRolesOptions, resolveRoles } from "../model/roles.ts"
 import type { SessionSummary, Store, TurnRecord } from "../store/store.ts"
@@ -157,8 +158,10 @@ export class Agent {
         store: Store,
         options: AgentCreateOptions = {},
     ): Agent {
-        const { workspace, warnings } = readWorkspace(loaded)
+        // Roles first: the workspace is rendered for the model in front of it, so the resolved
+        // `promptStyle` has to exist before the files are read.
         const roles = resolveRoles(loaded.manifest, options)
+        const { workspace, warnings } = readWorkspace(loaded, roles.main.capabilities.promptStyle)
         return new Agent({
             loaded,
             roles,
@@ -313,10 +316,13 @@ export class Agent {
  * about size and the rule failure is about count, and an author over on both should hear about the
  * size first — it is the one that is mechanically true regardless of which model is configured.
  */
-function readWorkspace(loaded: LoadedManifest): { workspace: Workspace; warnings: ErrorDetail[] } {
+function readWorkspace(
+    loaded: LoadedManifest,
+    style: PromptStyle,
+): { workspace: Workspace; warnings: ErrorDetail[] } {
     const { context } = loaded.manifest
     const plan = planWorkspace(context, loaded.dir)
-    const workspace = loadWorkspace({ refs: plan.refs, budgets: context.budgets })
+    const workspace = loadWorkspace({ refs: plan.refs, budgets: context.budgets, style })
     const warnings = [...plan.warnings]
 
     // Counted across static and reminder together, because the model does not know they came from

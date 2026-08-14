@@ -54,6 +54,22 @@ export interface ChatRequest {
     readonly temperature?: number
     readonly topP?: number
     readonly maxTokens?: number
+    /**
+     * How much the model may deliberate before answering. OpenAI-standard, sent as
+     * `reasoning_effort`, omitted entirely when unset.
+     *
+     * `none` is the one that earns this field. Measured against `qwen3.5:9b` on 2026-08-14, same
+     * prompt and same machine: with reasoning on, six simultaneous rules produced 2,000 completion
+     * tokens of deliberation in 104 s and **empty content** — the model reasoned past its own
+     * budget and never answered. With `reasoning_effort: "none"`, ten tokens in 2.1 s, obeying all
+     * six rules. Fifty times faster and the only one of the two that replied at all.
+     *
+     * Not every endpoint honours it, and the ones that do not are silent about it rather than
+     * refusing — `chat_template_kwargs` and `think` were both accepted and ignored by the same
+     * endpoint in the same test. So treat it as a request, verify it per endpoint, and never assume
+     * a lower setting took effect.
+     */
+    readonly reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high"
     /** Omitted entirely under a text dialect, so the request body is unchanged from Phase 1. */
     readonly tools?: readonly ToolDefinition[]
 }

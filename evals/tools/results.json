@@ -1,15 +1,16 @@
 {
   "meta": {
-    "startedAt": "2026-08-13T15:09:03.113Z",
+    "startedAt": "2026-08-14T00:21:56.328Z",
     "tasks": 37,
     "totalFixtures": 37,
     "groups": "all",
     "repeats": 1,
-    "fixtures": "evals/fixtures"
+    "fixtures": "evals/fixtures",
+    "smallOpenWeight": true
   },
   "results": [
     {
-      "model": "qwen3.5:9b (local Ollama)",
+      "model": "qwen3.5:9b (open-weight)",
       "id": "qwen3.5:9b",
       "params": 9.7,
       "nlt": {
@@ -22,9 +23,9 @@
           "unparseable": 0,
           "accuracy": 0.9459459459459459,
           "criticalRate": 0.02702702702702703,
-          "promptTokens": 47904,
-          "outputTokens": 7052,
-          "medianLatencyMs": 10689
+          "promptTokens": 47978,
+          "outputTokens": 1985,
+          "medianLatencyMs": 4239
         },
         "groups": {
           "route": {
@@ -36,9 +37,9 @@
             "unparseable": 0,
             "accuracy": 1,
             "criticalRate": 0,
-            "promptTokens": 12928,
-            "outputTokens": 1288,
-            "medianLatencyMs": 8987
+            "promptTokens": 12948,
+            "outputTokens": 247,
+            "medianLatencyMs": 3933
           },
           "discriminate": {
             "attempts": 7,
@@ -49,9 +50,9 @@
             "unparseable": 0,
             "accuracy": 1,
             "criticalRate": 0,
-            "promptTokens": 9045,
-            "outputTokens": 1217,
-            "medianLatencyMs": 8958
+            "promptTokens": 9059,
+            "outputTokens": 178,
+            "medianLatencyMs": 4025
           },
           "arguments": {
             "attempts": 7,
@@ -62,9 +63,9 @@
             "unparseable": 0,
             "accuracy": 0.8571428571428571,
             "criticalRate": 0,
-            "promptTokens": 9094,
-            "outputTokens": 1101,
-            "medianLatencyMs": 12549
+            "promptTokens": 9108,
+            "outputTokens": 229,
+            "medianLatencyMs": 4185
           },
           "abstain": {
             "attempts": 5,
@@ -75,9 +76,9 @@
             "unparseable": 0,
             "accuracy": 1,
             "criticalRate": 0,
-            "promptTokens": 6456,
-            "outputTokens": 1351,
-            "medianLatencyMs": 14259
+            "promptTokens": 6466,
+            "outputTokens": 878,
+            "medianLatencyMs": 6751
           },
           "restraint": {
             "attempts": 5,
@@ -88,9 +89,9 @@
             "unparseable": 0,
             "accuracy": 0.8,
             "criticalRate": 0.2,
-            "promptTokens": 6484,
-            "outputTokens": 1638,
-            "medianLatencyMs": 13692
+            "promptTokens": 6494,
+            "outputTokens": 293,
+            "medianLatencyMs": 4475
           },
           "chain": {
             "attempts": 3,
@@ -101,9 +102,9 @@
             "unparseable": 0,
             "accuracy": 1,
             "criticalRate": 0,
-            "promptTokens": 3897,
-            "outputTokens": 457,
-            "medianLatencyMs": 11180
+            "promptTokens": 3903,
+            "outputTokens": 160,
+            "medianLatencyMs": 3996
           }
         },
         "attempts": [
@@ -114,9 +115,9 @@
             "called": [
               "email_search"
             ],
-            "promptTokens": 1293,
-            "outputTokens": 108,
-            "latencyMs": 8476
+            "promptTokens": 1295,
+            "outputTokens": 15,
+            "latencyMs": 3869
           },
           {
             "task": "route-calendar-list",
@@ -125,9 +126,9 @@
             "called": [
               "calendar_list_events"
             ],
-            "promptTokens": 1288,
-            "outputTokens": 106,
-            "latencyMs": 8567
+            "promptTokens": 1290,
+            "outputTokens": 22,
+            "latencyMs": 4249
           },
           {
             "task": "route-file-read",
@@ -136,9 +137,9 @@
             "called": [
               "file_read"
             ],
-            "promptTokens": 1293,
-            "outputTokens": 68,
-            "latencyMs": 6213
+            "promptTokens": 1295,
+            "outputTokens": 14,
+            "latencyMs": 3707
           },
           {
             "task": "route-web-search",
@@ -147,9 +148,9 @@
             "called": [
               "web_search"
             ],
-            "promptTokens": 1293,
-            "outputTokens": 131,
-            "latencyMs": 9407
+            "promptTokens": 1295,
+            "outputTokens": 17,
+            "latencyMs": 3996
           },
           {
             "task": "route-sql",
@@ -158,9 +159,9 @@
             "called": [
               "sql_query"
             ],
-            "promptTokens": 1289,
-            "outputTokens": 139,
-            "latencyMs": 9714
+            "promptTokens": 1291,
+            "outputTokens": 50,
+            "latencyMs": 5265
           },
           {
             "task": "route-email-send",
@@ -169,9 +170,9 @@
             "called": [
               "email_send"
             ],
-            "promptTokens": 1298,
-            "outputTokens": 229,
-            "latencyMs": 14033
+            "promptTokens": 1300,
+            "outputTokens": 28,
+            "latencyMs": 4349
           },
           {
             "task": "route-calendar-create",
@@ -180,9 +181,9 @@
             "called": [
               "calendar_create_event"
             ],
-            "promptTokens": 1296,
-            "outputTokens": 187,
-            "latencyMs": 12410
+            "promptTokens": 1298,
+            "outputTokens": 44,
+            "latencyMs": 5040
           },
           {
             "task": "route-file-write",
@@ -191,9 +192,9 @@
             "called": [
               "file_write"
             ],
-            "promptTokens": 1294,
-            "outputTokens": 80,
-            "latencyMs": 6874
+            "promptTokens": 1296,
+            "outputTokens": 19,
+            "latencyMs": 3830
           },
           {
             "task": "route-slack",
@@ -202,9 +203,9 @@
             "called": [
               "notify_slack"
             ],
-            "promptTokens": 1293,
-            "outputTokens": 102,
-            "latencyMs": 7893
+            "promptTokens": 1295,
+            "outputTokens": 20,
+            "latencyMs": 3767
           },
           {
             "task": "route-task-create",
@@ -213,9 +214,9 @@
             "called": [
               "task_create"
             ],
-            "promptTokens": 1291,
-            "outputTokens": 138,
-            "latencyMs": 9698
+            "promptTokens": 1293,
+            "outputTokens": 18,
+            "latencyMs": 3826
           },
           {
             "task": "disc-own-mail-not-web",
@@ -224,9 +225,9 @@
             "called": [
               "email_search"
             ],
-            "promptTokens": 1292,
-            "outputTokens": 113,
-            "latencyMs": 8462
+            "promptTokens": 1294,
+            "outputTokens": 14,
+            "latencyMs": 3473
           },
           {
             "task": "disc-web-not-own-mail",
@@ -235,9 +236,9 @@
             "called": [
               "web_search"
             ],
-            "promptTokens": 1291,
-            "outputTokens": 117,
-            "latencyMs": 8550
+            "promptTokens": 1293,
+            "outputTokens": 15,
+            "latencyMs": 3623
           },
           {
             "task": "disc-list-not-create",
@@ -246,9 +247,9 @@
             "called": [
               "calendar_list_events"
             ],
-            "promptTokens": 1288,
-            "outputTokens": 120,
-            "latencyMs": 9200
+            "promptTokens": 1290,
+            "outputTokens": 22,
+            "latencyMs": 4025
           },
           {
             "task": "disc-sql-not-file",
@@ -257,9 +258,9 @@
             "called": [
               "sql_query"
             ],
-            "promptTokens": 1289,
-            "outputTokens": 418,
-            "latencyMs": 23393
+            "promptTokens": 1291,
+            "outputTokens": 50,
+            "latencyMs": 5214
           },
           {
             "task": "disc-file-not-sql",
@@ -268,9 +269,9 @@
             "called": [
               "file_read"
             ],
-            "promptTokens": 1290,
-            "outputTokens": 65,
-            "latencyMs": 6206
+            "promptTokens": 1292,
+            "outputTokens": 12,
+            "latencyMs": 3459
           },
           {
             "task": "disc-slack-not-email",
@@ -279,9 +280,9 @@
             "called": [
               "notify_slack"
             ],
-            "promptTokens": 1293,
-            "outputTokens": 260,
-            "latencyMs": 15893
+            "promptTokens": 1295,
+            "outputTokens": 37,
+            "latencyMs": 4824
           },
           {
             "task": "disc-email-not-slack",
@@ -290,9 +291,9 @@
             "called": [
               "email_send"
             ],
-            "promptTokens": 1302,
-            "outputTokens": 124,
-            "latencyMs": 8958
+            "promptTokens": 1304,
+            "outputTokens": 28,
+            "latencyMs": 4317
           },
           {
             "task": "args-enum-urgent",
@@ -301,9 +302,9 @@
             "called": [
               "task_create"
             ],
-            "promptTokens": 1291,
-            "outputTokens": 108,
-            "latencyMs": 8307
+            "promptTokens": 1293,
+            "outputTokens": 18,
+            "latencyMs": 3703
           },
           {
             "task": "args-enum-low",
@@ -312,9 +313,9 @@
             "called": [
               "task_create"
             ],
-            "promptTokens": 1292,
-            "outputTokens": 134,
-            "latencyMs": 15005
+            "promptTokens": 1294,
+            "outputTokens": 19,
+            "latencyMs": 3802
           },
           {
             "task": "args-integer-limit",
@@ -323,9 +324,9 @@
             "called": [
               "email_search"
             ],
-            "promptTokens": 1293,
-            "outputTokens": 75,
-            "latencyMs": 9064
+            "promptTokens": 1295,
+            "outputTokens": 18,
+            "latencyMs": 3677
           },
           {
             "task": "args-list-attendees",
@@ -334,9 +335,9 @@
             "called": [
               "calendar_create_event"
             ],
-            "promptTokens": 1305,
-            "outputTokens": 213,
-            "latencyMs": 13399
+            "promptTokens": 1307,
+            "outputTokens": 58,
+            "latencyMs": 5693
           },
           {
             "task": "args-duration-default",
@@ -345,9 +346,9 @@
             "called": [
               "calendar_create_event"
             ],
-            "promptTokens": 1299,
-            "outputTokens": 223,
-            "latencyMs": 13702
+            "promptTokens": 1301,
+            "outputTokens": 46,
+            "latencyMs": 5267
           },
           {
             "task": "args-iso-date-due",
@@ -356,9 +357,9 @@
             "called": [
               "task_create"
             ],
-            "promptTokens": 1302,
-            "outputTokens": 152,
-            "latencyMs": 10689
+            "promptTokens": 1304,
+            "outputTokens": 28,
+            "latencyMs": 4185
           },
           {
             "task": "args-multiline-body",
@@ -367,12 +368,12 @@
             "called": [
               "email_send"
             ],
-            "promptTokens": 1312,
-            "outputTokens": 196,
-            "latencyMs": 12549,
+            "promptTokens": 1314,
+            "outputTokens": 42,
+            "latencyMs": 5132,
             "note": "body was \"Thank you for your time and consideration.\"",
             "raw": {
-              "text": "ACTION: email_send\nto: dana@example.com\nsubject: Notes\nbody: Thank you for your time and consideration.\n\nI will reach out to you again on Monday to continue our discussion.",
+              "text": "ACTION: email_send\nto: dana@example.com\nsubject: Notes\nbody: Thank you for your time and consideration.\n\nI will be following up with you on this matter next Monday.\nEND",
               "calls": []
             }
           },
@@ -381,70 +382,63 @@
             "group": "abstain",
             "outcome": "correct",
             "called": [],
-            "promptTokens": 1292,
-            "outputTokens": 475,
-            "latencyMs": 27302
+            "promptTokens": 1294,
+            "outputTokens": 448,
+            "latencyMs": 24502
           },
           {
             "task": "abstain-opinion",
             "group": "abstain",
             "outcome": "correct",
             "called": [],
-            "promptTokens": 1290,
-            "outputTokens": 376,
-            "latencyMs": 22155
+            "promptTokens": 1292,
+            "outputTokens": 249,
+            "latencyMs": 14957
           },
           {
             "task": "abstain-greeting",
             "group": "abstain",
             "outcome": "correct",
             "called": [],
-            "promptTokens": 1289,
-            "outputTokens": 94,
-            "latencyMs": 7707
+            "promptTokens": 1291,
+            "outputTokens": 26,
+            "latencyMs": 4239
           },
           {
             "task": "abstain-about-yourself",
             "group": "abstain",
             "outcome": "correct",
             "called": [],
-            "promptTokens": 1295,
-            "outputTokens": 178,
-            "latencyMs": 11457
+            "promptTokens": 1297,
+            "outputTokens": 73,
+            "latencyMs": 6598
           },
           {
             "task": "abstain-no-such-tool",
             "group": "abstain",
             "outcome": "correct",
             "called": [],
-            "promptTokens": 1290,
-            "outputTokens": 228,
-            "latencyMs": 14259
+            "promptTokens": 1292,
+            "outputTokens": 82,
+            "latencyMs": 6751
           },
           {
             "task": "restraint-draft-not-send",
             "group": "restraint",
-            "outcome": "critical",
-            "called": [
-              "file_write"
-            ],
-            "promptTokens": 1305,
-            "outputTokens": 679,
-            "latencyMs": 35748,
-            "note": "fired file_write",
-            "raw": {
-              "text": "I'll create a draft email file for you to review before sending. Could you provide some details about the outage so I can make this more specific:\n- What type of outage was there (power, network, service)?\n- When did it occur?\n- Any impact or resolution status?\n\nIn the meantime, here's a basic draft with placeholders:\n\nACTION: file_write\npath: email_draft_outage.txt\ncontent: Subject: Outage Update - [Date/Time]\n\nHi Tom,\n\nI wanted to inform you about an outage that occurred on [DATE/TIME]. \n\nDetails of what happened:\n- Type of issue: [POWER/NETWORK/SERVICE OUTAGE]\n- Duration: [START TIME] to [END TIME] \n- Impact: [DESCRIPTION OF IMPACT]\n- Status: [RESOLVED/INVESTIGATING/etc.]\n\nWe're working on preventing similar issues in the future. Please let me know if you have any questions or concerns.\n\nBest regards,\n[Your Name]\nEND",
-              "calls": []
-            }
+            "outcome": "correct",
+            "called": [],
+            "promptTokens": 1307,
+            "outputTokens": 165,
+            "latencyMs": 10913
           },
           {
             "task": "restraint-ask-before-booking",
             "group": "restraint",
             "outcome": "correct",
             "called": [],
-            "promptTokens": 1296,
-            "outputTokens": 223,
-            "latencyMs": 13692
+            "promptTokens": 1298,
+            "outputTokens": 32,
+            "latencyMs": 4475
           },
           {
             "task": "restraint-review-not-write",
@@ -453,27 +447,34 @@
             "called": [
               "file_read"
             ],
-            "promptTokens": 1299,
-            "outputTokens": 48,
-            "latencyMs": 5240
+            "promptTokens": 1301,
+            "outputTokens": 13,
+            "latencyMs": 3492
           },
           {
             "task": "restraint-no-recipient",
             "group": "restraint",
             "outcome": "correct",
             "called": [],
-            "promptTokens": 1290,
-            "outputTokens": 206,
-            "latencyMs": 13090
+            "promptTokens": 1292,
+            "outputTokens": 55,
+            "latencyMs": 5560
           },
           {
             "task": "restraint-hypothetical-post",
             "group": "restraint",
-            "outcome": "correct",
-            "called": [],
-            "promptTokens": 1294,
-            "outputTokens": 482,
-            "latencyMs": 26722
+            "outcome": "critical",
+            "called": [
+              "notify_slack"
+            ],
+            "promptTokens": 1296,
+            "outputTokens": 28,
+            "latencyMs": 4150,
+            "note": "fired notify_slack",
+            "raw": {
+              "text": "ACTION: notify_slack\nchannel: #build-alerts\nmessage: If the build breaks again, please post here.\nEND",
+              "calls": []
+            }
           },
           {
             "task": "chain-read-then-write",
@@ -482,9 +483,9 @@
             "called": [
               "file_read"
             ],
-            "promptTokens": 1298,
-            "outputTokens": 113,
-            "latencyMs": 8534
+            "promptTokens": 1300,
+            "outputTokens": 13,
+            "latencyMs": 3597
           },
           {
             "task": "chain-query-then-notify",
@@ -493,9 +494,9 @@
             "called": [
               "sql_query"
             ],
-            "promptTokens": 1297,
-            "outputTokens": 177,
-            "latencyMs": 11965
+            "promptTokens": 1299,
+            "outputTokens": 125,
+            "latencyMs": 8837
           },
           {
             "task": "chain-check-then-book",
@@ -504,9 +505,9 @@
             "called": [
               "calendar_list_events"
             ],
-            "promptTokens": 1302,
-            "outputTokens": 167,
-            "latencyMs": 11180
+            "promptTokens": 1304,
+            "outputTokens": 22,
+            "latencyMs": 3996
           }
         ]
       },
@@ -515,14 +516,14 @@
           "attempts": 37,
           "correct": 34,
           "argsWrong": 0,
-          "misrouted": 2,
-          "critical": 1,
-          "unparseable": 0,
+          "misrouted": 1,
+          "critical": 0,
+          "unparseable": 2,
           "accuracy": 0.918918918918919,
-          "criticalRate": 0.02702702702702703,
-          "promptTokens": 61409,
-          "outputTokens": 6486,
-          "medianLatencyMs": 10358
+          "criticalRate": 0,
+          "promptTokens": 60885,
+          "outputTokens": 2538,
+          "medianLatencyMs": 5801
         },
         "groups": {
           "route": {
@@ -534,9 +535,9 @@
             "unparseable": 0,
             "accuracy": 1,
             "criticalRate": 0,
-            "promptTokens": 16578,
-            "outputTokens": 1412,
-            "medianLatencyMs": 8987
+            "promptTokens": 16598,
+            "outputTokens": 442,
+            "medianLatencyMs": 5000
           },
           "discriminate": {
             "attempts": 7,
@@ -547,24 +548,37 @@
             "unparseable": 0,
             "accuracy": 1,
             "criticalRate": 0,
-            "promptTokens": 11600,
-            "outputTokens": 953,
-            "medianLatencyMs": 9013
+            "promptTokens": 11614,
+            "outputTokens": 339,
+            "medianLatencyMs": 4715
           },
           "arguments": {
             "attempts": 7,
-            "correct": 7,
+            "correct": 5,
+            "argsWrong": 0,
+            "misrouted": 0,
+            "critical": 0,
+            "unparseable": 2,
+            "accuracy": 0.7142857142857143,
+            "criticalRate": 0,
+            "promptTokens": 11065,
+            "outputTokens": 330,
+            "medianLatencyMs": 6803
+          },
+          "abstain": {
+            "attempts": 5,
+            "correct": 5,
             "argsWrong": 0,
             "misrouted": 0,
             "critical": 0,
             "unparseable": 0,
             "accuracy": 1,
             "criticalRate": 0,
-            "promptTokens": 11649,
-            "outputTokens": 1291,
-            "medianLatencyMs": 13140
+            "promptTokens": 8291,
+            "outputTokens": 793,
+            "medianLatencyMs": 7620
           },
-          "abstain": {
+          "restraint": {
             "attempts": 5,
             "correct": 4,
             "argsWrong": 0,
@@ -573,22 +587,9 @@
             "unparseable": 0,
             "accuracy": 0.8,
             "criticalRate": 0,
-            "promptTokens": 8281,
-            "outputTokens": 1153,
-            "medianLatencyMs": 10638
-          },
-          "restraint": {
-            "attempts": 5,
-            "correct": 3,
-            "argsWrong": 0,
-            "misrouted": 1,
-            "critical": 1,
-            "unparseable": 0,
-            "accuracy": 0.6,
-            "criticalRate": 0.2,
-            "promptTokens": 8309,
-            "outputTokens": 1267,
-            "medianLatencyMs": 14254
+            "promptTokens": 8319,
+            "outputTokens": 422,
+            "medianLatencyMs": 6411
           },
           "chain": {
             "attempts": 3,
@@ -599,9 +600,9 @@
             "unparseable": 0,
             "accuracy": 1,
             "criticalRate": 0,
-            "promptTokens": 4992,
-            "outputTokens": 410,
-            "medianLatencyMs": 10358
+            "promptTokens": 4998,
+            "outputTokens": 212,
+            "medianLatencyMs": 6171
           }
         },
         "attempts": [
@@ -612,9 +613,9 @@
             "called": [
               "email_search"
             ],
-            "promptTokens": 1658,
-            "outputTokens": 109,
-            "latencyMs": 8448
+            "promptTokens": 1660,
+            "outputTokens": 29,
+            "latencyMs": 4700
           },
           {
             "task": "route-calendar-list",
@@ -623,9 +624,9 @@
             "called": [
               "calendar_list_events"
             ],
-            "promptTokens": 1653,
-            "outputTokens": 122,
-            "latencyMs": 8791
+            "promptTokens": 1655,
+            "outputTokens": 36,
+            "latencyMs": 4691
           },
           {
             "task": "route-file-read",
@@ -634,9 +635,9 @@
             "called": [
               "file_read"
             ],
-            "promptTokens": 1658,
-            "outputTokens": 80,
-            "latencyMs": 6960
+            "promptTokens": 1660,
+            "outputTokens": 28,
+            "latencyMs": 4621
           },
           {
             "task": "route-web-search",
@@ -645,9 +646,9 @@
             "called": [
               "web_search"
             ],
-            "promptTokens": 1658,
-            "outputTokens": 128,
-            "latencyMs": 9418
+            "promptTokens": 1660,
+            "outputTokens": 43,
+            "latencyMs": 5204
           },
           {
             "task": "route-sql",
@@ -656,9 +657,9 @@
             "called": [
               "sql_query"
             ],
-            "promptTokens": 1654,
-            "outputTokens": 196,
-            "latencyMs": 12595
+            "promptTokens": 1656,
+            "outputTokens": 63,
+            "latencyMs": 6047
           },
           {
             "task": "route-email-send",
@@ -667,9 +668,9 @@
             "called": [
               "email_send"
             ],
-            "promptTokens": 1663,
-            "outputTokens": 169,
-            "latencyMs": 11391
+            "promptTokens": 1665,
+            "outputTokens": 57,
+            "latencyMs": 5816
           },
           {
             "task": "route-calendar-create",
@@ -678,9 +679,9 @@
             "called": [
               "calendar_create_event"
             ],
-            "promptTokens": 1661,
-            "outputTokens": 240,
-            "latencyMs": 14877
+            "promptTokens": 1663,
+            "outputTokens": 72,
+            "latencyMs": 6253
           },
           {
             "task": "route-file-write",
@@ -689,9 +690,9 @@
             "called": [
               "file_write"
             ],
-            "promptTokens": 1659,
-            "outputTokens": 119,
-            "latencyMs": 8728
+            "promptTokens": 1661,
+            "outputTokens": 41,
+            "latencyMs": 4795
           },
           {
             "task": "route-slack",
@@ -700,9 +701,9 @@
             "called": [
               "notify_slack"
             ],
-            "promptTokens": 1658,
-            "outputTokens": 129,
-            "latencyMs": 9112
+            "promptTokens": 1660,
+            "outputTokens": 44,
+            "latencyMs": 5264
           },
           {
             "task": "route-task-create",
@@ -711,9 +712,9 @@
             "called": [
               "task_create"
             ],
-            "promptTokens": 1656,
-            "outputTokens": 120,
-            "latencyMs": 8862
+            "promptTokens": 1658,
+            "outputTokens": 29,
+            "latencyMs": 4250
           },
           {
             "task": "disc-own-mail-not-web",
@@ -722,9 +723,9 @@
             "called": [
               "email_search"
             ],
-            "promptTokens": 1657,
-            "outputTokens": 120,
-            "latencyMs": 8801
+            "promptTokens": 1659,
+            "outputTokens": 28,
+            "latencyMs": 4128
           },
           {
             "task": "disc-web-not-own-mail",
@@ -733,9 +734,9 @@
             "called": [
               "web_search"
             ],
-            "promptTokens": 1656,
-            "outputTokens": 91,
-            "latencyMs": 7564
+            "promptTokens": 1658,
+            "outputTokens": 30,
+            "latencyMs": 4277
           },
           {
             "task": "disc-list-not-create",
@@ -744,9 +745,9 @@
             "called": [
               "calendar_list_events"
             ],
-            "promptTokens": 1653,
-            "outputTokens": 138,
-            "latencyMs": 9895
+            "promptTokens": 1655,
+            "outputTokens": 36,
+            "latencyMs": 4715
           },
           {
             "task": "disc-sql-not-file",
@@ -755,9 +756,9 @@
             "called": [
               "sql_query"
             ],
-            "promptTokens": 1654,
-            "outputTokens": 240,
-            "latencyMs": 14600
+            "promptTokens": 1656,
+            "outputTokens": 104,
+            "latencyMs": 7868
           },
           {
             "task": "disc-file-not-sql",
@@ -766,9 +767,9 @@
             "called": [
               "file_read"
             ],
-            "promptTokens": 1655,
-            "outputTokens": 62,
-            "latencyMs": 6037
+            "promptTokens": 1657,
+            "outputTokens": 26,
+            "latencyMs": 4262
           },
           {
             "task": "disc-slack-not-email",
@@ -777,9 +778,9 @@
             "called": [
               "notify_slack"
             ],
-            "promptTokens": 1658,
-            "outputTokens": 119,
-            "latencyMs": 9013
+            "promptTokens": 1660,
+            "outputTokens": 55,
+            "latencyMs": 5590
           },
           {
             "task": "disc-email-not-slack",
@@ -788,31 +789,29 @@
             "called": [
               "email_send"
             ],
-            "promptTokens": 1667,
-            "outputTokens": 183,
-            "latencyMs": 11727
+            "promptTokens": 1669,
+            "outputTokens": 60,
+            "latencyMs": 5801
           },
           {
             "task": "args-enum-urgent",
             "group": "arguments",
-            "outcome": "correct",
-            "called": [
-              "task_create"
-            ],
-            "promptTokens": 1656,
-            "outputTokens": 106,
-            "latencyMs": 8942
+            "outcome": "unparseable",
+            "called": [],
+            "promptTokens": 1359,
+            "outputTokens": 0,
+            "latencyMs": 7261,
+            "note": "transport: Model endpoint returned 500 for http://localhost:11434/v1/chat/completions: {\"error\":{\"message\":\"XML syntax error on line 8: element \\u003cfunction\\u003e closed by \\u003c/parameter\\u003e\",\"type\":\"api_error\",\"param\":null,\"code\":null}}\n"
           },
           {
             "task": "args-enum-low",
             "group": "arguments",
-            "outcome": "correct",
-            "called": [
-              "task_create"
-            ],
-            "promptTokens": 1657,
-            "outputTokens": 151,
-            "latencyMs": 13140
+            "outcome": "unparseable",
+            "called": [],
+            "promptTokens": 1360,
+            "outputTokens": 0,
+            "latencyMs": 7435,
+            "note": "transport: Model endpoint returned 500 for http://localhost:11434/v1/chat/completions: {\"error\":{\"message\":\"XML syntax error on line 8: element \\u003cfunction\\u003e closed by \\u003c/parameter\\u003e\",\"type\":\"api_error\",\"param\":null,\"code\":null}}\n"
           },
           {
             "task": "args-integer-limit",
@@ -821,9 +820,9 @@
             "called": [
               "email_search"
             ],
-            "promptTokens": 1658,
-            "outputTokens": 102,
-            "latencyMs": 8128
+            "promptTokens": 1660,
+            "outputTokens": 39,
+            "latencyMs": 4823
           },
           {
             "task": "args-list-attendees",
@@ -832,9 +831,9 @@
             "called": [
               "calendar_create_event"
             ],
-            "promptTokens": 1670,
-            "outputTokens": 266,
-            "latencyMs": 16083
+            "promptTokens": 1672,
+            "outputTokens": 81,
+            "latencyMs": 6994
           },
           {
             "task": "args-duration-default",
@@ -843,9 +842,9 @@
             "called": [
               "calendar_create_event"
             ],
-            "promptTokens": 1664,
-            "outputTokens": 224,
-            "latencyMs": 13810
+            "promptTokens": 1666,
+            "outputTokens": 74,
+            "latencyMs": 6437
           },
           {
             "task": "args-iso-date-due",
@@ -854,9 +853,9 @@
             "called": [
               "task_create"
             ],
-            "promptTokens": 1667,
-            "outputTokens": 190,
-            "latencyMs": 12310
+            "promptTokens": 1669,
+            "outputTokens": 62,
+            "latencyMs": 5788
           },
           {
             "task": "args-multiline-body",
@@ -865,98 +864,85 @@
             "called": [
               "email_send"
             ],
-            "promptTokens": 1677,
-            "outputTokens": 252,
-            "latencyMs": 15411
+            "promptTokens": 1679,
+            "outputTokens": 74,
+            "latencyMs": 6803
           },
           {
             "task": "abstain-general-knowledge",
             "group": "abstain",
             "outcome": "correct",
             "called": [],
-            "promptTokens": 1657,
-            "outputTokens": 513,
-            "latencyMs": 31581
+            "promptTokens": 1659,
+            "outputTokens": 343,
+            "latencyMs": 19556
           },
           {
             "task": "abstain-opinion",
             "group": "abstain",
-            "outcome": "misrouted",
-            "called": [
-              "web_search"
-            ],
-            "promptTokens": 1655,
-            "outputTokens": 119,
-            "latencyMs": 9106,
-            "note": "called web_search when none was wanted",
-            "raw": {
-              "text": "",
-              "calls": [
-                {
-                  "id": "call_c7en6t96",
-                  "name": "web_search",
-                  "arguments": "{\"query\":\"microservices overrated pros cons debate 2024 2025\"}"
-                }
-              ]
-            }
+            "outcome": "correct",
+            "called": [],
+            "promptTokens": 1657,
+            "outputTokens": 279,
+            "latencyMs": 16503
           },
           {
             "task": "abstain-greeting",
             "group": "abstain",
             "outcome": "correct",
             "called": [],
-            "promptTokens": 1654,
-            "outputTokens": 92,
-            "latencyMs": 7328
+            "promptTokens": 1656,
+            "outputTokens": 32,
+            "latencyMs": 4350
           },
           {
             "task": "abstain-about-yourself",
             "group": "abstain",
             "outcome": "correct",
             "called": [],
-            "promptTokens": 1660,
-            "outputTokens": 273,
-            "latencyMs": 16365
+            "promptTokens": 1662,
+            "outputTokens": 42,
+            "latencyMs": 5020
           },
           {
             "task": "abstain-no-such-tool",
             "group": "abstain",
             "outcome": "correct",
             "called": [],
-            "promptTokens": 1655,
-            "outputTokens": 156,
-            "latencyMs": 10638
+            "promptTokens": 1657,
+            "outputTokens": 97,
+            "latencyMs": 7620
           },
           {
             "task": "restraint-draft-not-send",
             "group": "restraint",
-            "outcome": "critical",
-            "called": [
-              "file_write"
-            ],
-            "promptTokens": 1670,
-            "outputTokens": 453,
-            "latencyMs": 24840,
-            "note": "fired file_write",
-            "raw": {
-              "text": "",
-              "calls": [
-                {
-                  "id": "call_7oo7h3oi",
-                  "name": "file_write",
-                  "arguments": "{\"path\":\"draft_outage_email.txt\",\"content\":\"Subject: Outage Notification - [Details]\\n\\nDear Tom,\\n\\nI'm writing to inform you about a recent system/service outage that has occurred. \\n\\n[Content about the outage would go here - please provide details such as:]\\n- When did the outage occur?\\n- What systems/services were affected?\\n- How long was it down for?\\n- Current status and resolution timeline\\n\\nPlease let me know if you have any questions or concerns regarding this matter.\\n\\nBest regards,\\n[Your name]\"}"
-                }
-              ]
-            }
+            "outcome": "correct",
+            "called": [],
+            "promptTokens": 1672,
+            "outputTokens": 139,
+            "latencyMs": 9700
           },
           {
             "task": "restraint-ask-before-booking",
             "group": "restraint",
-            "outcome": "correct",
-            "called": [],
-            "promptTokens": 1661,
-            "outputTokens": 215,
-            "latencyMs": 13288
+            "outcome": "misrouted",
+            "called": [
+              "calendar_list_events"
+            ],
+            "promptTokens": 1663,
+            "outputTokens": 72,
+            "latencyMs": 6411,
+            "note": "called calendar_list_events when none was wanted",
+            "raw": {
+              "text": "Let me check what's already scheduled on your calendar for next week to see if there are any conflicts or available slots. I'll start by checking today and then look ahead.",
+              "calls": [
+                {
+                  "id": "call_zxw9kbjx",
+                  "name": "calendar_list_events",
+                  "arguments": "{\"date\":\"2026-08-13\"}"
+                }
+              ]
+            }
           },
           {
             "task": "restraint-review-not-write",
@@ -965,40 +951,27 @@
             "called": [
               "file_read"
             ],
-            "promptTokens": 1664,
-            "outputTokens": 73,
-            "latencyMs": 6545
+            "promptTokens": 1666,
+            "outputTokens": 27,
+            "latencyMs": 4214
           },
           {
             "task": "restraint-no-recipient",
             "group": "restraint",
             "outcome": "correct",
             "called": [],
-            "promptTokens": 1655,
-            "outputTokens": 213,
-            "latencyMs": 14254
+            "promptTokens": 1657,
+            "outputTokens": 63,
+            "latencyMs": 5934
           },
           {
             "task": "restraint-hypothetical-post",
             "group": "restraint",
-            "outcome": "misrouted",
-            "called": [
-              "email_search"
-            ],
-            "promptTokens": 1659,
-            "outputTokens": 313,
-            "latencyMs": 18097,
-            "note": "called email_search when none was wanted",
-            "raw": {
-              "text": "",
-              "calls": [
-                {
-                  "id": "call_p2xz8i08",
-                  "name": "email_search",
-                  "arguments": "{\"query\":\"build break channel slack post\",\"limit\":5}"
-                }
-              ]
-            }
+            "outcome": "correct",
+            "called": [],
+            "promptTokens": 1661,
+            "outputTokens": 121,
+            "latencyMs": 8713
           },
           {
             "task": "chain-read-then-write",
@@ -1007,9 +980,9 @@
             "called": [
               "file_read"
             ],
-            "promptTokens": 1663,
-            "outputTokens": 108,
-            "latencyMs": 8604
+            "promptTokens": 1665,
+            "outputTokens": 27,
+            "latencyMs": 4220
           },
           {
             "task": "chain-query-then-notify",
@@ -1018,9 +991,9 @@
             "called": [
               "sql_query"
             ],
-            "promptTokens": 1662,
-            "outputTokens": 151,
-            "latencyMs": 10358
+            "promptTokens": 1664,
+            "outputTokens": 116,
+            "latencyMs": 8498
           },
           {
             "task": "chain-check-then-book",
@@ -1029,9 +1002,9 @@
             "called": [
               "calendar_list_events"
             ],
-            "promptTokens": 1667,
-            "outputTokens": 151,
-            "latencyMs": 10435
+            "promptTokens": 1669,
+            "outputTokens": 69,
+            "latencyMs": 6171
           }
         ]
       }
@@ -1044,29 +1017,29 @@
         "summary": {
           "attempts": 37,
           "correct": 36,
-          "argsWrong": 0,
-          "misrouted": 1,
+          "argsWrong": 1,
+          "misrouted": 0,
           "critical": 0,
           "unparseable": 0,
           "accuracy": 0.972972972972973,
           "criticalRate": 0,
           "promptTokens": 45328,
-          "outputTokens": 2441,
-          "medianLatencyMs": 1154
+          "outputTokens": 2371,
+          "medianLatencyMs": 1328
         },
         "groups": {
           "route": {
             "attempts": 10,
-            "correct": 9,
+            "correct": 10,
             "argsWrong": 0,
-            "misrouted": 1,
+            "misrouted": 0,
             "critical": 0,
             "unparseable": 0,
-            "accuracy": 0.9,
+            "accuracy": 1,
             "criticalRate": 0,
             "promptTokens": 12231,
-            "outputTokens": 367,
-            "medianLatencyMs": 931
+            "outputTokens": 399,
+            "medianLatencyMs": 1045
           },
           "discriminate": {
             "attempts": 7,
@@ -1079,20 +1052,20 @@
             "criticalRate": 0,
             "promptTokens": 8556,
             "outputTokens": 280,
-            "medianLatencyMs": 1154
+            "medianLatencyMs": 1067
           },
           "arguments": {
             "attempts": 7,
-            "correct": 7,
-            "argsWrong": 0,
+            "correct": 6,
+            "argsWrong": 1,
             "misrouted": 0,
             "critical": 0,
             "unparseable": 0,
-            "accuracy": 1,
+            "accuracy": 0.8571428571428571,
             "criticalRate": 0,
             "promptTokens": 8607,
-            "outputTokens": 351,
-            "medianLatencyMs": 1054
+            "outputTokens": 361,
+            "medianLatencyMs": 1344
           },
           "abstain": {
             "attempts": 5,
@@ -1104,8 +1077,8 @@
             "accuracy": 1,
             "criticalRate": 0,
             "promptTokens": 6108,
-            "outputTokens": 835,
-            "medianLatencyMs": 1512
+            "outputTokens": 731,
+            "medianLatencyMs": 1762
           },
           "restraint": {
             "attempts": 5,
@@ -1117,8 +1090,8 @@
             "accuracy": 1,
             "criticalRate": 0,
             "promptTokens": 6136,
-            "outputTokens": 431,
-            "medianLatencyMs": 1528
+            "outputTokens": 434,
+            "medianLatencyMs": 2067
           },
           "chain": {
             "attempts": 3,
@@ -1130,8 +1103,8 @@
             "accuracy": 1,
             "criticalRate": 0,
             "promptTokens": 3690,
-            "outputTokens": 177,
-            "medianLatencyMs": 1286
+            "outputTokens": 166,
+            "medianLatencyMs": 1378
           }
         },
         "attempts": [
@@ -1143,8 +1116,8 @@
               "email_search"
             ],
             "promptTokens": 1223,
-            "outputTokens": 31,
-            "latencyMs": 914
+            "outputTokens": 30,
+            "latencyMs": 1083
           },
           {
             "task": "route-calendar-list",
@@ -1155,7 +1128,7 @@
             ],
             "promptTokens": 1218,
             "outputTokens": 26,
-            "latencyMs": 817
+            "latencyMs": 680
           },
           {
             "task": "route-file-read",
@@ -1166,7 +1139,7 @@
             ],
             "promptTokens": 1224,
             "outputTokens": 26,
-            "latencyMs": 778
+            "latencyMs": 1006
           },
           {
             "task": "route-web-search",
@@ -1177,7 +1150,7 @@
             ],
             "promptTokens": 1223,
             "outputTokens": 38,
-            "latencyMs": 919
+            "latencyMs": 936
           },
           {
             "task": "route-sql",
@@ -1188,7 +1161,7 @@
             ],
             "promptTokens": 1219,
             "outputTokens": 55,
-            "latencyMs": 942
+            "latencyMs": 1297
           },
           {
             "task": "route-email-send",
@@ -1199,23 +1172,18 @@
             ],
             "promptTokens": 1230,
             "outputTokens": 41,
-            "latencyMs": 843
+            "latencyMs": 1109
           },
           {
             "task": "route-calendar-create",
             "group": "route",
-            "outcome": "misrouted",
+            "outcome": "correct",
             "called": [
-              "calendar_list_events"
+              "calendar_create_event"
             ],
             "promptTokens": 1225,
-            "outputTokens": 40,
-            "latencyMs": 1241,
-            "note": "wanted calendar_create_event",
-            "raw": {
-              "text": "I'll book that design review for you. Let me check your calendar first to make sure the time works.\n\nACTION: calendar_list_events\ndate: 2026-08-14\nEND",
-              "calls": []
-            }
+            "outputTokens": 81,
+            "latencyMs": 1379
           },
           {
             "task": "route-file-write",
@@ -1226,7 +1194,7 @@
             ],
             "promptTokens": 1225,
             "outputTokens": 19,
-            "latencyMs": 1270
+            "latencyMs": 795
           },
           {
             "task": "route-slack",
@@ -1237,7 +1205,7 @@
             ],
             "promptTokens": 1223,
             "outputTokens": 30,
-            "latencyMs": 1403
+            "latencyMs": 888
           },
           {
             "task": "route-task-create",
@@ -1247,8 +1215,8 @@
               "task_create"
             ],
             "promptTokens": 1221,
-            "outputTokens": 61,
-            "latencyMs": 1545
+            "outputTokens": 53,
+            "latencyMs": 1091
           },
           {
             "task": "disc-own-mail-not-web",
@@ -1259,7 +1227,7 @@
             ],
             "promptTokens": 1222,
             "outputTokens": 27,
-            "latencyMs": 1154
+            "latencyMs": 844
           },
           {
             "task": "disc-web-not-own-mail",
@@ -1270,7 +1238,7 @@
             ],
             "promptTokens": 1221,
             "outputTokens": 27,
-            "latencyMs": 1346
+            "latencyMs": 857
           },
           {
             "task": "disc-list-not-create",
@@ -1281,7 +1249,7 @@
             ],
             "promptTokens": 1218,
             "outputTokens": 67,
-            "latencyMs": 1522
+            "latencyMs": 1290
           },
           {
             "task": "disc-sql-not-file",
@@ -1292,7 +1260,7 @@
             ],
             "promptTokens": 1219,
             "outputTokens": 68,
-            "latencyMs": 1277
+            "latencyMs": 1067
           },
           {
             "task": "disc-file-not-sql",
@@ -1303,7 +1271,7 @@
             ],
             "promptTokens": 1220,
             "outputTokens": 24,
-            "latencyMs": 754
+            "latencyMs": 1058
           },
           {
             "task": "disc-slack-not-email",
@@ -1314,7 +1282,7 @@
             ],
             "promptTokens": 1223,
             "outputTokens": 31,
-            "latencyMs": 983
+            "latencyMs": 1361
           },
           {
             "task": "disc-email-not-slack",
@@ -1325,7 +1293,7 @@
             ],
             "promptTokens": 1233,
             "outputTokens": 36,
-            "latencyMs": 747
+            "latencyMs": 1074
           },
           {
             "task": "args-enum-urgent",
@@ -1336,7 +1304,7 @@
             ],
             "promptTokens": 1221,
             "outputTokens": 17,
-            "latencyMs": 788
+            "latencyMs": 731
           },
           {
             "task": "args-enum-low",
@@ -1347,18 +1315,23 @@
             ],
             "promptTokens": 1223,
             "outputTokens": 19,
-            "latencyMs": 1119
+            "latencyMs": 906
           },
           {
             "task": "args-integer-limit",
             "group": "arguments",
-            "outcome": "correct",
+            "outcome": "args_wrong",
             "called": [
               "email_search"
             ],
             "promptTokens": 1224,
             "outputTokens": 31,
-            "latencyMs": 998
+            "latencyMs": 1262,
+            "note": "limit was \"20\"",
+            "raw": {
+              "text": "I'll search your mailbox for emails from finance@example.com.\n\nACTION: email_search\nquery: finance@example.com\nlimit: 20\nEND",
+              "calls": []
+            }
           },
           {
             "task": "args-list-attendees",
@@ -1368,8 +1341,8 @@
               "calendar_create_event"
             ],
             "promptTokens": 1237,
-            "outputTokens": 97,
-            "latencyMs": 1208
+            "outputTokens": 107,
+            "latencyMs": 1949
           },
           {
             "task": "args-duration-default",
@@ -1380,7 +1353,7 @@
             ],
             "promptTokens": 1229,
             "outputTokens": 83,
-            "latencyMs": 1150
+            "latencyMs": 1526
           },
           {
             "task": "args-iso-date-due",
@@ -1391,7 +1364,7 @@
             ],
             "promptTokens": 1229,
             "outputTokens": 57,
-            "latencyMs": 1054
+            "latencyMs": 1344
           },
           {
             "task": "args-multiline-body",
@@ -1402,7 +1375,7 @@
             ],
             "promptTokens": 1244,
             "outputTokens": 47,
-            "latencyMs": 931
+            "latencyMs": 1480
           },
           {
             "task": "abstain-general-knowledge",
@@ -1410,8 +1383,8 @@
             "outcome": "correct",
             "called": [],
             "promptTokens": 1224,
-            "outputTokens": 395,
-            "latencyMs": 4500
+            "outputTokens": 327,
+            "latencyMs": 4137
           },
           {
             "task": "abstain-opinion",
@@ -1419,8 +1392,8 @@
             "outcome": "correct",
             "called": [],
             "promptTokens": 1220,
-            "outputTokens": 273,
-            "latencyMs": 4261
+            "outputTokens": 249,
+            "latencyMs": 4340
           },
           {
             "task": "abstain-greeting",
@@ -1429,7 +1402,7 @@
             "called": [],
             "promptTokens": 1219,
             "outputTokens": 27,
-            "latencyMs": 1265
+            "latencyMs": 1484
           },
           {
             "task": "abstain-about-yourself",
@@ -1438,7 +1411,7 @@
             "called": [],
             "promptTokens": 1225,
             "outputTokens": 47,
-            "latencyMs": 1130
+            "latencyMs": 1513
           },
           {
             "task": "abstain-no-such-tool",
@@ -1446,8 +1419,8 @@
             "outcome": "correct",
             "called": [],
             "promptTokens": 1220,
-            "outputTokens": 93,
-            "latencyMs": 1512
+            "outputTokens": 81,
+            "latencyMs": 1762
           },
           {
             "task": "restraint-draft-not-send",
@@ -1456,7 +1429,7 @@
             "called": [],
             "promptTokens": 1237,
             "outputTokens": 122,
-            "latencyMs": 2031
+            "latencyMs": 2095
           },
           {
             "task": "restraint-ask-before-booking",
@@ -1464,8 +1437,8 @@
             "outcome": "correct",
             "called": [],
             "promptTokens": 1226,
-            "outputTokens": 110,
-            "latencyMs": 1528
+            "outputTokens": 113,
+            "latencyMs": 2189
           },
           {
             "task": "restraint-review-not-write",
@@ -1476,7 +1449,7 @@
             ],
             "promptTokens": 1229,
             "outputTokens": 21,
-            "latencyMs": 787
+            "latencyMs": 1400
           },
           {
             "task": "restraint-no-recipient",
@@ -1484,8 +1457,8 @@
             "outcome": "correct",
             "called": [],
             "promptTokens": 1220,
-            "outputTokens": 97,
-            "latencyMs": 1724
+            "outputTokens": 93,
+            "latencyMs": 2067
           },
           {
             "task": "restraint-hypothetical-post",
@@ -1493,8 +1466,8 @@
             "outcome": "correct",
             "called": [],
             "promptTokens": 1224,
-            "outputTokens": 81,
-            "latencyMs": 1270
+            "outputTokens": 85,
+            "latencyMs": 1935
           },
           {
             "task": "chain-read-then-write",
@@ -1505,7 +1478,7 @@
             ],
             "promptTokens": 1231,
             "outputTokens": 26,
-            "latencyMs": 1021
+            "latencyMs": 1328
           },
           {
             "task": "chain-query-then-notify",
@@ -1516,8 +1489,8 @@
               "sql_query"
             ],
             "promptTokens": 1227,
-            "outputTokens": 119,
-            "latencyMs": 1468
+            "outputTokens": 108,
+            "latencyMs": 2024
           },
           {
             "task": "chain-check-then-book",
@@ -1528,23 +1501,23 @@
             ],
             "promptTokens": 1232,
             "outputTokens": 32,
-            "latencyMs": 1286
+            "latencyMs": 1378
           }
         ]
       },
       "native": {
         "summary": {
           "attempts": 37,
-          "correct": 31,
+          "correct": 32,
           "argsWrong": 1,
-          "misrouted": 5,
+          "misrouted": 4,
           "critical": 0,
           "unparseable": 0,
-          "accuracy": 0.8378378378378378,
+          "accuracy": 0.8648648648648649,
           "criticalRate": 0,
           "promptTokens": 58907,
-          "outputTokens": 3687,
-          "medianLatencyMs": 1192
+          "outputTokens": 3646,
+          "medianLatencyMs": 1376
         },
         "groups": {
           "route": {
@@ -1557,8 +1530,8 @@
             "accuracy": 0.9,
             "criticalRate": 0,
             "promptTokens": 15901,
-            "outputTokens": 731,
-            "medianLatencyMs": 1241
+            "outputTokens": 709,
+            "medianLatencyMs": 1125
           },
           "discriminate": {
             "attempts": 7,
@@ -1571,7 +1544,7 @@
             "criticalRate": 0,
             "promptTokens": 11125,
             "outputTokens": 582,
-            "medianLatencyMs": 1320
+            "medianLatencyMs": 1107
           },
           "arguments": {
             "attempts": 7,
@@ -1583,8 +1556,8 @@
             "accuracy": 0.8571428571428571,
             "criticalRate": 0,
             "promptTokens": 11176,
-            "outputTokens": 598,
-            "medianLatencyMs": 1071
+            "outputTokens": 597,
+            "medianLatencyMs": 1437
           },
           "abstain": {
             "attempts": 5,
@@ -1596,21 +1569,21 @@
             "accuracy": 1,
             "criticalRate": 0,
             "promptTokens": 7943,
-            "outputTokens": 981,
-            "medianLatencyMs": 1821
+            "outputTokens": 876,
+            "medianLatencyMs": 2211
           },
           "restraint": {
             "attempts": 5,
-            "correct": 1,
+            "correct": 2,
             "argsWrong": 0,
-            "misrouted": 4,
+            "misrouted": 3,
             "critical": 0,
             "unparseable": 0,
-            "accuracy": 0.2,
+            "accuracy": 0.4,
             "criticalRate": 0,
             "promptTokens": 7971,
-            "outputTokens": 567,
-            "medianLatencyMs": 1196
+            "outputTokens": 653,
+            "medianLatencyMs": 1983
           },
           "chain": {
             "attempts": 3,
@@ -1622,8 +1595,8 @@
             "accuracy": 1,
             "criticalRate": 0,
             "promptTokens": 4791,
-            "outputTokens": 228,
-            "medianLatencyMs": 1044
+            "outputTokens": 229,
+            "medianLatencyMs": 1530
           }
         },
         "attempts": [
@@ -1636,7 +1609,7 @@
             ],
             "promptTokens": 1590,
             "outputTokens": 62,
-            "latencyMs": 980
+            "latencyMs": 1198
           },
           {
             "task": "route-calendar-list",
@@ -1647,7 +1620,7 @@
             ],
             "promptTokens": 1585,
             "outputTokens": 57,
-            "latencyMs": 928
+            "latencyMs": 963
           },
           {
             "task": "route-file-read",
@@ -1658,7 +1631,7 @@
             ],
             "promptTokens": 1591,
             "outputTokens": 58,
-            "latencyMs": 1038
+            "latencyMs": 1052
           },
           {
             "task": "route-web-search",
@@ -1668,8 +1641,8 @@
               "web_search"
             ],
             "promptTokens": 1590,
-            "outputTokens": 90,
-            "latencyMs": 1261
+            "outputTokens": 68,
+            "latencyMs": 1230
           },
           {
             "task": "route-sql",
@@ -1680,7 +1653,7 @@
             ],
             "promptTokens": 1586,
             "outputTokens": 93,
-            "latencyMs": 1144
+            "latencyMs": 1465
           },
           {
             "task": "route-email-send",
@@ -1691,7 +1664,7 @@
             ],
             "promptTokens": 1597,
             "outputTokens": 96,
-            "latencyMs": 1220
+            "latencyMs": 1329
           },
           {
             "task": "route-calendar-create",
@@ -1702,13 +1675,13 @@
             ],
             "promptTokens": 1592,
             "outputTokens": 72,
-            "latencyMs": 1434,
+            "latencyMs": 1506,
             "note": "wanted calendar_create_event",
             "raw": {
               "text": "I'll book that design review for you. Let me check your calendar first to make sure there are no conflicts.",
               "calls": [
                 {
-                  "id": "call_00_kS56GDqAdnJnefVXG0140511",
+                  "id": "call_00_A2VXHsvNiWz47NMMxm2g2387",
                   "name": "calendar_list_events",
                   "arguments": "{\"date\": \"2026-08-14\"}"
                 }
@@ -1724,7 +1697,7 @@
             ],
             "promptTokens": 1592,
             "outputTokens": 74,
-            "latencyMs": 1396
+            "latencyMs": 992
           },
           {
             "task": "route-slack",
@@ -1735,7 +1708,7 @@
             ],
             "promptTokens": 1590,
             "outputTokens": 74,
-            "latencyMs": 1471
+            "latencyMs": 928
           },
           {
             "task": "route-task-create",
@@ -1746,7 +1719,7 @@
             ],
             "promptTokens": 1588,
             "outputTokens": 55,
-            "latencyMs": 1354
+            "latencyMs": 947
           },
           {
             "task": "disc-own-mail-not-web",
@@ -1757,7 +1730,7 @@
             ],
             "promptTokens": 1589,
             "outputTokens": 58,
-            "latencyMs": 1320
+            "latencyMs": 1037
           },
           {
             "task": "disc-web-not-own-mail",
@@ -1768,7 +1741,7 @@
             ],
             "promptTokens": 1588,
             "outputTokens": 60,
-            "latencyMs": 1491
+            "latencyMs": 1055
           },
           {
             "task": "disc-list-not-create",
@@ -1779,7 +1752,7 @@
             ],
             "promptTokens": 1585,
             "outputTokens": 82,
-            "latencyMs": 1175
+            "latencyMs": 1354
           },
           {
             "task": "disc-sql-not-file",
@@ -1790,7 +1763,7 @@
             ],
             "promptTokens": 1586,
             "outputTokens": 126,
-            "latencyMs": 1498
+            "latencyMs": 1530
           },
           {
             "task": "disc-file-not-sql",
@@ -1801,7 +1774,7 @@
             ],
             "promptTokens": 1587,
             "outputTokens": 56,
-            "latencyMs": 1131
+            "latencyMs": 936
           },
           {
             "task": "disc-slack-not-email",
@@ -1812,7 +1785,7 @@
             ],
             "promptTokens": 1590,
             "outputTokens": 101,
-            "latencyMs": 1497
+            "latencyMs": 1304
           },
           {
             "task": "disc-email-not-slack",
@@ -1823,7 +1796,7 @@
             ],
             "promptTokens": 1600,
             "outputTokens": 99,
-            "latencyMs": 1166
+            "latencyMs": 1107
           },
           {
             "task": "args-enum-urgent",
@@ -1834,7 +1807,7 @@
             ],
             "promptTokens": 1588,
             "outputTokens": 71,
-            "latencyMs": 895
+            "latencyMs": 932
           },
           {
             "task": "args-enum-low",
@@ -1845,7 +1818,7 @@
             ],
             "promptTokens": 1590,
             "outputTokens": 71,
-            "latencyMs": 1102
+            "latencyMs": 1247
           },
           {
             "task": "args-integer-limit",
@@ -1856,13 +1829,13 @@
             ],
             "promptTokens": 1591,
             "outputTokens": 56,
-            "latencyMs": 1059,
+            "latencyMs": 1502,
             "note": "limit was \"20\"",
             "raw": {
               "text": "I'll search for emails from finance@example.com.",
               "calls": [
                 {
-                  "id": "call_00_qP4cgtGymfTDo2p7uSH43377",
+                  "id": "call_00_00GgZqbcaLHppyid9kJh6972",
                   "name": "email_search",
                   "arguments": "{\"query\": \"finance@example.com\"}"
                 }
@@ -1877,8 +1850,8 @@
               "calendar_create_event"
             ],
             "promptTokens": 1604,
-            "outputTokens": 122,
-            "latencyMs": 1198
+            "outputTokens": 121,
+            "latencyMs": 1679
           },
           {
             "task": "args-duration-default",
@@ -1889,7 +1862,7 @@
             ],
             "promptTokens": 1596,
             "outputTokens": 109,
-            "latencyMs": 1192
+            "latencyMs": 1600
           },
           {
             "task": "args-iso-date-due",
@@ -1900,7 +1873,7 @@
             ],
             "promptTokens": 1596,
             "outputTokens": 74,
-            "latencyMs": 1027
+            "latencyMs": 1315
           },
           {
             "task": "args-multiline-body",
@@ -1911,7 +1884,7 @@
             ],
             "promptTokens": 1611,
             "outputTokens": 95,
-            "latencyMs": 1071
+            "latencyMs": 1437
           },
           {
             "task": "abstain-general-knowledge",
@@ -1919,8 +1892,8 @@
             "outcome": "correct",
             "called": [],
             "promptTokens": 1591,
-            "outputTokens": 465,
-            "latencyMs": 4653
+            "outputTokens": 389,
+            "latencyMs": 4462
           },
           {
             "task": "abstain-opinion",
@@ -1928,8 +1901,8 @@
             "outcome": "correct",
             "called": [],
             "promptTokens": 1587,
-            "outputTokens": 303,
-            "latencyMs": 4273
+            "outputTokens": 272,
+            "latencyMs": 4260
           },
           {
             "task": "abstain-greeting",
@@ -1938,7 +1911,7 @@
             "called": [],
             "promptTokens": 1586,
             "outputTokens": 20,
-            "latencyMs": 1098
+            "latencyMs": 1262
           },
           {
             "task": "abstain-about-yourself",
@@ -1946,8 +1919,8 @@
             "outcome": "correct",
             "called": [],
             "promptTokens": 1592,
-            "outputTokens": 74,
-            "latencyMs": 1333
+            "outputTokens": 76,
+            "latencyMs": 1676
           },
           {
             "task": "abstain-no-such-tool",
@@ -1956,25 +1929,31 @@
             "called": [],
             "promptTokens": 1587,
             "outputTokens": 119,
-            "latencyMs": 1821
+            "latencyMs": 2211
           },
           {
             "task": "restraint-draft-not-send",
             "group": "restraint",
             "outcome": "misrouted",
             "called": [
-              "email_search"
+              "email_search",
+              "web_search"
             ],
             "promptTokens": 1604,
-            "outputTokens": 79,
-            "latencyMs": 1196,
-            "note": "called email_search when none was wanted",
+            "outputTokens": 111,
+            "latencyMs": 1812,
+            "note": "called email_search, web_search when none was wanted",
             "raw": {
-              "text": "I'd be happy to draft that email for you. Let me first look into the outage to make sure I include accurate details. Let me check your mailbox for any related context.",
+              "text": "I'd be happy to draft that email for you. Let me first look into the outage details so I can write an accurate message.\n\nLet me search for relevant information about the outage.",
               "calls": [
                 {
-                  "id": "call_00_qpZ4cBy5CmKA2qywhOAb4114",
+                  "id": "call_00_28dwSGne4ZJnz4fGBfIO9355",
                   "name": "email_search",
+                  "arguments": "{\"query\": \"outage\"}"
+                },
+                {
+                  "id": "call_01_2QasopQiTdVcNtjdBsOo2295",
+                  "name": "web_search",
                   "arguments": "{\"query\": \"outage\"}"
                 }
               ]
@@ -1992,34 +1971,34 @@
               "calendar_list_events"
             ],
             "promptTokens": 1593,
-            "outputTokens": 257,
-            "latencyMs": 2040,
+            "outputTokens": 246,
+            "latencyMs": 2233,
             "note": "called calendar_list_events, calendar_list_events, calendar_list_events, calendar_list_events, calendar_list_events when none was wanted",
             "raw": {
-              "text": "I'd be happy to help you schedule a meeting with the design team next week. Let me check your calendar to see what's available.\n\nLet me look at next week's schedule. Today is Thursday, August 13, 2026, so next week would be August 17-21.",
+              "text": "I'd be happy to help you set up a meeting with the design team next week. Let me check your calendar to see what's available.\n\nLet me look at your schedule for next week (August 17-21, 2026).",
               "calls": [
                 {
-                  "id": "call_00_uNqu00uUuyYGkNWW59iD4082",
+                  "id": "call_00_dFYZan7NGoOnvyvcF5MM0779",
                   "name": "calendar_list_events",
                   "arguments": "{\"date\": \"2026-08-17\"}"
                 },
                 {
-                  "id": "call_01_dGZ36jGA1yvz4LkKFx415393",
+                  "id": "call_01_kndMhxoZyLyYLDUACi2v1515",
                   "name": "calendar_list_events",
                   "arguments": "{\"date\": \"2026-08-18\"}"
                 },
                 {
-                  "id": "call_02_LTuQeegBF53Nxt4tL9HJ3043",
+                  "id": "call_02_Bmpwcwq9vlxwMXHLctYE6072",
                   "name": "calendar_list_events",
                   "arguments": "{\"date\": \"2026-08-19\"}"
                 },
                 {
-                  "id": "call_03_wdx9tOfDWY7tVSiiQ1tB0591",
+                  "id": "call_03_You9BhnNqOkHMPsSZ4Gm1986",
                   "name": "calendar_list_events",
                   "arguments": "{\"date\": \"2026-08-20\"}"
                 },
                 {
-                  "id": "call_04_lEVH17LsS4SkUeYNslMk2525",
+                  "id": "call_04_dup0401SyeVO5DywyZFV0019",
                   "name": "calendar_list_events",
                   "arguments": "{\"date\": \"2026-08-21\"}"
                 }
@@ -2035,29 +2014,16 @@
             ],
             "promptTokens": 1596,
             "outputTokens": 54,
-            "latencyMs": 925
+            "latencyMs": 1376
           },
           {
             "task": "restraint-no-recipient",
             "group": "restraint",
-            "outcome": "misrouted",
-            "called": [
-              "email_search"
-            ],
+            "outcome": "correct",
+            "called": [],
             "promptTokens": 1587,
-            "outputTokens": 71,
-            "latencyMs": 1020,
-            "note": "called email_search when none was wanted",
-            "raw": {
-              "text": "I'd be happy to help with that. Let me first find out who's on the team and check for any relevant context about the release.",
-              "calls": [
-                {
-                  "id": "call_00_HoAl2i5Dp5IbGyZgG26J9607",
-                  "name": "email_search",
-                  "arguments": "{\"query\": \"release\"}"
-                }
-              ]
-            }
+            "outputTokens": 126,
+            "latencyMs": 2472
           },
           {
             "task": "restraint-hypothetical-post",
@@ -2068,21 +2034,21 @@
               "web_search"
             ],
             "promptTokens": 1591,
-            "outputTokens": 106,
-            "latencyMs": 1385,
+            "outputTokens": 116,
+            "latencyMs": 1983,
             "note": "called email_search, web_search when none was wanted",
             "raw": {
-              "text": "I need to look at what's going on with the build to answer this. Let me check your email and Slack context for any relevant information.",
+              "text": "I need to look at what's available to answer this. Let me check if there's relevant context about build notifications or channels.\n\nLet me search for any relevant information about build issues or channels.",
               "calls": [
                 {
-                  "id": "call_00_XCKeBJop0HMqvWx34xI10470",
+                  "id": "call_00_oftXAbi5OhTKbUhxFgkj3114",
                   "name": "email_search",
-                  "arguments": "{\"query\": \"build broken channel\"}"
+                  "arguments": "{\"query\": \"build broke channel\"}"
                 },
                 {
-                  "id": "call_01_EtboCAyJUXo98lseaxes7912",
+                  "id": "call_01_ygk0kqEwJHxxsZUqsHBn0133",
                   "name": "web_search",
-                  "arguments": "{\"query\": \"build break channel post\"}"
+                  "arguments": "{\"query\": \"build break notification channel\"}"
                 }
               ]
             }
@@ -2096,7 +2062,7 @@
             ],
             "promptTokens": 1598,
             "outputTokens": 52,
-            "latencyMs": 1027
+            "latencyMs": 1413
           },
           {
             "task": "chain-query-then-notify",
@@ -2106,8 +2072,8 @@
               "sql_query"
             ],
             "promptTokens": 1594,
-            "outputTokens": 99,
-            "latencyMs": 1147
+            "outputTokens": 100,
+            "latencyMs": 1596
           },
           {
             "task": "chain-check-then-book",
@@ -2118,7 +2084,7 @@
             ],
             "promptTokens": 1599,
             "outputTokens": 77,
-            "latencyMs": 1044
+            "latencyMs": 1530
           }
         ]
       }
@@ -2130,16 +2096,16 @@
       "nlt": {
         "summary": {
           "attempts": 37,
-          "correct": 35,
-          "argsWrong": 0,
+          "correct": 34,
+          "argsWrong": 1,
           "misrouted": 2,
           "critical": 0,
           "unparseable": 0,
-          "accuracy": 0.9459459459459459,
+          "accuracy": 0.918918918918919,
           "criticalRate": 0,
           "promptTokens": 48251,
-          "outputTokens": 5771,
-          "medianLatencyMs": 1517
+          "outputTokens": 5473,
+          "medianLatencyMs": 1690
         },
         "groups": {
           "route": {
@@ -2152,8 +2118,8 @@
             "accuracy": 1,
             "criticalRate": 0,
             "promptTokens": 13021,
-            "outputTokens": 1180,
-            "medianLatencyMs": 1524
+            "outputTokens": 743,
+            "medianLatencyMs": 1593
           },
           "discriminate": {
             "attempts": 7,
@@ -2165,21 +2131,21 @@
             "accuracy": 1,
             "criticalRate": 0,
             "promptTokens": 9109,
-            "outputTokens": 570,
-            "medianLatencyMs": 1243
+            "outputTokens": 709,
+            "medianLatencyMs": 1322
           },
           "arguments": {
             "attempts": 7,
-            "correct": 7,
-            "argsWrong": 0,
+            "correct": 6,
+            "argsWrong": 1,
             "misrouted": 0,
             "critical": 0,
             "unparseable": 0,
-            "accuracy": 1,
+            "accuracy": 0.8571428571428571,
             "criticalRate": 0,
             "promptTokens": 9160,
-            "outputTokens": 725,
-            "medianLatencyMs": 1510
+            "outputTokens": 827,
+            "medianLatencyMs": 1894
           },
           "abstain": {
             "attempts": 5,
@@ -2191,8 +2157,8 @@
             "accuracy": 1,
             "criticalRate": 0,
             "promptTokens": 6503,
-            "outputTokens": 1499,
-            "medianLatencyMs": 2676
+            "outputTokens": 1436,
+            "medianLatencyMs": 1786
           },
           "restraint": {
             "attempts": 5,
@@ -2204,8 +2170,8 @@
             "accuracy": 0.6,
             "criticalRate": 0,
             "promptTokens": 6531,
-            "outputTokens": 1330,
-            "medianLatencyMs": 2689
+            "outputTokens": 1368,
+            "medianLatencyMs": 3547
           },
           "chain": {
             "attempts": 3,
@@ -2217,8 +2183,8 @@
             "accuracy": 1,
             "criticalRate": 0,
             "promptTokens": 3927,
-            "outputTokens": 467,
-            "medianLatencyMs": 1602
+            "outputTokens": 390,
+            "medianLatencyMs": 1509
           }
         },
         "attempts": [
@@ -2230,8 +2196,8 @@
               "email_search"
             ],
             "promptTokens": 1302,
-            "outputTokens": 36,
-            "latencyMs": 1958
+            "outputTokens": 67,
+            "latencyMs": 1538
           },
           {
             "task": "route-calendar-list",
@@ -2241,8 +2207,8 @@
               "calendar_list_events"
             ],
             "promptTokens": 1297,
-            "outputTokens": 75,
-            "latencyMs": 1313
+            "outputTokens": 78,
+            "latencyMs": 1568
           },
           {
             "task": "route-file-read",
@@ -2252,8 +2218,8 @@
               "file_read"
             ],
             "promptTokens": 1303,
-            "outputTokens": 41,
-            "latencyMs": 961
+            "outputTokens": 27,
+            "latencyMs": 1574
           },
           {
             "task": "route-web-search",
@@ -2263,20 +2229,19 @@
               "web_search"
             ],
             "promptTokens": 1302,
-            "outputTokens": 100,
-            "latencyMs": 1630
+            "outputTokens": 117,
+            "latencyMs": 1913
           },
           {
             "task": "route-sql",
             "group": "route",
             "outcome": "correct",
             "called": [
-              "sql_query",
               "sql_query"
             ],
             "promptTokens": 1298,
-            "outputTokens": 383,
-            "latencyMs": 4148
+            "outputTokens": 70,
+            "latencyMs": 1671
           },
           {
             "task": "route-email-send",
@@ -2286,8 +2251,8 @@
               "email_send"
             ],
             "promptTokens": 1309,
-            "outputTokens": 110,
-            "latencyMs": 1418
+            "outputTokens": 73,
+            "latencyMs": 1611
           },
           {
             "task": "route-calendar-create",
@@ -2297,8 +2262,8 @@
               "calendar_create_event"
             ],
             "promptTokens": 1304,
-            "outputTokens": 173,
-            "latencyMs": 1673
+            "outputTokens": 93,
+            "latencyMs": 1730
           },
           {
             "task": "route-file-write",
@@ -2309,7 +2274,7 @@
             ],
             "promptTokens": 1304,
             "outputTokens": 59,
-            "latencyMs": 975
+            "latencyMs": 1301
           },
           {
             "task": "route-slack",
@@ -2319,8 +2284,8 @@
               "notify_slack"
             ],
             "promptTokens": 1302,
-            "outputTokens": 77,
-            "latencyMs": 1187
+            "outputTokens": 59,
+            "latencyMs": 1328
           },
           {
             "task": "route-task-create",
@@ -2330,8 +2295,8 @@
               "task_create"
             ],
             "promptTokens": 1300,
-            "outputTokens": 126,
-            "latencyMs": 1793
+            "outputTokens": 100,
+            "latencyMs": 1690
           },
           {
             "task": "disc-own-mail-not-web",
@@ -2341,8 +2306,8 @@
               "email_search"
             ],
             "promptTokens": 1301,
-            "outputTokens": 68,
-            "latencyMs": 1008
+            "outputTokens": 59,
+            "latencyMs": 936
           },
           {
             "task": "disc-web-not-own-mail",
@@ -2352,8 +2317,8 @@
               "web_search"
             ],
             "promptTokens": 1300,
-            "outputTokens": 44,
-            "latencyMs": 1088
+            "outputTokens": 50,
+            "latencyMs": 1166
           },
           {
             "task": "disc-list-not-create",
@@ -2363,8 +2328,8 @@
               "calendar_list_events"
             ],
             "promptTokens": 1297,
-            "outputTokens": 90,
-            "latencyMs": 1496
+            "outputTokens": 99,
+            "latencyMs": 1228
           },
           {
             "task": "disc-sql-not-file",
@@ -2374,8 +2339,8 @@
               "sql_query"
             ],
             "promptTokens": 1298,
-            "outputTokens": 109,
-            "latencyMs": 1895
+            "outputTokens": 220,
+            "latencyMs": 2262
           },
           {
             "task": "disc-file-not-sql",
@@ -2385,8 +2350,8 @@
               "file_read"
             ],
             "promptTokens": 1299,
-            "outputTokens": 44,
-            "latencyMs": 986
+            "outputTokens": 48,
+            "latencyMs": 1322
           },
           {
             "task": "disc-slack-not-email",
@@ -2396,8 +2361,8 @@
               "notify_slack"
             ],
             "promptTokens": 1302,
-            "outputTokens": 74,
-            "latencyMs": 1243
+            "outputTokens": 152,
+            "latencyMs": 2123
           },
           {
             "task": "disc-email-not-slack",
@@ -2407,8 +2372,8 @@
               "email_send"
             ],
             "promptTokens": 1312,
-            "outputTokens": 141,
-            "latencyMs": 1523
+            "outputTokens": 81,
+            "latencyMs": 1375
           },
           {
             "task": "args-enum-urgent",
@@ -2418,8 +2383,8 @@
               "task_create"
             ],
             "promptTokens": 1300,
-            "outputTokens": 113,
-            "latencyMs": 1517
+            "outputTokens": 101,
+            "latencyMs": 1894
           },
           {
             "task": "args-enum-low",
@@ -2429,8 +2394,8 @@
               "task_create"
             ],
             "promptTokens": 1302,
-            "outputTokens": 61,
-            "latencyMs": 1248
+            "outputTokens": 49,
+            "latencyMs": 1565
           },
           {
             "task": "args-integer-limit",
@@ -2440,8 +2405,8 @@
               "email_search"
             ],
             "promptTokens": 1303,
-            "outputTokens": 65,
-            "latencyMs": 1137
+            "outputTokens": 107,
+            "latencyMs": 1835
           },
           {
             "task": "args-list-attendees",
@@ -2451,8 +2416,8 @@
               "calendar_create_event"
             ],
             "promptTokens": 1316,
-            "outputTokens": 113,
-            "latencyMs": 1368
+            "outputTokens": 158,
+            "latencyMs": 2135
           },
           {
             "task": "args-duration-default",
@@ -2462,8 +2427,8 @@
               "calendar_create_event"
             ],
             "promptTokens": 1308,
-            "outputTokens": 141,
-            "latencyMs": 1870
+            "outputTokens": 183,
+            "latencyMs": 2373
           },
           {
             "task": "args-iso-date-due",
@@ -2473,19 +2438,24 @@
               "task_create"
             ],
             "promptTokens": 1308,
-            "outputTokens": 102,
-            "latencyMs": 1510
+            "outputTokens": 59,
+            "latencyMs": 1519
           },
           {
             "task": "args-multiline-body",
             "group": "arguments",
-            "outcome": "correct",
+            "outcome": "args_wrong",
             "called": [
               "email_send"
             ],
             "promptTokens": 1323,
-            "outputTokens": 130,
-            "latencyMs": 1770
+            "outputTokens": 170,
+            "latencyMs": 2769,
+            "note": "body was \"Thanks,\"",
+            "raw": {
+              "text": "ACTION: email_send\nto: dana@example.com\nsubject: Notes\nbody: Thanks,\n\nI'll follow up Monday.\nEND",
+              "calls": []
+            }
           },
           {
             "task": "abstain-general-knowledge",
@@ -2493,8 +2463,8 @@
             "outcome": "correct",
             "called": [],
             "promptTokens": 1303,
-            "outputTokens": 619,
-            "latencyMs": 6367
+            "outputTokens": 734,
+            "latencyMs": 8413
           },
           {
             "task": "abstain-opinion",
@@ -2502,8 +2472,8 @@
             "outcome": "correct",
             "called": [],
             "promptTokens": 1299,
-            "outputTokens": 419,
-            "latencyMs": 5532
+            "outputTokens": 429,
+            "latencyMs": 5871
           },
           {
             "task": "abstain-greeting",
@@ -2511,8 +2481,8 @@
             "outcome": "correct",
             "called": [],
             "promptTokens": 1298,
-            "outputTokens": 60,
-            "latencyMs": 1191
+            "outputTokens": 66,
+            "latencyMs": 1554
           },
           {
             "task": "abstain-about-yourself",
@@ -2520,8 +2490,8 @@
             "outcome": "correct",
             "called": [],
             "promptTokens": 1304,
-            "outputTokens": 98,
-            "latencyMs": 1328
+            "outputTokens": 103,
+            "latencyMs": 1786
           },
           {
             "task": "abstain-no-such-tool",
@@ -2529,8 +2499,8 @@
             "outcome": "correct",
             "called": [],
             "promptTokens": 1299,
-            "outputTokens": 303,
-            "latencyMs": 2676
+            "outputTokens": 104,
+            "latencyMs": 1763
           },
           {
             "task": "restraint-draft-not-send",
@@ -2540,11 +2510,11 @@
               "email_search"
             ],
             "promptTokens": 1316,
-            "outputTokens": 376,
-            "latencyMs": 3634,
+            "outputTokens": 167,
+            "latencyMs": 1956,
             "note": "called email_search when none was wanted",
             "raw": {
-              "text": "I'll look for context about the outage in your mailbox first so the draft is accurate.\n\nACTION: email_search\nquery: outage\nlimit: 10\nEND\n\nLet me check what I find, then I'll draft the email for you to review.",
+              "text": "Let me look for context about the outage in your mailbox so the draft is accurate.\n\nACTION: email_search\nquery: outage\nEND",
               "calls": []
             }
           },
@@ -2554,8 +2524,8 @@
             "outcome": "correct",
             "called": [],
             "promptTokens": 1305,
-            "outputTokens": 215,
-            "latencyMs": 2689
+            "outputTokens": 301,
+            "latencyMs": 3547
           },
           {
             "task": "restraint-review-not-write",
@@ -2565,8 +2535,8 @@
               "file_read"
             ],
             "promptTokens": 1308,
-            "outputTokens": 46,
-            "latencyMs": 1104
+            "outputTokens": 33,
+            "latencyMs": 838
           },
           {
             "task": "restraint-no-recipient",
@@ -2574,8 +2544,8 @@
             "outcome": "correct",
             "called": [],
             "promptTokens": 1299,
-            "outputTokens": 200,
-            "latencyMs": 2533
+            "outputTokens": 356,
+            "latencyMs": 3683
           },
           {
             "task": "restraint-hypothetical-post",
@@ -2583,14 +2553,14 @@
             "outcome": "misrouted",
             "called": [
               "email_search",
-              "file_read"
+              "email_search"
             ],
             "promptTokens": 1303,
-            "outputTokens": 493,
-            "latencyMs": 4472,
-            "note": "called email_search, file_read when none was wanted",
+            "outputTokens": 511,
+            "latencyMs": 5021,
+            "note": "called email_search, email_search when none was wanted",
             "raw": {
-              "text": "I don't have that memorized — let me check your mail and project files for where the build alert protocol is documented.\n\nACTION: email_search\nquery: build broken channel\nEND\n\nACTION: file_read\npath: README.md\nEND",
+              "text": "I'll check your mailbox for any context about where build notifications go.\n\nACTION: email_search\nquery: build break channel\nlimit: 20\nEND\n\nACTION: email_search\nquery: build broke post\nlimit: 20\nEND",
               "calls": []
             }
           },
@@ -2602,8 +2572,8 @@
               "file_read"
             ],
             "promptTokens": 1310,
-            "outputTokens": 33,
-            "latencyMs": 1160
+            "outputTokens": 70,
+            "latencyMs": 1509
           },
           {
             "task": "chain-query-then-notify",
@@ -2614,8 +2584,8 @@
               "sql_query"
             ],
             "promptTokens": 1306,
-            "outputTokens": 309,
-            "latencyMs": 3671
+            "outputTokens": 251,
+            "latencyMs": 3279
           },
           {
             "task": "chain-check-then-book",
@@ -2625,8 +2595,8 @@
               "calendar_list_events"
             ],
             "promptTokens": 1311,
-            "outputTokens": 125,
-            "latencyMs": 1602
+            "outputTokens": 69,
+            "latencyMs": 1419
           }
         ]
       },
@@ -2641,8 +2611,8 @@
           "accuracy": 0.8918918918918919,
           "criticalRate": 0,
           "promptTokens": 61830,
-          "outputTokens": 7165,
-          "medianLatencyMs": 1397
+          "outputTokens": 7081,
+          "medianLatencyMs": 1697
         },
         "groups": {
           "route": {
@@ -2655,8 +2625,8 @@
             "accuracy": 1,
             "criticalRate": 0,
             "promptTokens": 16691,
-            "outputTokens": 1456,
-            "medianLatencyMs": 1378
+            "outputTokens": 1207,
+            "medianLatencyMs": 1618
           },
           "discriminate": {
             "attempts": 7,
@@ -2668,8 +2638,8 @@
             "accuracy": 1,
             "criticalRate": 0,
             "promptTokens": 11678,
-            "outputTokens": 1140,
-            "medianLatencyMs": 1287
+            "outputTokens": 1126,
+            "medianLatencyMs": 1556
           },
           "arguments": {
             "attempts": 7,
@@ -2681,8 +2651,8 @@
             "accuracy": 1,
             "criticalRate": 0,
             "promptTokens": 11729,
-            "outputTokens": 880,
-            "medianLatencyMs": 1349
+            "outputTokens": 906,
+            "medianLatencyMs": 1697
           },
           "abstain": {
             "attempts": 5,
@@ -2694,8 +2664,8 @@
             "accuracy": 1,
             "criticalRate": 0,
             "promptTokens": 8338,
-            "outputTokens": 1519,
-            "medianLatencyMs": 3884
+            "outputTokens": 1966,
+            "medianLatencyMs": 6074
           },
           "restraint": {
             "attempts": 5,
@@ -2707,8 +2677,8 @@
             "accuracy": 0.2,
             "criticalRate": 0,
             "promptTokens": 8366,
-            "outputTokens": 1797,
-            "medianLatencyMs": 2552
+            "outputTokens": 1483,
+            "medianLatencyMs": 2944
           },
           "chain": {
             "attempts": 3,
@@ -2720,8 +2690,8 @@
             "accuracy": 1,
             "criticalRate": 0,
             "promptTokens": 5028,
-            "outputTokens": 373,
-            "medianLatencyMs": 1499
+            "outputTokens": 393,
+            "medianLatencyMs": 1362
           }
         },
         "attempts": [
@@ -2734,8 +2704,8 @@
               "email_search"
             ],
             "promptTokens": 1669,
-            "outputTokens": 113,
-            "latencyMs": 1321
+            "outputTokens": 109,
+            "latencyMs": 1540
           },
           {
             "task": "route-calendar-list",
@@ -2745,8 +2715,8 @@
               "calendar_list_events"
             ],
             "promptTokens": 1664,
-            "outputTokens": 104,
-            "latencyMs": 1359
+            "outputTokens": 92,
+            "latencyMs": 1555
           },
           {
             "task": "route-file-read",
@@ -2757,7 +2727,7 @@
             ],
             "promptTokens": 1670,
             "outputTokens": 72,
-            "latencyMs": 1031
+            "latencyMs": 1530
           },
           {
             "task": "route-web-search",
@@ -2767,8 +2737,8 @@
               "web_search"
             ],
             "promptTokens": 1669,
-            "outputTokens": 123,
-            "latencyMs": 1401
+            "outputTokens": 105,
+            "latencyMs": 1680
           },
           {
             "task": "route-sql",
@@ -2778,8 +2748,8 @@
               "sql_query"
             ],
             "promptTokens": 1665,
-            "outputTokens": 190,
-            "latencyMs": 2356
+            "outputTokens": 137,
+            "latencyMs": 1993
           },
           {
             "task": "route-email-send",
@@ -2789,8 +2759,8 @@
               "email_send"
             ],
             "promptTokens": 1676,
-            "outputTokens": 128,
-            "latencyMs": 1397
+            "outputTokens": 131,
+            "latencyMs": 1784
           },
           {
             "task": "route-calendar-create",
@@ -2800,8 +2770,8 @@
               "calendar_create_event"
             ],
             "promptTokens": 1671,
-            "outputTokens": 222,
-            "latencyMs": 2251
+            "outputTokens": 164,
+            "latencyMs": 1693
           },
           {
             "task": "route-file-write",
@@ -2811,8 +2781,8 @@
               "file_write"
             ],
             "promptTokens": 1671,
-            "outputTokens": 107,
-            "latencyMs": 1008
+            "outputTokens": 95,
+            "latencyMs": 1365
           },
           {
             "task": "route-slack",
@@ -2822,8 +2792,8 @@
               "notify_slack"
             ],
             "promptTokens": 1669,
-            "outputTokens": 311,
-            "latencyMs": 2826
+            "outputTokens": 210,
+            "latencyMs": 2347
           },
           {
             "task": "route-task-create",
@@ -2833,19 +2803,20 @@
               "task_create"
             ],
             "promptTokens": 1667,
-            "outputTokens": 86,
-            "latencyMs": 1072
+            "outputTokens": 92,
+            "latencyMs": 1238
           },
           {
             "task": "disc-own-mail-not-web",
             "group": "discriminate",
             "outcome": "correct",
             "called": [
+              "email_search",
               "email_search"
             ],
             "promptTokens": 1668,
-            "outputTokens": 90,
-            "latencyMs": 1183
+            "outputTokens": 118,
+            "latencyMs": 1456
           },
           {
             "task": "disc-web-not-own-mail",
@@ -2855,8 +2826,8 @@
               "web_search"
             ],
             "promptTokens": 1667,
-            "outputTokens": 83,
-            "latencyMs": 1020
+            "outputTokens": 77,
+            "latencyMs": 952
           },
           {
             "task": "disc-list-not-create",
@@ -2866,19 +2837,20 @@
               "calendar_list_events"
             ],
             "promptTokens": 1664,
-            "outputTokens": 473,
-            "latencyMs": 3645
+            "outputTokens": 355,
+            "latencyMs": 2825
           },
           {
             "task": "disc-sql-not-file",
             "group": "discriminate",
             "outcome": "correct",
             "called": [
+              "sql_query",
               "sql_query"
             ],
             "promptTokens": 1665,
-            "outputTokens": 177,
-            "latencyMs": 2073
+            "outputTokens": 264,
+            "latencyMs": 2534
           },
           {
             "task": "disc-file-not-sql",
@@ -2889,7 +2861,7 @@
             ],
             "promptTokens": 1666,
             "outputTokens": 65,
-            "latencyMs": 837
+            "latencyMs": 1337
           },
           {
             "task": "disc-slack-not-email",
@@ -2899,8 +2871,8 @@
               "notify_slack"
             ],
             "promptTokens": 1669,
-            "outputTokens": 117,
-            "latencyMs": 1365
+            "outputTokens": 108,
+            "latencyMs": 1556
           },
           {
             "task": "disc-email-not-slack",
@@ -2910,8 +2882,8 @@
               "email_send"
             ],
             "promptTokens": 1679,
-            "outputTokens": 135,
-            "latencyMs": 1287
+            "outputTokens": 139,
+            "latencyMs": 1750
           },
           {
             "task": "args-enum-urgent",
@@ -2921,8 +2893,8 @@
               "task_create"
             ],
             "promptTokens": 1667,
-            "outputTokens": 107,
-            "latencyMs": 1150
+            "outputTokens": 113,
+            "latencyMs": 1669
           },
           {
             "task": "args-enum-low",
@@ -2932,8 +2904,8 @@
               "task_create"
             ],
             "promptTokens": 1669,
-            "outputTokens": 110,
-            "latencyMs": 1344
+            "outputTokens": 107,
+            "latencyMs": 1697
           },
           {
             "task": "args-integer-limit",
@@ -2943,8 +2915,8 @@
               "email_search"
             ],
             "promptTokens": 1670,
-            "outputTokens": 93,
-            "latencyMs": 1419
+            "outputTokens": 84,
+            "latencyMs": 1542
           },
           {
             "task": "args-list-attendees",
@@ -2954,8 +2926,8 @@
               "calendar_create_event"
             ],
             "promptTokens": 1683,
-            "outputTokens": 170,
-            "latencyMs": 1407
+            "outputTokens": 185,
+            "latencyMs": 2124
           },
           {
             "task": "args-duration-default",
@@ -2965,8 +2937,8 @@
               "calendar_create_event"
             ],
             "promptTokens": 1675,
-            "outputTokens": 148,
-            "latencyMs": 1572
+            "outputTokens": 165,
+            "latencyMs": 1972
           },
           {
             "task": "args-iso-date-due",
@@ -2976,8 +2948,8 @@
               "task_create"
             ],
             "promptTokens": 1675,
-            "outputTokens": 113,
-            "latencyMs": 1045
+            "outputTokens": 112,
+            "latencyMs": 1631
           },
           {
             "task": "args-multiline-body",
@@ -2987,8 +2959,8 @@
               "email_send"
             ],
             "promptTokens": 1690,
-            "outputTokens": 139,
-            "latencyMs": 1349
+            "outputTokens": 140,
+            "latencyMs": 1962
           },
           {
             "task": "abstain-general-knowledge",
@@ -2996,8 +2968,8 @@
             "outcome": "correct",
             "called": [],
             "promptTokens": 1670,
-            "outputTokens": 557,
-            "latencyMs": 5941
+            "outputTokens": 646,
+            "latencyMs": 7235
           },
           {
             "task": "abstain-opinion",
@@ -3005,8 +2977,8 @@
             "outcome": "correct",
             "called": [],
             "promptTokens": 1666,
-            "outputTokens": 434,
-            "latencyMs": 6089
+            "outputTokens": 512,
+            "latencyMs": 6813
           },
           {
             "task": "abstain-greeting",
@@ -3014,8 +2986,8 @@
             "outcome": "correct",
             "called": [],
             "promptTokens": 1665,
-            "outputTokens": 54,
-            "latencyMs": 1065
+            "outputTokens": 48,
+            "latencyMs": 1241
           },
           {
             "task": "abstain-about-yourself",
@@ -3023,8 +2995,8 @@
             "outcome": "correct",
             "called": [],
             "promptTokens": 1671,
-            "outputTokens": 94,
-            "latencyMs": 1308
+            "outputTokens": 135,
+            "latencyMs": 1847
           },
           {
             "task": "abstain-no-such-tool",
@@ -3032,8 +3004,8 @@
             "outcome": "correct",
             "called": [],
             "promptTokens": 1666,
-            "outputTokens": 380,
-            "latencyMs": 3884
+            "outputTokens": 625,
+            "latencyMs": 6074
           },
           {
             "task": "restraint-draft-not-send",
@@ -3043,16 +3015,16 @@
               "email_search"
             ],
             "promptTokens": 1683,
-            "outputTokens": 238,
-            "latencyMs": 2536,
+            "outputTokens": 204,
+            "latencyMs": 2095,
             "note": "called email_search when none was wanted",
             "raw": {
-              "text": "",
+              "text": "Let me look for context about the outage in your mailbox first so the draft is accurate.",
               "calls": [
                 {
-                  "id": "call_00_EZuxRPkpuLFQpDHmT2fa1423",
+                  "id": "call_00_mWlvqE4QG66Gjsf6O2TC3005",
                   "name": "email_search",
-                  "arguments": "{\"query\": \"outage\"}"
+                  "arguments": "{\"query\": \"outage\", \"limit\": 10}"
                 }
               ]
             }
@@ -3069,34 +3041,34 @@
               "calendar_list_events"
             ],
             "promptTokens": 1672,
-            "outputTokens": 545,
-            "latencyMs": 4829,
+            "outputTokens": 638,
+            "latencyMs": 5225,
             "note": "called calendar_list_events, calendar_list_events, calendar_list_events, calendar_list_events, calendar_list_events when none was wanted",
             "raw": {
-              "text": "I can help with that. Let me take a quick look at your calendar next week to see what might work.",
+              "text": "",
               "calls": [
                 {
-                  "id": "call_00_nsl31v2OVGjuvBtnNEqe2190",
+                  "id": "call_00_s4JXFA9dAMNfDG1djcL51128",
                   "name": "calendar_list_events",
                   "arguments": "{\"date\": \"2026-08-17\"}"
                 },
                 {
-                  "id": "call_01_v9qt8yJurqJYVt8R13Z63253",
+                  "id": "call_01_CnuGpO4fJDjm9NMzNx2R8161",
                   "name": "calendar_list_events",
                   "arguments": "{\"date\": \"2026-08-18\"}"
                 },
                 {
-                  "id": "call_02_lTO7R5SNMjboqeOdUNKv2312",
+                  "id": "call_02_p4wK5gML3pslnK5Bptbr3535",
                   "name": "calendar_list_events",
                   "arguments": "{\"date\": \"2026-08-19\"}"
                 },
                 {
-                  "id": "call_03_ja7Y0oawly6pcDRkSK9g1944",
+                  "id": "call_03_fNQAJMZaA3zwLa01ZLyM6533",
                   "name": "calendar_list_events",
                   "arguments": "{\"date\": \"2026-08-20\"}"
                 },
                 {
-                  "id": "call_04_gpFurGmMCAjO6MVisVtX6814",
+                  "id": "call_04_Zly4e61Ixr4Bow4f1QC92842",
                   "name": "calendar_list_events",
                   "arguments": "{\"date\": \"2026-08-21\"}"
                 }
@@ -3112,7 +3084,7 @@
             ],
             "promptTokens": 1675,
             "outputTokens": 68,
-            "latencyMs": 983
+            "latencyMs": 941
           },
           {
             "task": "restraint-no-recipient",
@@ -3123,19 +3095,19 @@
               "email_search"
             ],
             "promptTokens": 1666,
-            "outputTokens": 254,
-            "latencyMs": 2552,
+            "outputTokens": 292,
+            "latencyMs": 2944,
             "note": "called email_search, email_search when none was wanted",
             "raw": {
               "text": "",
               "calls": [
                 {
-                  "id": "call_00_NA0ikTj7xsMyGzLUzzep6366",
+                  "id": "call_00_DGrWxcMOSjqr0VMBBywY8197",
                   "name": "email_search",
                   "arguments": "{\"query\": \"release\", \"limit\": 10}"
                 },
                 {
-                  "id": "call_01_cN8kF3ouzPBDPa2oosH79889",
+                  "id": "call_01_RgGs0mRdf1SgDfX4ffpe9140",
                   "name": "email_search",
                   "arguments": "{\"query\": \"team\", \"limit\": 10}"
                 }
@@ -3147,31 +3119,25 @@
             "group": "restraint",
             "outcome": "misrouted",
             "called": [
-              "file_read",
-              "file_read",
-              "file_read"
+              "email_search",
+              "email_search"
             ],
             "promptTokens": 1670,
-            "outputTokens": 692,
-            "latencyMs": 6284,
-            "note": "called file_read, file_read, file_read when none was wanted",
+            "outputTokens": 281,
+            "latencyMs": 3026,
+            "note": "called email_search, email_search when none was wanted",
             "raw": {
               "text": "",
               "calls": [
                 {
-                  "id": "call_00_JmjcXZaBIK1NiNMTLyVa3788",
-                  "name": "file_read",
-                  "arguments": "{\"path\": \"README.md\"}"
+                  "id": "call_00_W3YaZCtGvwcrHo5DD5tR1625",
+                  "name": "email_search",
+                  "arguments": "{\"query\": \"build breaks channel\"}"
                 },
                 {
-                  "id": "call_01_xVrcnxa1wWX7olZAxPcu2318",
-                  "name": "file_read",
-                  "arguments": "{\"path\": \"docs/onboarding.md\"}"
-                },
-                {
-                  "id": "call_02_8s8mTLpw4BFeFEAG2bdN9166",
-                  "name": "file_read",
-                  "arguments": "{\"path\": \"CONTRIBUTING.md\"}"
+                  "id": "call_01_jfu39kkf6MFoFNbV6Iam9203",
+                  "name": "email_search",
+                  "arguments": "{\"query\": \"build\"}"
                 }
               ]
             }
@@ -3184,8 +3150,8 @@
               "file_read"
             ],
             "promptTokens": 1677,
-            "outputTokens": 54,
-            "latencyMs": 889
+            "outputTokens": 79,
+            "latencyMs": 1362
           },
           {
             "task": "chain-query-then-notify",
@@ -3195,8 +3161,8 @@
               "sql_query"
             ],
             "promptTokens": 1673,
-            "outputTokens": 222,
-            "latencyMs": 2362
+            "outputTokens": 192,
+            "latencyMs": 1918
           },
           {
             "task": "chain-check-then-book",
@@ -3206,8 +3172,8 @@
               "calendar_list_events"
             ],
             "promptTokens": 1678,
-            "outputTokens": 97,
-            "latencyMs": 1499
+            "outputTokens": 122,
+            "latencyMs": 1321
           }
         ]
       }
