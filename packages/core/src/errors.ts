@@ -508,6 +508,72 @@ export function workspaceNotEditable(name: string, editable: string): ToolError 
     })
 }
 
+// ─── Soul ────────────────────────────────────────────────────────────────────────────────
+
+export function soulRequirementInvalid(expr: string): ConfigError {
+    return new ConfigError({
+        code: "soul_requirement_invalid",
+        message: `context.soul.requires.contextWindow is ${JSON.stringify(expr)}, which is not a comparison.`,
+        hint: 'Write a comparator and a number, like ">=200000". Supported comparators: >=, >, <=, <, ==. The comparison runs against the resolved context window of model.main.',
+        field: "context.soul.requires.contextWindow",
+    })
+}
+
+export function soulRequirementUnmet(init: {
+    readonly file: string
+    readonly reasons: readonly string[]
+}): ConfigError {
+    return new ConfigError({
+        code: "soul_requirement_unmet",
+        message: `${init.file} requires a model this manifest does not configure: ${init.reasons.join("; ")}.`,
+        hint: "onUnmet: fail is what asked for this refusal. Point model.main at a model that meets context.soul.requires, or set onUnmet to distill (ships the hand-edited compact file named by context.soul.distilled) or omit (ships nothing and warns).",
+        field: "context.soul",
+    })
+}
+
+export function soulDistilledMissing(file: string): ConfigError {
+    return new ConfigError({
+        code: "soul_distilled_missing",
+        message: `${file} does not meet context.soul.requires and onUnmet is distill, but context.soul.distilled names no compact file.`,
+        hint: "Run the soul distill command against the long document to scaffold a compact file, edit it by hand, and name it in context.soul.distilled. Distillation is never automatic — a summariser drops exactly the parts that produce voice.",
+        field: "context.soul.distilled",
+    })
+}
+
+// ─── Knowledge ───────────────────────────────────────────────────────────────────────────
+
+export function knowledgeDirMissing(dir: string, path: string): ConfigError {
+    return new ConfigError({
+        code: "knowledge_dir_missing",
+        message: `knowledge.dir names ${dir}, which is not a readable directory at ${path}.`,
+        hint: "knowledge.dir resolves against the manifest directory. A configured directory that does not exist is a load failure rather than an empty catalogue — the alternative is an agent silently missing reference material its author believes it has.",
+        field: "knowledge.dir",
+    })
+}
+
+export function knowledgeFileInvalid(name: string, detail: string, cause?: unknown): ConfigError {
+    return new ConfigError({
+        code: "knowledge_file_invalid",
+        message: `The knowledge file ${name} is unusable: ${detail}`,
+        hint: "A knowledge file is markdown with a leading --- frontmatter block whose only key is keywords: a non-empty list of words or phrases. The entry activates when the current input mentions one of them.",
+        field: "knowledge.dir",
+        ...(cause === undefined ? {} : { cause }),
+    })
+}
+
+export function knowledgeEntryOverBudget(
+    name: string,
+    tokens: number,
+    budget: number,
+): ConfigError {
+    return new ConfigError({
+        code: "knowledge_entry_over_budget",
+        message: `The knowledge entry ${name} is ${tokens} tokens against knowledge.budget ${budget}, so it could never activate.`,
+        hint: "Split the file or raise knowledge.budget. An entry larger than the whole activation budget would sit in the catalogue and silently never be selected — the same starved-by-configuration shape as a dropped tool call, refused at load for the same reason.",
+        field: "knowledge.budget",
+    })
+}
+
 // ─── Unsupported ─────────────────────────────────────────────────────────────────────────
 
 export function notImplementedYet(feature: string, phase: string): ConfigError {

@@ -163,7 +163,8 @@ export const SoulSchema = z
             .object({
                 /** A comparison such as `">=200000"`, against the resolved window. */
                 contextWindow: z.string().min(1).optional(),
-                class: z.string().min(1).optional(),
+                /** Derived from the model id by size — `frontier` is 14B and up, or unsized. */
+                class: z.enum(["frontier", "small"]).optional(),
             })
             .strict()
             .optional(),
@@ -204,13 +205,13 @@ export const ContextSchema = z
         workspace: z.string().min(1).default("./workspace"),
         /** Tier 0, slot 0. Cache-stable, read-only, before breakpoint A. */
         static: z.array(z.string().min(1)).default([]),
-        /** Tier 1, slot 2. Writable, *after* breakpoint A so a write leaves the cache intact. */
+        /** Tier 1, slot 3. Writable, *after* breakpoint A so a write leaves the cache intact. */
         volatile: z.array(z.string().min(1)).default([]),
-        /** Tier 2, slot 7. After the history, before the current input. One or two rules. */
+        /** Tier 2, slot 9. After the history, before the current input. One or two rules. */
         reminder: z.string().min(1).optional(),
         budgets: WorkspaceBudgetsSchema.prefault({}),
         rules: RulesSchema.prefault({}),
-        /** Capability-gated long-form identity. Second half of Phase 3.5; refused until then. */
+        /** Capability-gated long-form identity, with `requires` and `onUnmet`. */
         soul: SoulSchema.optional(),
         /** Runtime-generated line about automatic compaction. Phase 7; refused until then. */
         compactionNotice: z.boolean().optional(),

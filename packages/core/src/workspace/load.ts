@@ -4,8 +4,8 @@
  * Three tiers, and the tier decides prompt position:
  *
  *   static    slot 0   before cache breakpoint A   read-only
- *   volatile  slot 2   after cache breakpoint A    writable
- *   reminder  slot 7   after the conversation history, before the current input
+ *   volatile  slot 3   after cache breakpoint A    writable
+ *   reminder  slot 9   after the conversation history, before the current input
  *
  * The positions are the reason the tiers exist, and none of the three is expressible by reordering
  * a flat array. `static` and the tool catalogue form the cached prefix, so anything in it that
@@ -32,11 +32,16 @@ import {
     workspaceRuleBudget,
     workspaceTierMismatch,
 } from "../errors.ts"
-import { DEFAULT_PROMPT_STYLE, type PromptStyle, renderPromptStyle } from "../model/prompt-style.ts"
+import {
+    DEFAULT_PROMPT_STYLE,
+    extractExamples,
+    type PromptStyle,
+    renderPromptStyle,
+} from "../model/prompt-style.ts"
 import type { WorkspaceWriteTarget } from "../tools/types.ts"
 import type { Editable, Eviction, Tier } from "./frontmatter.ts"
 import { parseWorkspaceFile } from "./frontmatter.ts"
-import { checkRules } from "./rules.ts"
+import { checkRules, rulesBlocksOnly } from "./rules.ts"
 
 export type { Editable, Eviction, Tier } from "./frontmatter.ts"
 
@@ -75,6 +80,15 @@ export interface WorkspaceFile extends WorkspaceFileRef {
      * form.
      */
     readonly authored: string
+    /**
+     * The file's example blocks, rendered, when the style asked for them in a user message.
+     *
+     * Empty under `examplesIn: system`, where the blocks stay embedded in `content` exactly as
+     * authored. Extraction is a move, never a rewrite — `content` plus `examples` carries every
+     * authored sentence either way, and `tokens` counts both because both are billed every turn
+     * whichever message they travel in.
+     */
+    readonly examples: string
     readonly tokens: number
 }
 
@@ -82,9 +96,17 @@ export interface Workspace {
     readonly files: readonly WorkspaceFile[]
     /** Slot 0. Byte-stable for the lifetime of the agent. */
     readonly static: string
-    /** Slot 2. Re-read on demand; changing it must not disturb slots 0 and 1. */
+    /**
+     * Slot 2: extracted example blocks, delivered as a user message under `examplesIn: user`.
+     *
+     * Empty under `examplesIn: system`. Placed *before* the volatile tier because it is byte-stable
+     * and prefix caching is contiguous — after `volatile` it would fall out of the cacheable region
+     * on every memory write despite never changing.
+     */
+    readonly examples: string
+    /** Slot 3. Re-read on demand; changing it must not disturb slots 0 and 1. */
     readonly volatile: string
-    /** Slot 7. */
+    /** Slot 9. */
     readonly reminder: string
     readonly tokens: {
         readonly static: number
@@ -179,6 +201,10 @@ export function loadWorkspace(options: LoadWorkspaceOptions): Workspace {
     return {
         files,
         static: join("static"),
+        examples: files
+            .map((file) => file.examples)
+            .filter((examples) => examples !== "")
+            .join("\n\n"),
         volatile: join("volatile"),
         reminder: join("reminder"),
         tokens: {
@@ -213,7 +239,14 @@ export function ruleBudgetFailure(
 ): ConfigError | undefined {
     const counted = workspace.files
         .filter((file) => file.tier === "static" || file.tier === "reminder")
-        .map((file) => file.authored)
+        // The full soul document is exempt from the prose heuristic: it ships only to a model its
+        // author declared capable of deriving rules from explanation, and counting a constitution's
+        // sentences as rules would fail every soul-bearing manifest. Its <rules> blocks still count
+        // — they survive distillation and hold everywhere. The distilled file counts in full, like
+        // any static file: it ships to small models, where the budget is the point.
+        .map((file) =>
+            file.field === "context.soul.file" ? rulesBlocksOnly(file.authored) : file.authored,
+        )
         .join("\n")
     const check = checkRules(counted, rules)
     if (check.withinBudget) return undefined
@@ -260,6 +293,7 @@ export function emptyWorkspace(): Workspace {
     return {
         files: [],
         static: "",
+        examples: "",
         volatile: "",
         reminder: "",
         tokens: { static: 0, volatile: 0, reminder: 0, total: 0 },
@@ -405,10 +439,21 @@ function readOne(
         throw workspaceNotWritableTier(ref.name, ref.tier, frontmatter.editable)
     }
 
+    // Under `examplesIn: user`, static-tier example blocks move out of the system prefix into a
+    // user message. Extraction happens on the authored form so the blocks render through the same
+    // path they would have rendered through in place — a move, never a rewrite. Only the static
+    // tier: examples live in identity files, and a `volatile` or `reminder` file has no business
+    // carrying worked dialogues.
+    const extracted =
+        style.examplesIn === "user" && ref.tier === "static"
+            ? extractExamples(body)
+            : { body, examples: "" }
+
     // Rendered here rather than at assembly for the same reason the catalogue is rendered at load:
     // slot 0 is half of the cache-stable prefix, and a per-turn transformation of it — however
     // deterministic — is one refactor away from varying.
-    const content = renderPromptStyle(body, style)
+    const content = renderPromptStyle(extracted.body, style)
+    const examples = renderPromptStyle(extracted.examples, style)
 
     return {
         ...ref,
@@ -417,7 +462,10 @@ function readOne(
         eviction: frontmatter.eviction ?? "none",
         budget: frontmatter.budget ?? budgets[ref.tier],
         content,
-        tokens: estimateTokens(content),
+        examples,
+        // Both halves are billed every turn whichever message they travel in, so the budget sees
+        // both — moving examples must not make a file look cheaper than it is.
+        tokens: estimateTokens(content) + (examples === "" ? 0 : estimateTokens(examples)),
     }
 }
 

@@ -11,6 +11,7 @@ import { resolveCapabilities } from "../src/model/capabilities.ts"
 import {
     DEFAULT_PROMPT_STYLE,
     defaultPromptStyle,
+    extractExamples,
     type PromptStyle,
     type PromptStyleClass,
     parameterBillions,
@@ -203,5 +204,71 @@ describe("intensity", () => {
         const frontier = renderPromptStyle(WITH_RULES, defaultPromptStyle("claude-sonnet-4-5"))
         expect(small).toContain("Follow these rules exactly.")
         expect(frontier.includes("Follow these rules exactly.")).toBe(false)
+    })
+})
+
+describe("extractExamples", () => {
+    const SPLITME = [
+        "# Agent",
+        "",
+        "I answer briefly.",
+        "",
+        "<example>",
+        "user: hi",
+        "agent: hello",
+        "</example>",
+        "",
+        "More prose between blocks.",
+        "",
+        "<example>",
+        "user: bye",
+        "agent: goodbye",
+        "</example>",
+        "",
+        "Closing prose.",
+    ].join("\n")
+
+    test("the split is a move, never a rewrite — every authored line survives in one half", () => {
+        const { body, examples } = extractExamples(SPLITME)
+        for (const line of SPLITME.split("\n")) {
+            if (line.trim() === "") continue
+            expect(body.includes(line) || examples.includes(line)).toBe(true)
+        }
+        // And nothing crosses over: no example content in the body, no prose in the examples.
+        expect(body.includes("agent: hello")).toBe(false)
+        expect(examples.includes("More prose between blocks.")).toBe(false)
+    })
+
+    test("extracted blocks keep their tags, so they render exactly as they would have in place", () => {
+        const { examples } = extractExamples(SPLITME)
+        expect(examples).toContain("<example>")
+        expect(examples).toContain("</example>")
+        // Rendering the extracted text numbers the examples 1..n like an in-place render would.
+        const rendered = renderPromptStyle(examples, {
+            ...DEFAULT_PROMPT_STYLE,
+            delimiters: "markdown",
+        })
+        expect(rendered).toContain("#### Example 1")
+        expect(rendered).toContain("#### Example 2")
+    })
+
+    test("an example tag inside a fence is a demonstration, not a delimiter", () => {
+        const fenced = [
+            "Prose.",
+            "```",
+            "<example>",
+            "shown, not written",
+            "</example>",
+            "```",
+        ].join("\n")
+        const { body, examples } = extractExamples(fenced)
+        expect(examples).toBe("")
+        expect(body).toContain("shown, not written")
+    })
+
+    test("text with no examples passes through with an empty examples half", () => {
+        const { body, examples } = extractExamples("Just prose.\n\nNothing else.")
+        expect(examples).toBe("")
+        expect(body).toBe("Just prose.\n\nNothing else.")
     })
 })

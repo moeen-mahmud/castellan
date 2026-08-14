@@ -108,6 +108,8 @@ export {
 export {
     DEFAULT_PROMPT_STYLE,
     defaultPromptStyle,
+    type ExtractedExamples,
+    extractExamples,
     type PromptStyle,
     type PromptStyleClass,
     parameterBillions,
@@ -138,6 +140,7 @@ export {
     type AgentCreateOptions,
     type AgentDescription,
     type AgentSendOptions,
+    resolveWorkspace,
 } from "./runtime/agent.ts"
 export {
     type AgentSource,
@@ -267,8 +270,27 @@ export {
     EXAMPLES_MIN,
     PROHIBITION_LIMIT,
 } from "./workspace/authoring.ts"
-export type { Editable, Frontmatter, ParsedFile, Tier } from "./workspace/frontmatter.ts"
-export { parseWorkspaceFile, strip as stripWorkspaceText } from "./workspace/frontmatter.ts"
+export type {
+    Editable,
+    Frontmatter,
+    ParsedFile,
+    ParsedKnowledgeFile,
+    Tier,
+} from "./workspace/frontmatter.ts"
+export {
+    parseKnowledgeFile,
+    parseWorkspaceFile,
+    strip as stripWorkspaceText,
+} from "./workspace/frontmatter.ts"
+export {
+    activateKnowledge,
+    type KnowledgeBase,
+    type KnowledgeEntry,
+    type KnowledgeSelector,
+    keywordSelector,
+    type LoadKnowledgeOptions,
+    loadKnowledge,
+} from "./workspace/knowledge.ts"
 export {
     DEFAULT_WORKSPACE_BUDGETS,
     emptyWorkspace,
@@ -290,4 +312,13 @@ export {
     checkRules,
     countRules,
     type RuleCheck,
+    rulesBlocksOnly,
 } from "./workspace/rules.ts"
+export {
+    planSoul,
+    type SoulClass,
+    type SoulGateConfig,
+    type SoulPlan,
+    soulClass,
+    windowRequirementMet,
+} from "./workspace/soul.ts"

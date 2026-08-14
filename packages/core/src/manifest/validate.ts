@@ -8,9 +8,11 @@
  */
 
 import { accessSync, constants, statSync } from "node:fs"
+import { isAbsolute, resolve } from "node:path"
 import { BRAND } from "../brand.ts"
 import { apiVersionMismatch, type ErrorDetail, HarnessError } from "../errors.ts"
 import { planWorkspace, type WorkspaceFileRef } from "../workspace/load.ts"
+import { planSoul } from "../workspace/soul.ts"
 import type { AgentManifest } from "./schema.ts"
 
 /** Rule 1, checked against the raw document before the schema runs. */
@@ -174,7 +176,11 @@ function validateContextBudget(manifest: AgentManifest, resolvedWindow: number):
  * where each name resolves to — including the `context.files` alias, which keeps resolving against
  * the manifest directory rather than the workspace one.
  */
-function validateWorkspaceFiles(manifest: AgentManifest, dir: string): ErrorDetail[] {
+function validateWorkspaceFiles(
+    manifest: AgentManifest,
+    dir: string,
+    resolvedWindow: number,
+): ErrorDetail[] {
     const found: ErrorDetail[] = []
 
     let refs: readonly WorkspaceFileRef[]
@@ -183,6 +189,26 @@ function validateWorkspaceFiles(manifest: AgentManifest, dir: string): ErrorDeta
     } catch (error) {
         // Currently only the files/static conflict, which is a configuration error in its own right.
         return [error instanceof HarnessError ? error.toDetail() : rethrow(error)]
+    }
+
+    // The soul gate runs here with the same model `run` resolves, because `onUnmet: fail` exists to
+    // be heard at validation time rather than in production. Whichever file the gate picks joins the
+    // existence check below like any other static ref.
+    const soul = manifest.context.soul
+    if (soul !== undefined) {
+        const workspaceDir = isAbsolute(manifest.context.workspace)
+            ? manifest.context.workspace
+            : resolve(dir, manifest.context.workspace)
+        try {
+            const plan = planSoul(
+                soul,
+                { id: manifest.model.main.id, window: resolvedWindow },
+                workspaceDir,
+            )
+            if (plan.ref !== undefined) refs = [plan.ref, ...refs]
+        } catch (error) {
+            found.push(error instanceof HarnessError ? error.toDetail() : rethrow(error))
+        }
     }
 
     for (const ref of refs) {
@@ -213,6 +239,32 @@ function validateWorkspaceFiles(manifest: AgentManifest, dir: string): ErrorDeta
 
 function rethrow(error: unknown): never {
     throw error
+}
+
+/**
+ * `knowledge.dir` must be a readable directory. The *entries* are validated by `loadKnowledge` —
+ * frontmatter, keywords, per-entry budget — because validating them twice invites the two copies
+ * of the check to disagree; the directory's existence is checked here so it lands in the same
+ * aggregated report as a missing workspace file.
+ */
+function validateKnowledgeDir(manifest: AgentManifest, dir: string): ErrorDetail[] {
+    const knowledge = manifest.knowledge
+    if (knowledge === undefined) return []
+
+    const path = isAbsolute(knowledge.dir) ? knowledge.dir : resolve(dir, knowledge.dir)
+    try {
+        if (statSync(path).isDirectory()) return []
+    } catch {
+        // fall through to the finding
+    }
+    return [
+        {
+            code: "knowledge_dir_missing",
+            message: `knowledge.dir is not a readable directory: ${path}`,
+            hint: "knowledge.dir resolves against the manifest directory. A configured directory that does not exist is a load failure rather than an empty catalogue — the alternative is an agent silently missing reference material its author believes it has.",
+            field: "knowledge.dir",
+        },
+    ]
 }
 
 /**
@@ -302,11 +354,6 @@ function validateBaseUrls(manifest: AgentManifest): ErrorDetail[] {
 const UNSUPPORTED_SECTIONS: readonly { key: string; feature: string; phase: string }[] = [
     { key: "channels", feature: "channels", phase: "Phase 4" },
     { key: "skills", feature: "skills", phase: "Phase 5" },
-    {
-        key: "knowledge",
-        feature: "keyword-gated knowledge files",
-        phase: "Phase 3.5's second half",
-    },
     { key: "memory", feature: "memory", phase: "Phase 6" },
     { key: "phases", feature: "phase-scoped tool visibility", phase: "Phase 7" },
     { key: "schedules", feature: "schedules", phase: "Phase 8" },
@@ -353,20 +400,12 @@ function validateSupportedSections(
         }
     }
 
-    // Nested under `context`, so the section-level loop above cannot see them. Both are fully
-    // specified in 07-SPEC-WORKSPACE.md and neither is built, which is exactly the case where
-    // silence would be read as support.
+    // Nested under `context`, so the section-level loop above cannot see it. Fully specified in
+    // 07-SPEC-WORKSPACE.md and not built, which is exactly the case where silence would be read
+    // as support.
     const context = raw.context
     if (context !== null && typeof context === "object" && !Array.isArray(context)) {
         const keys = context as Record<string, unknown>
-        if (keys.soul !== undefined && keys.soul !== null) {
-            found.push({
-                code: "not_implemented_yet",
-                message: "This build does not implement context.soul.",
-                hint: "Capability-gated long-form identity arrives in the second half of Phase 3.5. Until then put the compact identity in context.static — which is what onUnmet: distill would ship to a small model anyway.",
-                field: "context.soul",
-            })
-        }
         if (keys.compactionNotice !== undefined) {
             found.push({
                 code: "not_implemented_yet",
@@ -470,7 +509,8 @@ export function validateManifest(manifest: AgentManifest, options: ValidateOptio
         ...validateThresholds(manifest),
         ...validateToolBudget(manifest),
         ...validateContextBudget(manifest, options.resolvedWindow),
-        ...validateWorkspaceFiles(manifest, options.dir),
+        ...validateWorkspaceFiles(manifest, options.dir, options.resolvedWindow),
+        ...validateKnowledgeDir(manifest, options.dir),
         ...validateBaseUrls(manifest),
         ...validateApiKeyEnv(manifest, options.env),
         ...validateDialectSupport(manifest, options.capabilities),

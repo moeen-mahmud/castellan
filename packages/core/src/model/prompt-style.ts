@@ -149,6 +149,66 @@ const RULE_FRAMING: Record<PromptStyle["intensity"], string | undefined> = {
     soft: "Where it helps:",
 }
 
+export interface ExtractedExamples {
+    /** The authored text with its example blocks removed. Everything else is untouched. */
+    readonly body: string
+    /** The example blocks, tags intact, in authored order. Empty string when there are none. */
+    readonly examples: string
+}
+
+/**
+ * Pull `<example>` blocks out of authored text, for `examplesIn: user`.
+ *
+ * Operates on the *authored* form and keeps the tags, so the extracted text renders through
+ * `renderPromptStyle` exactly like it would have in place — same delimiters, same numbering. The
+ * split is a move, never a rewrite: concatenating `examples` back into `body` reproduces every
+ * authored sentence, which is what the placement eval depends on. Measuring `system` against `user`
+ * only means something if the bytes are the same and only the position moved.
+ *
+ * Fence-aware for the same reason the renderer is: inside a fence the author is showing text, not
+ * writing it, and an `<example>` tag there is part of a demonstration rather than a delimiter.
+ */
+export function extractExamples(text: string): ExtractedExamples {
+    if (text === "") return { body: "", examples: "" }
+
+    const body: string[] = []
+    const examples: string[] = []
+    let inFence = false
+    let inExample = false
+
+    for (const line of text.split("\n")) {
+        if (/^\s*(?:```|~~~)/.test(line)) {
+            inFence = !inFence
+            ;(inExample ? examples : body).push(line)
+            continue
+        }
+        if (!inFence && !inExample && EXAMPLE_OPEN.test(line)) {
+            inExample = true
+            examples.push(line)
+            continue
+        }
+        if (!inFence && inExample && EXAMPLE_CLOSE.test(line)) {
+            inExample = false
+            examples.push(line)
+            // A blank line between blocks, so two adjacent examples do not run together.
+            examples.push("")
+            continue
+        }
+        ;(inExample ? examples : body).push(line)
+    }
+
+    return {
+        body: body
+            .join("\n")
+            .replace(/\n{3,}/g, "\n\n")
+            .trim(),
+        examples: examples
+            .join("\n")
+            .replace(/\n{3,}/g, "\n\n")
+            .trim(),
+    }
+}
+
 /**
  * Render authored text for one model.
  *

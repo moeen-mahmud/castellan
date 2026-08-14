@@ -45,11 +45,11 @@ Phases 0–3 implemented and verified: manifest, loop, model layer, store and se
 CLI, and the tool layer with both dialects. Measured numbers live in `evals/` — see
 `evals/tools/README.md` for the NLT-versus-native comparison that Phase 3's gate turns on.
 
-Phase 3.5's first half is in: the workspace tiers, frontmatter and comment stripping, per-file
-and total budgets, the rule guard, and `context.files` as a deprecated alias. `07-SPEC-WORKSPACE.md`
-marks which of its sections are built. Still design-only: `promptStyle` rendering, `SOUL.md`,
-`knowledge/`, `workspace validate` and `eval rules` — the phase's second half — and everything
-from Phase 3.6 on.
+Phase 3.5 is in, all of it: the workspace tiers, frontmatter and comment stripping, per-file and
+total budgets, the rule guard, `context.files` as a deprecated alias, `promptStyle` rendering,
+`examplesIn` placement, `SOUL.md` gating with `soul distill`, `knowledge/`, the `workspace`
+command, `eval rules`, and `evals/prompt-style/` with committed numbers behind the `examplesIn`
+and `intensity` defaults. Still design-only: everything from Phase 3.6 on.
 
 When code and these documents disagree, **the code wins** and the doc is stale — fix it in
 the same PR. A planning doc that quietly drifts from the implementation is worse than no

@@ -404,3 +404,94 @@ describe("rendering and the rule count", () => {
         expect(plain.tokens.static < xml.tokens.static).toBe(true)
     })
 })
+
+describe("examplesIn: user", () => {
+    const AGENT = [
+        "---",
+        "tier: static",
+        "---",
+        "# Agent",
+        "",
+        "I answer briefly, because chat reads best short.",
+        "",
+        "<example>",
+        "user: hi",
+        "agent: hello",
+        "</example>",
+    ].join("\n")
+
+    const USER_STYLE = { ...DEFAULT_PROMPT_STYLE, examplesIn: "user" as const }
+
+    test("static-tier example blocks move to workspace.examples", () => {
+        const dir = workspaceDir({ "AGENT.md": AGENT })
+        const plan = planWorkspace(context({ static: ["AGENT.md"] }), dir)
+        const workspace = loadWorkspace({ refs: plan.refs, style: USER_STYLE })
+
+        expect(workspace.examples).toContain("agent: hello")
+        expect(workspace.static.includes("agent: hello")).toBe(false)
+        // The move is not a discount: the file's tokens count both halves, because both are billed
+        // every turn whichever message they travel in.
+        const file = workspace.files[0]
+        expect(file !== undefined && file.tokens > 0).toBe(true)
+        expect(workspace.static).toContain("I answer briefly")
+    })
+
+    test("under examplesIn: system nothing is extracted", () => {
+        const dir = workspaceDir({ "AGENT.md": AGENT })
+        const plan = planWorkspace(context({ static: ["AGENT.md"] }), dir)
+        const workspace = loadWorkspace({ refs: plan.refs })
+
+        expect(workspace.examples).toBe("")
+        expect(workspace.static).toContain("agent: hello")
+    })
+
+    test("the rule count is unchanged by extraction — it reads the authored form", () => {
+        const dir = workspaceDir({ "AGENT.md": AGENT })
+        const plan = planWorkspace(context({ static: ["AGENT.md"] }), dir)
+        const moved = loadWorkspace({ refs: plan.refs, style: USER_STYLE })
+        const inPlace = loadWorkspace({ refs: plan.refs })
+
+        expect(ruleBudgetFailure(moved, RULES)).toBe(ruleBudgetFailure(inPlace, RULES))
+    })
+})
+
+describe("soul rule counting", () => {
+    const SOUL = [
+        "---",
+        "tier: static",
+        "---",
+        "# Who I am",
+        "",
+        "I never get tired of being asked.",
+        "",
+        "He always wants the short answer first.",
+        "",
+        "<rules>",
+        "I confirm before anything that sends, because mistakes there are expensive.",
+        "</rules>",
+        "",
+        "You must read this paragraph as explanation, never as instruction.",
+    ].join("\n")
+
+    test("the full soul document counts only its rules blocks", () => {
+        // The prose above carries never/always/must — on an ordinary static file that is three
+        // counted rules. On the file the soul gate selected, prose is the premise, not the defect.
+        const dir = workspaceDir({ "SOUL.md": SOUL })
+        const refs = workspaceRefs({
+            base: join(dir, "workspace"),
+            names: ["SOUL.md"],
+            tier: "static",
+            field: "context.soul.file",
+        }).map((ref) => ({ ...ref, field: "context.soul.file" }))
+        const workspace = loadWorkspace({ refs })
+
+        expect(ruleBudgetFailure(workspace, RULES)).toBe(undefined)
+    })
+
+    test("the same text as an ordinary static file counts in full", () => {
+        const dir = workspaceDir({ "AGENT.md": SOUL })
+        const { workspace } = load(dir, { static: ["AGENT.md"] })
+        const failure = ruleBudgetFailure(workspace, RULES)
+        expect(failure !== undefined).toBe(true)
+    })
+})

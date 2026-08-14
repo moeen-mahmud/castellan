@@ -13,11 +13,18 @@ returned `""` under the `native` dialect and scored `unparseable`. A run with re
 is not comparable to one without it.
 
 **The aggregate figures are stabler than the fixtures underneath them.** qwen scored 94.6% / 91.9%
-in both runs, identically — and that was coincidence. Two NLT fixtures flipped in opposite
-directions, and six native fixtures changed outcome. `deepseek-reasoner` NLT moved 94.6% → 91.9%
-on one fixture. **The qwen gate margin is +2.7pp, which is a single fixture, and single-pass
-run-to-run churn here is two to six fixtures.** The gate passes, but the margin is inside the noise
-and cannot be read as a measured difference. `--repeats 3` and a median is what would settle it.
+in both runs, identically — and the per-fixture attribution differed: two NLT fixtures flipped in
+opposite directions, six native fixtures changed outcome, `deepseek-reasoner` NLT moved one fixture.
+
+**Settled by `qwen-3pass/` (2026-08-14):** a 3-pass run with reasoning at the endpoint default —
+like-for-like with the original committed figures — scored **every one of 37 fixtures identically
+on all three passes, both dialects**, and landed on the same 94.6% / 91.9%. Temperature-0 qwen on
+this endpoint is deterministic *within a session*; the fixture movement above is between sessions
+and configurations, not sampling noise. So the +2.7pp gate margin is one fixture, but it is the
+same one-fixture margin in three independent runs across two reasoning configurations: the
+aggregate is a measured result, while which *specific* fixture carries it is not. NLT ≥ native has
+held in every run and configuration measured, and the durable cross-model signal remains the
+`restraint` group.
 
 **Scope.** One model call per fixture; scoring is routing plus argument coercion, with no tool
 executed. This measures the step where the model decides, which is what the dialect claim is

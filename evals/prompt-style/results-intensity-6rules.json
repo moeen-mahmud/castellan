@@ -1,0 +1,1454 @@
+{
+    "startedAt": "2026-08-14T11:07:49.740Z",
+    "tasks": 20,
+    "repeats": 1,
+    "maxTokens": 2000,
+    "reasoning": "none",
+    "intensityRuleCount": 6,
+    "models": [
+        {
+            "id": "qwen3.5:9b",
+            "label": "qwen3.5:9b (open-weight)",
+            "smallOpenWeight": true,
+            "reasoning": "none"
+        },
+        {
+            "id": "deepseek-chat",
+            "label": "deepseek-chat",
+            "smallOpenWeight": false,
+            "reasoning": "endpoint default"
+        }
+    ],
+    "summaries": [
+        {
+            "question": "intensity",
+            "model": "qwen3.5:9b",
+            "condition": "emphatic",
+            "replies": 20,
+            "empties": 0,
+            "usable": true,
+            "rates": {
+                "suffix": 1,
+                "brevity": 1,
+                "no-commas": 1,
+                "lowercase": 1,
+                "no-questions": 1,
+                "digits": 0.8
+            },
+            "allFollowed": 0.8
+        },
+        {
+            "question": "intensity",
+            "model": "qwen3.5:9b",
+            "condition": "neutral",
+            "replies": 20,
+            "empties": 0,
+            "usable": true,
+            "rates": {
+                "suffix": 1,
+                "brevity": 1,
+                "no-commas": 1,
+                "lowercase": 1,
+                "no-questions": 1,
+                "digits": 0.6
+            },
+            "allFollowed": 0.6
+        },
+        {
+            "question": "intensity",
+            "model": "deepseek-chat",
+            "condition": "emphatic",
+            "replies": 20,
+            "empties": 0,
+            "usable": true,
+            "rates": {
+                "suffix": 1,
+                "brevity": 1,
+                "no-commas": 1,
+                "lowercase": 1,
+                "no-questions": 1,
+                "digits": 1
+            },
+            "allFollowed": 1
+        },
+        {
+            "question": "intensity",
+            "model": "deepseek-chat",
+            "condition": "neutral",
+            "replies": 20,
+            "empties": 0,
+            "usable": true,
+            "rates": {
+                "suffix": 1,
+                "brevity": 1,
+                "no-commas": 1,
+                "lowercase": 1,
+                "no-questions": 1,
+                "digits": 1
+            },
+            "allFollowed": 1
+        }
+    ],
+    "attempts": [
+        {
+            "question": "intensity",
+            "model": "qwen3.5:9b",
+            "condition": "emphatic",
+            "task": "What is the capital of Portugal?",
+            "pass": 1,
+            "reply": "the capital of portugal is lisbon done",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "qwen3.5:9b",
+            "condition": "emphatic",
+            "task": "How many days are in February in a leap year?",
+            "pass": 1,
+            "reply": "there are 29 days in february during a leap year done",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "qwen3.5:9b",
+            "condition": "emphatic",
+            "task": "Name a programming language created at Bell Labs.",
+            "pass": 1,
+            "reply": "java was created at bell labs by james gosling in nineteen ninety five for the set top box project known as green. DONE",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": false
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "qwen3.5:9b",
+            "condition": "emphatic",
+            "task": "What does HTTP stand for?",
+            "pass": 1,
+            "reply": "http stands for hypertext transfer protocol which enables web browsers to request data from servers on the internet network today. done",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "qwen3.5:9b",
+            "condition": "emphatic",
+            "task": "Which planet is closest to the Sun?",
+            "pass": 1,
+            "reply": "mercury is the planet closest to the sun at an average distance of 57909184 kilometers done",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "qwen3.5:9b",
+            "condition": "emphatic",
+            "task": "What is the boiling point of water at sea level in Celsius?",
+            "pass": 1,
+            "reply": "the boiling point of water at sea level is 100 degrees celsius done",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "qwen3.5:9b",
+            "condition": "emphatic",
+            "task": "Who wrote the play Hamlet?",
+            "pass": 1,
+            "reply": "william shakespeare wrote hamlet for the stage in elizabethan england during his career years before he died later on this earth today done",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "qwen3.5:9b",
+            "condition": "emphatic",
+            "task": "What is the largest ocean on Earth?",
+            "pass": 1,
+            "reply": "the pacific ocean is the largest body of water covering about thirty three million square miles across our planet today done",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": false
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "qwen3.5:9b",
+            "condition": "emphatic",
+            "task": "In what year did the first Moon landing happen?",
+            "pass": 1,
+            "reply": "the first moon landing happened in 1969 done",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "qwen3.5:9b",
+            "condition": "emphatic",
+            "task": "What gas do plants absorb from the air?",
+            "pass": 1,
+            "reply": "plants absorb carbon dioxide from the air for photosynthesis to make food DONE",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "qwen3.5:9b",
+            "condition": "emphatic",
+            "task": "How many continents are there?",
+            "pass": 1,
+            "reply": "there are seven continents recognized globally today done",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": false
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "qwen3.5:9b",
+            "condition": "emphatic",
+            "task": "What metal is liquid at room temperature?",
+            "pass": 1,
+            "reply": "mercury is the only common metal that stays liquid at normal room temperatures without needing special heating or cooling conditions to maintain its fluid state. DONE",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "qwen3.5:9b",
+            "condition": "emphatic",
+            "task": "Who painted the ceiling of the Sistine Chapel?",
+            "pass": 1,
+            "reply": "michelangelo painted the sistine chapel ceiling in 1508 done",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "qwen3.5:9b",
+            "condition": "emphatic",
+            "task": "What is the longest river in Africa?",
+            "pass": 1,
+            "reply": "the nile river holds that title at roughly 6650 kilometers long done",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "qwen3.5:9b",
+            "condition": "emphatic",
+            "task": "How many strings does a standard violin have?",
+            "pass": 1,
+            "reply": "a standard violin has 4 strings done",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "qwen3.5:9b",
+            "condition": "emphatic",
+            "task": "What country has the largest population?",
+            "pass": 1,
+            "reply": "india now holds the title for the world's most populous nation with over 140 million more people than china according to recent estimates done by demographers worldwide today. DONE",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "qwen3.5:9b",
+            "condition": "emphatic",
+            "task": "In what year did the Berlin Wall fall?",
+            "pass": 1,
+            "reply": "the berlin wall fell in 1989 done",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "qwen3.5:9b",
+            "condition": "emphatic",
+            "task": "What is the chemical symbol for gold?",
+            "pass": 1,
+            "reply": "the chemical symbol for gold is au done",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "qwen3.5:9b",
+            "condition": "emphatic",
+            "task": "How many minutes are in a full day?",
+            "pass": 1,
+            "reply": "there are 1440 minutes in a full day DONE",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "qwen3.5:9b",
+            "condition": "emphatic",
+            "task": "Which language has the most native speakers?",
+            "pass": 1,
+            "reply": "mandarin chinese holds the title for having the largest population of native speakers worldwide today with over nine hundred million people speaking it at home. DONE",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": false
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "qwen3.5:9b",
+            "condition": "neutral",
+            "task": "What is the capital of Portugal?",
+            "pass": 1,
+            "reply": "the capital of portugal is lisbon which has about five hundred thousand residents in its city center area today done",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": false
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "qwen3.5:9b",
+            "condition": "neutral",
+            "task": "How many days are in February in a leap year?",
+            "pass": 1,
+            "reply": "there are 29 days in february during a leap year this happens every four years to keep the calendar aligned with earths orbit around the sun done",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": false
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "qwen3.5:9b",
+            "condition": "neutral",
+            "task": "Name a programming language created at Bell Labs.",
+            "pass": 1,
+            "reply": "java was created at bell labs by james gosling in nineteen ninety five for the set top box project known as green. DONE",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": false
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "qwen3.5:9b",
+            "condition": "neutral",
+            "task": "What does HTTP stand for?",
+            "pass": 1,
+            "reply": "http stands for hypertext transfer protocol which enables web browsers to request resources from servers on the internet using text based commands and responses done DONE",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "qwen3.5:9b",
+            "condition": "neutral",
+            "task": "Which planet is closest to the Sun?",
+            "pass": 1,
+            "reply": "mercury is the planet closest to the sun at an average distance of 57909184 kilometers from our star system center point today done",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "qwen3.5:9b",
+            "condition": "neutral",
+            "task": "What is the boiling point of water at sea level in Celsius?",
+            "pass": 1,
+            "reply": "the boiling point of water at sea level is 100 degrees celsius done",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "qwen3.5:9b",
+            "condition": "neutral",
+            "task": "Who wrote the play Hamlet?",
+            "pass": 1,
+            "reply": "william shakespeare wrote hamlet for the stage in elizabethan england during his career years before he died at age fifty two. DONE",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": false
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "qwen3.5:9b",
+            "condition": "neutral",
+            "task": "What is the largest ocean on Earth?",
+            "pass": 1,
+            "reply": "the pacific ocean is the largest body of water covering about thirty percent of earths surface area today. DONE",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "qwen3.5:9b",
+            "condition": "neutral",
+            "task": "In what year did the first Moon landing happen?",
+            "pass": 1,
+            "reply": "the first moon landing happened in 1969 during mission apollo 11 which landed on july twenty fifth of that year. done",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "qwen3.5:9b",
+            "condition": "neutral",
+            "task": "What gas do plants absorb from the air?",
+            "pass": 1,
+            "reply": "plants absorb carbon dioxide from the air for photosynthesis to create food. done",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "qwen3.5:9b",
+            "condition": "neutral",
+            "task": "How many continents are there?",
+            "pass": 1,
+            "reply": "there are seven continents recognized globally today africa asia europe north america south america antarctica and australia done",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": false
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "qwen3.5:9b",
+            "condition": "neutral",
+            "task": "What metal is liquid at room temperature?",
+            "pass": 1,
+            "reply": "mercury is the only common metal that remains in liquid form at standard room temperatures without needing external heating or cooling systems to maintain its state. DONE",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "qwen3.5:9b",
+            "condition": "neutral",
+            "task": "Who painted the ceiling of the Sistine Chapel?",
+            "pass": 1,
+            "reply": "michelangelo painted the sistine chapel ceiling in 1508 using fresco technique on plastered stone walls for about four years before finishing work there. done",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": false
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "qwen3.5:9b",
+            "condition": "neutral",
+            "task": "What is the longest river in Africa?",
+            "pass": 1,
+            "reply": "the nile river holds that title at roughly 6650 kilometers long before emptying into the mediterranean sea near cairo egypt done",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "qwen3.5:9b",
+            "condition": "neutral",
+            "task": "How many strings does a standard violin have?",
+            "pass": 1,
+            "reply": "a standard violin has 4 strings done",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "qwen3.5:9b",
+            "condition": "neutral",
+            "task": "What country has the largest population?",
+            "pass": 1,
+            "reply": "india now holds the title for the world's most populous nation with approximately 1430 million people surpassing china in recent census data updates today done",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "qwen3.5:9b",
+            "condition": "neutral",
+            "task": "In what year did the Berlin Wall fall?",
+            "pass": 1,
+            "reply": "the berlin wall fell in 1989 done",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "qwen3.5:9b",
+            "condition": "neutral",
+            "task": "What is the chemical symbol for gold?",
+            "pass": 1,
+            "reply": "the chemical symbol for gold is au done",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "qwen3.5:9b",
+            "condition": "neutral",
+            "task": "How many minutes are in a full day?",
+            "pass": 1,
+            "reply": "there are 1440 minutes in a full day since twenty four hours times sixty equals one thousand four hundred forty DONE",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": false
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "qwen3.5:9b",
+            "condition": "neutral",
+            "task": "Which language has the most native speakers?",
+            "pass": 1,
+            "reply": "mandarin chinese holds the title for having the largest group of native speakers worldwide today with over nine hundred million people speaking it at home right now done",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": false
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "deepseek-chat",
+            "condition": "emphatic",
+            "task": "What is the capital of Portugal?",
+            "pass": 1,
+            "reply": "lisbon is the capital of portugal\nDONE",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "deepseek-chat",
+            "condition": "emphatic",
+            "task": "How many days are in February in a leap year?",
+            "pass": 1,
+            "reply": "29 days in february in a leap year.\nDONE",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "deepseek-chat",
+            "condition": "emphatic",
+            "task": "Name a programming language created at Bell Labs.",
+            "pass": 1,
+            "reply": "c language. created at bell labs in 1972 by dennis ritchie. widely used today.\nDONE",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "deepseek-chat",
+            "condition": "emphatic",
+            "task": "What does HTTP stand for?",
+            "pass": 1,
+            "reply": "hypertext transfer protocol\nDONE",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "deepseek-chat",
+            "condition": "emphatic",
+            "task": "Which planet is closest to the Sun?",
+            "pass": 1,
+            "reply": "mercury is closest to the sun. it orbits at about 36 million miles. done",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "deepseek-chat",
+            "condition": "emphatic",
+            "task": "What is the boiling point of water at sea level in Celsius?",
+            "pass": 1,
+            "reply": "100 degrees celsius. this is the standard boiling point at sea level. done",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "deepseek-chat",
+            "condition": "emphatic",
+            "task": "Who wrote the play Hamlet?",
+            "pass": 1,
+            "reply": "william shakespeare wrote hamlet\nDONE",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "deepseek-chat",
+            "condition": "emphatic",
+            "task": "What is the largest ocean on Earth?",
+            "pass": 1,
+            "reply": "the pacific ocean is the largest. it covers over 165 million square kilometers.\nDONE",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "deepseek-chat",
+            "condition": "emphatic",
+            "task": "In what year did the first Moon landing happen?",
+            "pass": 1,
+            "reply": "the first moon landing was in 1969. apollo 11 landed on july 20. neil armstrong walked first.\nDONE",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "deepseek-chat",
+            "condition": "emphatic",
+            "task": "What gas do plants absorb from the air?",
+            "pass": 1,
+            "reply": "plants absorb carbon dioxide (co2) from the air for photosynthesis.  \ndone",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "deepseek-chat",
+            "condition": "emphatic",
+            "task": "How many continents are there?",
+            "pass": 1,
+            "reply": "7 continents. asia africa north america south america antarctica europe australia.\nDONE",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "deepseek-chat",
+            "condition": "emphatic",
+            "task": "What metal is liquid at room temperature?",
+            "pass": 1,
+            "reply": "mercury is liquid at room temperature. its symbol is hg. atomic number 80.\nDONE",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "deepseek-chat",
+            "condition": "emphatic",
+            "task": "Who painted the ceiling of the Sistine Chapel?",
+            "pass": 1,
+            "reply": "michelangelo painted the sistine chapel ceiling\ndone",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "deepseek-chat",
+            "condition": "emphatic",
+            "task": "What is the longest river in Africa?",
+            "pass": 1,
+            "reply": "the nile river is the longest in africa. it spans about 6650 kilometers.\nDONE",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "deepseek-chat",
+            "condition": "emphatic",
+            "task": "How many strings does a standard violin have?",
+            "pass": 1,
+            "reply": "4 strings. tuned g d a e. DONE",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "deepseek-chat",
+            "condition": "emphatic",
+            "task": "What country has the largest population?",
+            "pass": 1,
+            "reply": "india has the largest population with over 1.4 billion people. it surpassed china in 2023.  \nDONE",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "deepseek-chat",
+            "condition": "emphatic",
+            "task": "In what year did the Berlin Wall fall?",
+            "pass": 1,
+            "reply": "the berlin wall fell in 1989\nDONE",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "deepseek-chat",
+            "condition": "emphatic",
+            "task": "What is the chemical symbol for gold?",
+            "pass": 1,
+            "reply": "the chemical symbol for gold is au\ndone",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "deepseek-chat",
+            "condition": "emphatic",
+            "task": "How many minutes are in a full day?",
+            "pass": 1,
+            "reply": "1440 minutes in a full day. that is 24 hours times 60 minutes each.\nDONE",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "deepseek-chat",
+            "condition": "emphatic",
+            "task": "Which language has the most native speakers?",
+            "pass": 1,
+            "reply": "mandarin chinese has the most native speakers. about 918 million people speak it as their first language. done",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "deepseek-chat",
+            "condition": "neutral",
+            "task": "What is the capital of Portugal?",
+            "pass": 1,
+            "reply": "lisbon is the capital of portugal\nDONE",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "deepseek-chat",
+            "condition": "neutral",
+            "task": "How many days are in February in a leap year?",
+            "pass": 1,
+            "reply": "29 days in february in a leap year.\nDONE",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "deepseek-chat",
+            "condition": "neutral",
+            "task": "Name a programming language created at Bell Labs.",
+            "pass": 1,
+            "reply": "c language. created by dennis ritchie at bell labs in 1972. it is widely used for system programming.\nDONE",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "deepseek-chat",
+            "condition": "neutral",
+            "task": "What does HTTP stand for?",
+            "pass": 1,
+            "reply": "http stands for hypertext transfer protocol.\nit is the foundation of web data exchange.\nDONE",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "deepseek-chat",
+            "condition": "neutral",
+            "task": "Which planet is closest to the Sun?",
+            "pass": 1,
+            "reply": "mercury is closest to the sun. it orbits at about 36 million miles. done",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "deepseek-chat",
+            "condition": "neutral",
+            "task": "What is the boiling point of water at sea level in Celsius?",
+            "pass": 1,
+            "reply": "100 degrees celsius at sea level. this is standard pressure. DONE",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "deepseek-chat",
+            "condition": "neutral",
+            "task": "Who wrote the play Hamlet?",
+            "pass": 1,
+            "reply": "william shakespeare wrote hamlet. it is his most famous tragedy.\nDONE",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "deepseek-chat",
+            "condition": "neutral",
+            "task": "What is the largest ocean on Earth?",
+            "pass": 1,
+            "reply": "the pacific ocean is the largest. it covers over 165 million square kilometers. that is more than all land combined.\nDONE",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "deepseek-chat",
+            "condition": "neutral",
+            "task": "In what year did the first Moon landing happen?",
+            "pass": 1,
+            "reply": "the first moon landing was in 1969.\nDONE",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "deepseek-chat",
+            "condition": "neutral",
+            "task": "What gas do plants absorb from the air?",
+            "pass": 1,
+            "reply": "plants absorb carbon dioxide (co2) from the air for photosynthesis.  \nthey release oxygen as a byproduct.  \ndone",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "deepseek-chat",
+            "condition": "neutral",
+            "task": "How many continents are there?",
+            "pass": 1,
+            "reply": "there are 7 continents. asia africa north america south america antarctica europe and australia.\nDONE",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "deepseek-chat",
+            "condition": "neutral",
+            "task": "What metal is liquid at room temperature?",
+            "pass": 1,
+            "reply": "mercury is liquid at room temperature. its symbol is hg. it is toxic and used in thermometers.\nDONE",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "deepseek-chat",
+            "condition": "neutral",
+            "task": "Who painted the ceiling of the Sistine Chapel?",
+            "pass": 1,
+            "reply": "michelangelo painted it. he worked from 1508 to 1512. the ceiling shows bible scenes. done",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "deepseek-chat",
+            "condition": "neutral",
+            "task": "What is the longest river in Africa?",
+            "pass": 1,
+            "reply": "the nile river is the longest in africa\nit flows over 6650 kilometers\nDONE",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "deepseek-chat",
+            "condition": "neutral",
+            "task": "How many strings does a standard violin have?",
+            "pass": 1,
+            "reply": "a standard violin has 4 strings\nDONE",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "deepseek-chat",
+            "condition": "neutral",
+            "task": "What country has the largest population?",
+            "pass": 1,
+            "reply": "india has the largest population with over 1.4 billion people. it surpassed china in 2023.  \nDONE",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "deepseek-chat",
+            "condition": "neutral",
+            "task": "In what year did the Berlin Wall fall?",
+            "pass": 1,
+            "reply": "the berlin wall fell in 1989.\nDONE",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "deepseek-chat",
+            "condition": "neutral",
+            "task": "What is the chemical symbol for gold?",
+            "pass": 1,
+            "reply": "the chemical symbol for gold is au.\ndone",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "deepseek-chat",
+            "condition": "neutral",
+            "task": "How many minutes are in a full day?",
+            "pass": 1,
+            "reply": "1440 minutes in a full day.\nDONE",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        },
+        {
+            "question": "intensity",
+            "model": "deepseek-chat",
+            "condition": "neutral",
+            "task": "Which language has the most native speakers?",
+            "pass": 1,
+            "reply": "mandarin chinese has the most native speakers\nabout 920 million people speak it as a first language\nDONE",
+            "empty": false,
+            "checks": {
+                "suffix": true,
+                "brevity": true,
+                "no-commas": true,
+                "lowercase": true,
+                "no-questions": true,
+                "digits": true
+            }
+        }
+    ]
+}

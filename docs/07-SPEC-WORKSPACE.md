@@ -5,9 +5,10 @@ skills. This document supersedes the flat `context.files` list in `02-SPEC-MANIF
 
 **Status.** Implemented: tiers, stripping, budgets, the rule guard, the `context.files` alias,
 `promptStyle` rendering for `delimiters` and `intensity`, the authoring checks behind the
-`workspace` command, and `eval rules`. Still design-only: `examplesIn` / `skillsIn` placement (the
-capability resolves and is carried, but nothing moves examples into a user message yet), `SOUL.md`,
-and `knowledge/`.
+`workspace` command, `eval rules`, `examplesIn` placement (extraction into the assembly's examples
+slot), `SOUL.md` with `requires`/`onUnmet` and the `soul distill` scaffold, and `knowledge/`.
+Still design-only: `skillsIn` (the capability resolves and is carried, but skills arrive in
+Phase 5, so there is nothing to place).
 
 **Why it replaced the flat list.** A flat ordered array cannot express three things that
 turned out to matter: which files are cache-stable versus volatile, which sit after the
@@ -22,8 +23,14 @@ adherence, or persona drift.
 | Tier | Slot | Position | Cache | Editable | Default budget |
 | --- | --- | --- | --- | --- | --- |
 | `static` | 0 | system prefix, first | before breakpoint A | no | 2,000 |
-| `volatile` | 2 | system prefix, after the tool catalogue | after breakpoint A | yes | 3,500 |
-| `reminder` | 7 | after history, before the current input | never | no | 500 |
+| `volatile` | 3 | system prefix, after the tool catalogue | after breakpoint A | yes | 3,500 |
+| `reminder` | 9 | after history, before the current input | never | no | 500 |
+
+Two more slots carry workspace-derived content without being tiers of their own: slot 2 holds
+example blocks extracted under `examplesIn: user` (byte-stable, so it extends the cacheable
+prefix — its tokens still count against the file that authored them), and slot 5 holds activated
+`knowledge/` entries (retrieved per turn, never pinned, budgeted by `knowledge.budget` rather
+than by any tier).
 
 Slot numbers are the ones in `01-ARCHITECTURE.md` and in `SLOT`
 (`packages/core/src/context/blocks.ts`), where slot number equals prompt position. `static`
@@ -145,19 +152,81 @@ context:
   soul:
     file: SOUL.md
     requires:
-      contextWindow: ">=200000"
-      class: frontier
-    onUnmet: distill      # distill | omit | fail
+      contextWindow: ">=200000"   # a comparator and a number, against the resolved window
+      class: frontier             # frontier | small — derived from the model id by size
+    onUnmet: distill              # distill | omit | fail
+    distilled: SOUL.compact.md    # required by distill; its absence is a load failure
 ```
+
+`requires.class` is derived from the model id the way `promptStyle` is: below 14B is `small`,
+14B and up — or an id naming no size, which is every hosted frontier model — is `frontier`.
+Size predicts whether a model can carry a constitution, and size is in the id.
+
+Whichever file the gate selects loads as an ordinary static ref, *first* in the tier: identity
+leads. **The soul replaces `AGENT.md`; a manifest must not list both.** Two identity documents in
+one prefix is the same two-files-that-contradict failure recorded under Deliberate omissions for
+the old `IDENTITY.md` split. `omit` ships nothing and warns; `distill` ships the compact file and
+warns, so nobody wonders which identity the agent is running on; `fail` refuses the load naming
+every unmet requirement — and `validate` applies the same gate with the same model, so it is heard
+before production.
 
 `onUnmet: distill` keeps the long document as the human-authored source of truth and ships
 the compact kernel to models that cannot carry it. This is the character-bible pattern: the
 writers' room keeps the bible, nobody recites it before every scene.
 
-Distillation is not automatic. `castellan soul distill SOUL.md` emits a scaffold the author
-edits; the runtime uses the committed compact file. Automatic summarisation of an identity
-document is a bad idea — the parts that produce voice are exactly the parts a summariser
-drops.
+Distillation is not automatic. `soul distill SOUL.md` emits a scaffold the author edits; the
+runtime uses the committed compact file. The scaffold keeps the document's headings and copies
+its `<rules>` blocks verbatim — rules are exactly what must survive, and copying is not
+summarising — and leaves a `{{PLACEHOLDER}}` per section, in the form the `workspace` command
+already warns about, so an unedited scaffold keeps reporting itself. Automatic summarisation of
+an identity document is a bad idea — the parts that produce voice are exactly the parts a
+summariser drops.
+
+**Rule counting exempts the full document's prose.** A constitution explains at length — that is
+its premise — and it ships only to a model its author has declared, via `requires`, capable of
+deriving rules from explanation. Running the keyword heuristic over that explanation counts
+sentences like "never gets tired of being asked" as rules and fails every soul-bearing manifest.
+So for the file selected by `context.soul.file`, the rule budget and the rule-shaped authoring
+checks read only its `<rules>` blocks, which survive distillation and hold on every model. The
+*distilled* file gets no exemption: it ships to small models, where the budget is the point.
+
+---
+
+## `knowledge/` — Tier 3, retrieved and never pinned
+
+```yaml
+knowledge:
+  dir: ./knowledge     # resolves against the manifest directory
+  maxActive: 2         # entries activated in one turn
+  budget: 600          # total tokens across the activated entries
+```
+
+A knowledge file is markdown whose frontmatter declares its gate:
+
+```yaml
+---
+keywords: [deploy, rollback, staging]
+---
+```
+
+`keywords` is required — it is the entry's only way in, and a file that can never activate is the
+starved-by-configuration shape refused everywhere else. Matching is case-insensitive and
+whole-word against the current input ("art" does not activate on "start"; a phrase matches as a
+phrase). Entries are ranked by how many keywords matched, ties in filename order, and activation
+walks the ranking taking up to `maxActive` entries while the running total fits `budget` —
+stopping at the first that does not fit rather than skipping past it, so a worse-ranked entry can
+never displace a better-ranked one purely by being short.
+
+Activated entries enter slot 5, **not pinned**: knowledge is selected fresh per turn (once per
+turn, not per step — two steps of one turn must not argue from different reference material), is
+never written back, and compaction may drop it. It has no share of the workspace budgets because
+it is not paid for on turns that do not mention it. An entry larger than the whole activation
+budget fails the load by name — it would sit in the catalogue and silently never be selected.
+
+The selector is a seam (`KnowledgeSelector`, ranking only — the caller applies `maxActive` and the
+budget, so a selector cannot quietly widen either). Phase 6 may attach a scored retriever behind
+it and **must not** build a second index; prove the lexical gate insufficient first, which is the
+same bar memory's FTS5 sets for embeddings.
 
 ---
 
@@ -229,11 +298,16 @@ heading "exactly like this" — which frontier models read as metasyntax and qwe
 as the format, copying it literally in 25 of 37 fixtures. Same bytes, opposite
 interpretations, 65 points of measured difference. See decision 4.19.
 
-**`examplesIn` / `skillsIn`.** Genuinely unresolved. Anthropic places examples in the system
-prompt; OpenAI's guidance puts tone and role in the system message and task-specific detail
-and examples in user messages. Settled by the **Phase 3.5** eval matrix in
-`evals/prompt-style/`, not by picking a vendor. (Phase 3's eval compared *dialects* and says
-nothing about this.)
+**`examplesIn` / `skillsIn`.** The disagreement is real: Anthropic places examples in the system
+prompt; OpenAI's guidance puts tone and role in the system message and task-specific detail and
+examples in user messages. The mechanism is built — under `examplesIn: user`, static-tier
+`<example>` blocks leave the authored file through `extractExamples` (a move, never a rewrite:
+tags intact, prose byte-identical, fence-aware) and travel as a user message in slot 2, *before*
+the volatile tier, because they are byte-stable and prefix caching is contiguous. Their tokens
+still count against the file that authored them — moving examples must not make a file look
+cheaper. The *default* per model class is settled by `evals/prompt-style/`, not by picking a
+vendor. (Phase 3's eval compared *dialects* and says nothing about this.) `skillsIn` is carried
+but consumed nowhere until skills exist in Phase 5.
 
 ---
 
@@ -332,8 +406,9 @@ tokens and buys no reliable compliance.
 ## Validation
 
 ```bash
-castellan validate  ./agent.yaml    # does it load?
-castellan workspace ./agent.yaml    # is it written well?
+castellan validate  ./agent.yaml       # does it load?
+castellan workspace ./agent.yaml       # is it written well?
+castellan soul distill ./SOUL.md       # scaffold the compact identity, for a person to fill
 ```
 
 The split is deliberate. `validate` reports mechanical facts — frontmatter validity, per-file and

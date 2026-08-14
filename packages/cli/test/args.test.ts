@@ -58,9 +58,12 @@ describe("the four silent failures this parser exists to end", () => {
 })
 
 describe("commands", () => {
-    test("each declared command parses with its required argument", () => {
+    test("each declared command parses with its required arguments", () => {
         for (const spec of COMMANDS) {
-            expect(command([spec.name, "a.yaml"]).command.name).toBe(spec.name)
+            // One dummy value per required arg, read from the spec rather than assumed to be one
+            // manifest path — `soul` takes an action and a file.
+            const args = spec.args.filter((arg) => arg.required).map((arg) => `a-${arg.name}`)
+            expect(command([spec.name, ...args]).command.name).toBe(spec.name)
         }
     })
 

@@ -179,8 +179,8 @@ capabilities:
   promptStyle:            # workspace rendering. Every field optional and merged individually
     delimiters: plain     # xml | markdown | plain
     intensity: emphatic   # emphatic | neutral | soft
-    examplesIn: system    # system | user — carried, not yet acted on
-    skillsIn: system      # system | user — carried, not yet acted on
+    examplesIn: system    # system | user — user moves example blocks to a user message (slot 2)
+    skillsIn: system      # system | user — carried; consumed when skills arrive in Phase 5
 ```
 
 Capabilities affect thinking-block replay, cache-breakpoint placement, and workspace rendering
@@ -236,17 +236,17 @@ the provider caches nothing: DeepSeek caches context automatically server-side a
 > Governed by `07-SPEC-WORKSPACE.md`, which supersedes the flat `files` list: an ordered array
 > cannot say which files are cache-stable versus volatile, which sit after the conversation
 > history, or which the agent may write to — and each of those has a measured cost when got wrong.
-> Implemented, except `soul`, which is refused at load until Phase 3.5's second half.
+> Implemented in full.
 
 | Field | Default | Notes |
 | --- | --- | --- |
 | `workspace` | `./workspace` | Directory the tier lists resolve against. Relative to the manifest. |
 | `static` | `[]` | Tier 0, slot 0. Cache-stable, read-only, before breakpoint A. |
-| `volatile` | `[]` | Tier 1, slot 2. Agent-writable, **after** breakpoint A so a write does not invalidate the cached prefix. The **only** writable tier — a `static` or `reminder` file declaring `editable` is refused, not downgraded. |
-| `reminder` | none | Tier 2, slot 7. Injected after the conversation history, before the current input. |
+| `volatile` | `[]` | Tier 1, slot 3. Agent-writable, **after** breakpoint A so a write does not invalidate the cached prefix. The **only** writable tier — a `static` or `reminder` file declaring `editable` is refused, not downgraded. |
+| `reminder` | none | Tier 2, slot 9. Injected after the conversation history, before the current input. |
 | `budgets` | `{static: 2000, volatile: 3500, reminder: 500, total: 6000}` | Hard caps, measured on the *stripped* text. Over budget **fails the load naming the file** — never silent truncation. A ceiling, not a target: everything inside it is paid every turn. |
-| `rules` | `{perRuleSuccess: 0.90, reliabilityTarget: 0.80, onExceed: fail}` | Imperative-count guard across static + reminder. At 0.90 a 0.80 target permits two rules, not four. The count is a heuristic and reports every line it counted; `onExceed: warn` is the escape. |
-| `soul` | none | Capability-gated long-form identity, with `requires` and `onUnmet: distill \| omit \| fail`. **Phase 3.5 second half** — refused at load until then. |
+| `rules` | `{perRuleSuccess: 0.90, reliabilityTarget: 0.80, onExceed: fail}` | Imperative-count guard across static + reminder. At 0.90 a 0.80 target permits two rules, not four. The count is a heuristic and reports every line it counted; `onExceed: warn` is the escape. The file named by `soul.file` counts only its `<rules>` blocks — see `07-SPEC-WORKSPACE.md`. |
+| `soul` | none | Capability-gated long-form identity: `file`, `requires` (`contextWindow` comparator, `class: frontier \| small` derived from the model id by size), `onUnmet: distill \| omit \| fail`, and `distilled` (required by `distill`). The selected file loads first in the static tier and **replaces** `AGENT.md` — listing both ships two identities. |
 | `compactionNotice` | true | Runtime-generated line telling the model context compacts automatically, so it does not wrap up work early on budget grounds. **Phase 7** — refused at load until then. |
 
 Per-file frontmatter (`tier`, `editable`, `budget`, `eviction`) is stripped before injection, along
@@ -255,15 +255,16 @@ frontmatter `tier` disagrees with the list that named it fails the load rather t
 in either direction.
 
 A `knowledge` section sits alongside `skills` at the top level, and is Tier 3 — retrieved, never
-pinned, so it has no share of the 1,300:
+pinned, so it has no share of the workspace budgets:
 
 | Field | Default | Notes |
 | --- | --- | --- |
-| `knowledge.dir` | none | Directory of keyword-gated knowledge files. |
+| `knowledge.dir` | none | Directory of keyword-gated knowledge files. Resolves against the manifest; a missing directory fails the load. |
 | `knowledge.maxActive` | 2 | Entries activated in one turn. |
-| `knowledge.budget` | 600 | Total across activated entries. |
+| `knowledge.budget` | 600 | Total across activated entries. An entry alone exceeding it fails the load — it could never activate. |
 
-**Phase 3.5 second half** — the section validates and is refused at load until then.
+Each knowledge file declares `keywords:` (required, non-empty) in its frontmatter; matching is
+case-insensitive and whole-word against the current input. See `07-SPEC-WORKSPACE.md`.
 
 ### `tools`
 
@@ -360,7 +361,7 @@ Phase state persists per session.
 | --- | --- | --- |
 | `retriever` | `fts5` | Interface id. `fts5` is the only shipped implementation. |
 | `dir` | `./memory` | Dated markdown. Written by the agent through `memory_write`. |
-| `k` | 6 | Passages retrieved into context slot 4. |
+| `k` | 6 | Passages retrieved into context slot 6. |
 | `includeHistory` | true | Whether past messages are indexed alongside memory files. |
 
 ### `channels`

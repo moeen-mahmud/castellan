@@ -1,5 +1,5 @@
 /**
- * Server-sent event parsing, per the WHATWG event-stream grammar and tolerant of what real
+ * Server-sent event parsing, per the Web Hypertext Application Technology Working Group (WHATWG) event-stream grammar and tolerant of what real
  * gateways actually send.
  *
  * Kept as a pure generator over byte chunks, separately from the HTTP client, because this is

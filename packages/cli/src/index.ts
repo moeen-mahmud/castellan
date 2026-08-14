@@ -27,6 +27,7 @@ import { finish, installGuards } from "#lib/exit"
 import { helpText } from "#lib/help"
 import { runCommand } from "#run"
 import { sessionsCommand } from "#sessions"
+import { soulCommand } from "#soul"
 import { toolsCommand } from "#tools"
 import { validateCommand } from "#validate"
 import { workspaceCommand } from "#workspace"
@@ -112,6 +113,16 @@ async function dispatch(argv: readonly string[]): Promise<number> {
                 json: flags.bool("json"),
                 strict: flags.bool("strict"),
             })
+
+        case "soul": {
+            const out = flags.str("out")
+            return soulCommand({
+                // For this command the first positional is the action, not a manifest.
+                action: manifestPath,
+                file: positionals[1] as string,
+                ...(out === undefined ? {} : { out }),
+            })
+        }
 
         case "agents":
             return await agentsCommand({ manifestPaths: positionals, json: flags.bool("json") })

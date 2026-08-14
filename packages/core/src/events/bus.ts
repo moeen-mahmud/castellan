@@ -26,6 +26,7 @@ export interface EventBusOptions {
 export class EventBus {
     readonly runtimeId: string
 
+    // '#' is used to make these private fields
     #handlers = new Map<string, Set<EventHandler>>()
     #emitChunks: boolean
     #onHandlerError: (error: unknown, event: AnyEvent) => void

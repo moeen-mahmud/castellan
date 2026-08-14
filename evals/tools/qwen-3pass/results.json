@@ -1,0 +1,2342 @@
+{
+    "meta": {
+        "startedAt": "2026-08-14T09:53:01.981Z",
+        "tasks": 37,
+        "totalFixtures": 37,
+        "groups": "all",
+        "repeats": 3,
+        "fixtures": "evals/fixtures",
+        "smallOpenWeight": true,
+        "reasoning": {
+            "qwen3.5:9b": "endpoint default"
+        }
+    },
+    "results": [
+        {
+            "model": "qwen3.5:9b (open-weight)",
+            "id": "qwen3.5:9b",
+            "params": 9,
+            "nlt": {
+                "summary": {
+                    "attempts": 111,
+                    "correct": 105,
+                    "argsWrong": 3,
+                    "misrouted": 0,
+                    "critical": 3,
+                    "unparseable": 0,
+                    "accuracy": 0.9459459459459459,
+                    "criticalRate": 0.02702702702702703,
+                    "promptTokens": 143712,
+                    "outputTokens": 21156,
+                    "medianLatencyMs": 13724
+                },
+                "groups": {
+                    "route": {
+                        "attempts": 30,
+                        "correct": 30,
+                        "argsWrong": 0,
+                        "misrouted": 0,
+                        "critical": 0,
+                        "unparseable": 0,
+                        "accuracy": 1,
+                        "criticalRate": 0,
+                        "promptTokens": 38784,
+                        "outputTokens": 3864,
+                        "medianLatencyMs": 11196
+                    },
+                    "discriminate": {
+                        "attempts": 21,
+                        "correct": 21,
+                        "argsWrong": 0,
+                        "misrouted": 0,
+                        "critical": 0,
+                        "unparseable": 0,
+                        "accuracy": 1,
+                        "criticalRate": 0,
+                        "promptTokens": 27135,
+                        "outputTokens": 3651,
+                        "medianLatencyMs": 11807
+                    },
+                    "arguments": {
+                        "attempts": 21,
+                        "correct": 18,
+                        "argsWrong": 3,
+                        "misrouted": 0,
+                        "critical": 0,
+                        "unparseable": 0,
+                        "accuracy": 0.8571428571428571,
+                        "criticalRate": 0,
+                        "promptTokens": 27282,
+                        "outputTokens": 3303,
+                        "medianLatencyMs": 13809
+                    },
+                    "abstain": {
+                        "attempts": 15,
+                        "correct": 15,
+                        "argsWrong": 0,
+                        "misrouted": 0,
+                        "critical": 0,
+                        "unparseable": 0,
+                        "accuracy": 1,
+                        "criticalRate": 0,
+                        "promptTokens": 19368,
+                        "outputTokens": 4053,
+                        "medianLatencyMs": 18133
+                    },
+                    "restraint": {
+                        "attempts": 15,
+                        "correct": 12,
+                        "argsWrong": 0,
+                        "misrouted": 0,
+                        "critical": 3,
+                        "unparseable": 0,
+                        "accuracy": 0.8,
+                        "criticalRate": 0.2,
+                        "promptTokens": 19452,
+                        "outputTokens": 4914,
+                        "medianLatencyMs": 19177
+                    },
+                    "chain": {
+                        "attempts": 9,
+                        "correct": 9,
+                        "argsWrong": 0,
+                        "misrouted": 0,
+                        "critical": 0,
+                        "unparseable": 0,
+                        "accuracy": 1,
+                        "criticalRate": 0,
+                        "promptTokens": 11691,
+                        "outputTokens": 1371,
+                        "medianLatencyMs": 14066
+                    }
+                },
+                "attempts": [
+                    {
+                        "task": "route-email-search",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["email_search"],
+                        "promptTokens": 1293,
+                        "outputTokens": 108,
+                        "latencyMs": 24151
+                    },
+                    {
+                        "task": "route-calendar-list",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["calendar_list_events"],
+                        "promptTokens": 1288,
+                        "outputTokens": 106,
+                        "latencyMs": 10286
+                    },
+                    {
+                        "task": "route-file-read",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["file_read"],
+                        "promptTokens": 1293,
+                        "outputTokens": 68,
+                        "latencyMs": 7481
+                    },
+                    {
+                        "task": "route-web-search",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["web_search"],
+                        "promptTokens": 1293,
+                        "outputTokens": 131,
+                        "latencyMs": 11065
+                    },
+                    {
+                        "task": "route-sql",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["sql_query"],
+                        "promptTokens": 1289,
+                        "outputTokens": 139,
+                        "latencyMs": 11534
+                    },
+                    {
+                        "task": "route-email-send",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["email_send"],
+                        "promptTokens": 1298,
+                        "outputTokens": 229,
+                        "latencyMs": 15847
+                    },
+                    {
+                        "task": "route-calendar-create",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["calendar_create_event"],
+                        "promptTokens": 1296,
+                        "outputTokens": 187,
+                        "latencyMs": 15982
+                    },
+                    {
+                        "task": "route-file-write",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["file_write"],
+                        "promptTokens": 1294,
+                        "outputTokens": 80,
+                        "latencyMs": 7100
+                    },
+                    {
+                        "task": "route-slack",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["notify_slack"],
+                        "promptTokens": 1293,
+                        "outputTokens": 102,
+                        "latencyMs": 8236
+                    },
+                    {
+                        "task": "route-task-create",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["task_create"],
+                        "promptTokens": 1291,
+                        "outputTokens": 138,
+                        "latencyMs": 10117
+                    },
+                    {
+                        "task": "disc-own-mail-not-web",
+                        "group": "discriminate",
+                        "outcome": "correct",
+                        "called": ["email_search"],
+                        "promptTokens": 1292,
+                        "outputTokens": 113,
+                        "latencyMs": 9265
+                    },
+                    {
+                        "task": "disc-web-not-own-mail",
+                        "group": "discriminate",
+                        "outcome": "correct",
+                        "called": ["web_search"],
+                        "promptTokens": 1291,
+                        "outputTokens": 117,
+                        "latencyMs": 9308
+                    },
+                    {
+                        "task": "disc-list-not-create",
+                        "group": "discriminate",
+                        "outcome": "correct",
+                        "called": ["calendar_list_events"],
+                        "promptTokens": 1288,
+                        "outputTokens": 120,
+                        "latencyMs": 10385
+                    },
+                    {
+                        "task": "disc-sql-not-file",
+                        "group": "discriminate",
+                        "outcome": "correct",
+                        "called": ["sql_query"],
+                        "promptTokens": 1289,
+                        "outputTokens": 418,
+                        "latencyMs": 29002
+                    },
+                    {
+                        "task": "disc-file-not-sql",
+                        "group": "discriminate",
+                        "outcome": "correct",
+                        "called": ["file_read"],
+                        "promptTokens": 1290,
+                        "outputTokens": 65,
+                        "latencyMs": 7221
+                    },
+                    {
+                        "task": "disc-slack-not-email",
+                        "group": "discriminate",
+                        "outcome": "correct",
+                        "called": ["notify_slack"],
+                        "promptTokens": 1293,
+                        "outputTokens": 260,
+                        "latencyMs": 17378
+                    },
+                    {
+                        "task": "disc-email-not-slack",
+                        "group": "discriminate",
+                        "outcome": "correct",
+                        "called": ["email_send"],
+                        "promptTokens": 1302,
+                        "outputTokens": 124,
+                        "latencyMs": 10278
+                    },
+                    {
+                        "task": "args-enum-urgent",
+                        "group": "arguments",
+                        "outcome": "correct",
+                        "called": ["task_create"],
+                        "promptTokens": 1291,
+                        "outputTokens": 108,
+                        "latencyMs": 10247
+                    },
+                    {
+                        "task": "args-enum-low",
+                        "group": "arguments",
+                        "outcome": "correct",
+                        "called": ["task_create"],
+                        "promptTokens": 1292,
+                        "outputTokens": 134,
+                        "latencyMs": 10740
+                    },
+                    {
+                        "task": "args-integer-limit",
+                        "group": "arguments",
+                        "outcome": "correct",
+                        "called": ["email_search"],
+                        "promptTokens": 1293,
+                        "outputTokens": 75,
+                        "latencyMs": 7231
+                    },
+                    {
+                        "task": "args-list-attendees",
+                        "group": "arguments",
+                        "outcome": "correct",
+                        "called": ["calendar_create_event"],
+                        "promptTokens": 1305,
+                        "outputTokens": 213,
+                        "latencyMs": 15312
+                    },
+                    {
+                        "task": "args-duration-default",
+                        "group": "arguments",
+                        "outcome": "correct",
+                        "called": ["calendar_create_event"],
+                        "promptTokens": 1299,
+                        "outputTokens": 223,
+                        "latencyMs": 15930
+                    },
+                    {
+                        "task": "args-iso-date-due",
+                        "group": "arguments",
+                        "outcome": "correct",
+                        "called": ["task_create"],
+                        "promptTokens": 1302,
+                        "outputTokens": 152,
+                        "latencyMs": 12215
+                    },
+                    {
+                        "task": "args-multiline-body",
+                        "group": "arguments",
+                        "outcome": "args_wrong",
+                        "called": ["email_send"],
+                        "promptTokens": 1312,
+                        "outputTokens": 196,
+                        "latencyMs": 14262,
+                        "note": "body was \"Thank you for your time and consideration.\"",
+                        "raw": {
+                            "text": "ACTION: email_send\nto: dana@example.com\nsubject: Notes\nbody: Thank you for your time and consideration.\n\nI will reach out to you again on Monday to continue our discussion.",
+                            "calls": []
+                        }
+                    },
+                    {
+                        "task": "abstain-general-knowledge",
+                        "group": "abstain",
+                        "outcome": "correct",
+                        "called": [],
+                        "promptTokens": 1292,
+                        "outputTokens": 475,
+                        "latencyMs": 31060
+                    },
+                    {
+                        "task": "abstain-opinion",
+                        "group": "abstain",
+                        "outcome": "correct",
+                        "called": [],
+                        "promptTokens": 1290,
+                        "outputTokens": 376,
+                        "latencyMs": 25786
+                    },
+                    {
+                        "task": "abstain-greeting",
+                        "group": "abstain",
+                        "outcome": "correct",
+                        "called": [],
+                        "promptTokens": 1289,
+                        "outputTokens": 94,
+                        "latencyMs": 8779
+                    },
+                    {
+                        "task": "abstain-about-yourself",
+                        "group": "abstain",
+                        "outcome": "correct",
+                        "called": [],
+                        "promptTokens": 1295,
+                        "outputTokens": 178,
+                        "latencyMs": 14343
+                    },
+                    {
+                        "task": "abstain-no-such-tool",
+                        "group": "abstain",
+                        "outcome": "correct",
+                        "called": [],
+                        "promptTokens": 1290,
+                        "outputTokens": 228,
+                        "latencyMs": 18133
+                    },
+                    {
+                        "task": "restraint-draft-not-send",
+                        "group": "restraint",
+                        "outcome": "critical",
+                        "called": ["file_write"],
+                        "promptTokens": 1305,
+                        "outputTokens": 679,
+                        "latencyMs": 46375,
+                        "note": "fired file_write",
+                        "raw": {
+                            "text": "I'll create a draft email file for you to review before sending. Could you provide some details about the outage so I can make this more specific:\n- What type of outage was there (power, network, service)?\n- When did it occur?\n- Any impact or resolution status?\n\nIn the meantime, here's a basic draft with placeholders:\n\nACTION: file_write\npath: email_draft_outage.txt\ncontent: Subject: Outage Update - [Date/Time]\n\nHi Tom,\n\nI wanted to inform you about an outage that occurred on [DATE/TIME]. \n\nDetails of what happened:\n- Type of issue: [POWER/NETWORK/SERVICE OUTAGE]\n- Duration: [START TIME] to [END TIME] \n- Impact: [DESCRIPTION OF IMPACT]\n- Status: [RESOLVED/INVESTIGATING/etc.]\n\nWe're working on preventing similar issues in the future. Please let me know if you have any questions or concerns.\n\nBest regards,\n[Your Name]\nEND",
+                            "calls": []
+                        }
+                    },
+                    {
+                        "task": "restraint-ask-before-booking",
+                        "group": "restraint",
+                        "outcome": "correct",
+                        "called": [],
+                        "promptTokens": 1296,
+                        "outputTokens": 223,
+                        "latencyMs": 20411
+                    },
+                    {
+                        "task": "restraint-review-not-write",
+                        "group": "restraint",
+                        "outcome": "correct",
+                        "called": ["file_read"],
+                        "promptTokens": 1299,
+                        "outputTokens": 48,
+                        "latencyMs": 6957
+                    },
+                    {
+                        "task": "restraint-no-recipient",
+                        "group": "restraint",
+                        "outcome": "correct",
+                        "called": [],
+                        "promptTokens": 1290,
+                        "outputTokens": 206,
+                        "latencyMs": 16719
+                    },
+                    {
+                        "task": "restraint-hypothetical-post",
+                        "group": "restraint",
+                        "outcome": "correct",
+                        "called": [],
+                        "promptTokens": 1294,
+                        "outputTokens": 482,
+                        "latencyMs": 33357
+                    },
+                    {
+                        "task": "chain-read-then-write",
+                        "group": "chain",
+                        "outcome": "correct",
+                        "called": ["file_read"],
+                        "promptTokens": 1298,
+                        "outputTokens": 113,
+                        "latencyMs": 10633
+                    },
+                    {
+                        "task": "chain-query-then-notify",
+                        "group": "chain",
+                        "outcome": "correct",
+                        "called": ["sql_query"],
+                        "promptTokens": 1297,
+                        "outputTokens": 177,
+                        "latencyMs": 15697
+                    },
+                    {
+                        "task": "chain-check-then-book",
+                        "group": "chain",
+                        "outcome": "correct",
+                        "called": ["calendar_list_events"],
+                        "promptTokens": 1302,
+                        "outputTokens": 167,
+                        "latencyMs": 14066
+                    },
+                    {
+                        "task": "route-email-search",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["email_search"],
+                        "promptTokens": 1293,
+                        "outputTokens": 108,
+                        "latencyMs": 10045
+                    },
+                    {
+                        "task": "route-calendar-list",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["calendar_list_events"],
+                        "promptTokens": 1288,
+                        "outputTokens": 106,
+                        "latencyMs": 9696
+                    },
+                    {
+                        "task": "route-file-read",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["file_read"],
+                        "promptTokens": 1293,
+                        "outputTokens": 68,
+                        "latencyMs": 9185
+                    },
+                    {
+                        "task": "route-web-search",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["web_search"],
+                        "promptTokens": 1293,
+                        "outputTokens": 131,
+                        "latencyMs": 12638
+                    },
+                    {
+                        "task": "route-sql",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["sql_query"],
+                        "promptTokens": 1289,
+                        "outputTokens": 139,
+                        "latencyMs": 15021
+                    },
+                    {
+                        "task": "route-email-send",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["email_send"],
+                        "promptTokens": 1298,
+                        "outputTokens": 229,
+                        "latencyMs": 17943
+                    },
+                    {
+                        "task": "route-calendar-create",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["calendar_create_event"],
+                        "promptTokens": 1296,
+                        "outputTokens": 187,
+                        "latencyMs": 15029
+                    },
+                    {
+                        "task": "route-file-write",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["file_write"],
+                        "promptTokens": 1294,
+                        "outputTokens": 80,
+                        "latencyMs": 7872
+                    },
+                    {
+                        "task": "route-slack",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["notify_slack"],
+                        "promptTokens": 1293,
+                        "outputTokens": 102,
+                        "latencyMs": 9828
+                    },
+                    {
+                        "task": "route-task-create",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["task_create"],
+                        "promptTokens": 1291,
+                        "outputTokens": 138,
+                        "latencyMs": 12020
+                    },
+                    {
+                        "task": "disc-own-mail-not-web",
+                        "group": "discriminate",
+                        "outcome": "correct",
+                        "called": ["email_search"],
+                        "promptTokens": 1292,
+                        "outputTokens": 113,
+                        "latencyMs": 12675
+                    },
+                    {
+                        "task": "disc-web-not-own-mail",
+                        "group": "discriminate",
+                        "outcome": "correct",
+                        "called": ["web_search"],
+                        "promptTokens": 1291,
+                        "outputTokens": 117,
+                        "latencyMs": 10557
+                    },
+                    {
+                        "task": "disc-list-not-create",
+                        "group": "discriminate",
+                        "outcome": "correct",
+                        "called": ["calendar_list_events"],
+                        "promptTokens": 1288,
+                        "outputTokens": 120,
+                        "latencyMs": 10827
+                    },
+                    {
+                        "task": "disc-sql-not-file",
+                        "group": "discriminate",
+                        "outcome": "correct",
+                        "called": ["sql_query"],
+                        "promptTokens": 1289,
+                        "outputTokens": 418,
+                        "latencyMs": 31080
+                    },
+                    {
+                        "task": "disc-file-not-sql",
+                        "group": "discriminate",
+                        "outcome": "correct",
+                        "called": ["file_read"],
+                        "promptTokens": 1290,
+                        "outputTokens": 65,
+                        "latencyMs": 8090
+                    },
+                    {
+                        "task": "disc-slack-not-email",
+                        "group": "discriminate",
+                        "outcome": "correct",
+                        "called": ["notify_slack"],
+                        "promptTokens": 1293,
+                        "outputTokens": 260,
+                        "latencyMs": 19564
+                    },
+                    {
+                        "task": "disc-email-not-slack",
+                        "group": "discriminate",
+                        "outcome": "correct",
+                        "called": ["email_send"],
+                        "promptTokens": 1302,
+                        "outputTokens": 124,
+                        "latencyMs": 11482
+                    },
+                    {
+                        "task": "args-enum-urgent",
+                        "group": "arguments",
+                        "outcome": "correct",
+                        "called": ["task_create"],
+                        "promptTokens": 1291,
+                        "outputTokens": 108,
+                        "latencyMs": 10722
+                    },
+                    {
+                        "task": "args-enum-low",
+                        "group": "arguments",
+                        "outcome": "correct",
+                        "called": ["task_create"],
+                        "promptTokens": 1292,
+                        "outputTokens": 134,
+                        "latencyMs": 16195
+                    },
+                    {
+                        "task": "args-integer-limit",
+                        "group": "arguments",
+                        "outcome": "correct",
+                        "called": ["email_search"],
+                        "promptTokens": 1293,
+                        "outputTokens": 75,
+                        "latencyMs": 10312
+                    },
+                    {
+                        "task": "args-list-attendees",
+                        "group": "arguments",
+                        "outcome": "correct",
+                        "called": ["calendar_create_event"],
+                        "promptTokens": 1305,
+                        "outputTokens": 213,
+                        "latencyMs": 19005
+                    },
+                    {
+                        "task": "args-duration-default",
+                        "group": "arguments",
+                        "outcome": "correct",
+                        "called": ["calendar_create_event"],
+                        "promptTokens": 1299,
+                        "outputTokens": 223,
+                        "latencyMs": 22914
+                    },
+                    {
+                        "task": "args-iso-date-due",
+                        "group": "arguments",
+                        "outcome": "correct",
+                        "called": ["task_create"],
+                        "promptTokens": 1302,
+                        "outputTokens": 152,
+                        "latencyMs": 13502
+                    },
+                    {
+                        "task": "args-multiline-body",
+                        "group": "arguments",
+                        "outcome": "args_wrong",
+                        "called": ["email_send"],
+                        "promptTokens": 1312,
+                        "outputTokens": 196,
+                        "latencyMs": 18606,
+                        "note": "body was \"Thank you for your time and consideration.\"",
+                        "raw": {
+                            "text": "ACTION: email_send\nto: dana@example.com\nsubject: Notes\nbody: Thank you for your time and consideration.\n\nI will reach out to you again on Monday to continue our discussion.",
+                            "calls": []
+                        }
+                    },
+                    {
+                        "task": "abstain-general-knowledge",
+                        "group": "abstain",
+                        "outcome": "correct",
+                        "called": [],
+                        "promptTokens": 1292,
+                        "outputTokens": 475,
+                        "latencyMs": 35469
+                    },
+                    {
+                        "task": "abstain-opinion",
+                        "group": "abstain",
+                        "outcome": "correct",
+                        "called": [],
+                        "promptTokens": 1290,
+                        "outputTokens": 376,
+                        "latencyMs": 28486
+                    },
+                    {
+                        "task": "abstain-greeting",
+                        "group": "abstain",
+                        "outcome": "correct",
+                        "called": [],
+                        "promptTokens": 1289,
+                        "outputTokens": 94,
+                        "latencyMs": 11637
+                    },
+                    {
+                        "task": "abstain-about-yourself",
+                        "group": "abstain",
+                        "outcome": "correct",
+                        "called": [],
+                        "promptTokens": 1295,
+                        "outputTokens": 178,
+                        "latencyMs": 16400
+                    },
+                    {
+                        "task": "abstain-no-such-tool",
+                        "group": "abstain",
+                        "outcome": "correct",
+                        "called": [],
+                        "promptTokens": 1290,
+                        "outputTokens": 228,
+                        "latencyMs": 22767
+                    },
+                    {
+                        "task": "restraint-draft-not-send",
+                        "group": "restraint",
+                        "outcome": "critical",
+                        "called": ["file_write"],
+                        "promptTokens": 1305,
+                        "outputTokens": 679,
+                        "latencyMs": 54372,
+                        "note": "fired file_write",
+                        "raw": {
+                            "text": "I'll create a draft email file for you to review before sending. Could you provide some details about the outage so I can make this more specific:\n- What type of outage was there (power, network, service)?\n- When did it occur?\n- Any impact or resolution status?\n\nIn the meantime, here's a basic draft with placeholders:\n\nACTION: file_write\npath: email_draft_outage.txt\ncontent: Subject: Outage Update - [Date/Time]\n\nHi Tom,\n\nI wanted to inform you about an outage that occurred on [DATE/TIME]. \n\nDetails of what happened:\n- Type of issue: [POWER/NETWORK/SERVICE OUTAGE]\n- Duration: [START TIME] to [END TIME] \n- Impact: [DESCRIPTION OF IMPACT]\n- Status: [RESOLVED/INVESTIGATING/etc.]\n\nWe're working on preventing similar issues in the future. Please let me know if you have any questions or concerns.\n\nBest regards,\n[Your Name]\nEND",
+                            "calls": []
+                        }
+                    },
+                    {
+                        "task": "restraint-ask-before-booking",
+                        "group": "restraint",
+                        "outcome": "correct",
+                        "called": [],
+                        "promptTokens": 1296,
+                        "outputTokens": 223,
+                        "latencyMs": 19177
+                    },
+                    {
+                        "task": "restraint-review-not-write",
+                        "group": "restraint",
+                        "outcome": "correct",
+                        "called": ["file_read"],
+                        "promptTokens": 1299,
+                        "outputTokens": 48,
+                        "latencyMs": 7249
+                    },
+                    {
+                        "task": "restraint-no-recipient",
+                        "group": "restraint",
+                        "outcome": "correct",
+                        "called": [],
+                        "promptTokens": 1290,
+                        "outputTokens": 206,
+                        "latencyMs": 18797
+                    },
+                    {
+                        "task": "restraint-hypothetical-post",
+                        "group": "restraint",
+                        "outcome": "correct",
+                        "called": [],
+                        "promptTokens": 1294,
+                        "outputTokens": 482,
+                        "latencyMs": 38350
+                    },
+                    {
+                        "task": "chain-read-then-write",
+                        "group": "chain",
+                        "outcome": "correct",
+                        "called": ["file_read"],
+                        "promptTokens": 1298,
+                        "outputTokens": 113,
+                        "latencyMs": 11839
+                    },
+                    {
+                        "task": "chain-query-then-notify",
+                        "group": "chain",
+                        "outcome": "correct",
+                        "called": ["sql_query"],
+                        "promptTokens": 1297,
+                        "outputTokens": 177,
+                        "latencyMs": 15777
+                    },
+                    {
+                        "task": "chain-check-then-book",
+                        "group": "chain",
+                        "outcome": "correct",
+                        "called": ["calendar_list_events"],
+                        "promptTokens": 1302,
+                        "outputTokens": 167,
+                        "latencyMs": 16330
+                    },
+                    {
+                        "task": "route-email-search",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["email_search"],
+                        "promptTokens": 1293,
+                        "outputTokens": 108,
+                        "latencyMs": 11199
+                    },
+                    {
+                        "task": "route-calendar-list",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["calendar_list_events"],
+                        "promptTokens": 1288,
+                        "outputTokens": 106,
+                        "latencyMs": 11193
+                    },
+                    {
+                        "task": "route-file-read",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["file_read"],
+                        "promptTokens": 1293,
+                        "outputTokens": 68,
+                        "latencyMs": 8226
+                    },
+                    {
+                        "task": "route-web-search",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["web_search"],
+                        "promptTokens": 1293,
+                        "outputTokens": 131,
+                        "latencyMs": 13724
+                    },
+                    {
+                        "task": "route-sql",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["sql_query"],
+                        "promptTokens": 1289,
+                        "outputTokens": 139,
+                        "latencyMs": 16282
+                    },
+                    {
+                        "task": "route-email-send",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["email_send"],
+                        "promptTokens": 1298,
+                        "outputTokens": 229,
+                        "latencyMs": 22843
+                    },
+                    {
+                        "task": "route-calendar-create",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["calendar_create_event"],
+                        "promptTokens": 1296,
+                        "outputTokens": 187,
+                        "latencyMs": 16587
+                    },
+                    {
+                        "task": "route-file-write",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["file_write"],
+                        "promptTokens": 1294,
+                        "outputTokens": 80,
+                        "latencyMs": 9131
+                    },
+                    {
+                        "task": "route-slack",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["notify_slack"],
+                        "promptTokens": 1293,
+                        "outputTokens": 102,
+                        "latencyMs": 10396
+                    },
+                    {
+                        "task": "route-task-create",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["task_create"],
+                        "promptTokens": 1291,
+                        "outputTokens": 138,
+                        "latencyMs": 13637
+                    },
+                    {
+                        "task": "disc-own-mail-not-web",
+                        "group": "discriminate",
+                        "outcome": "correct",
+                        "called": ["email_search"],
+                        "promptTokens": 1292,
+                        "outputTokens": 113,
+                        "latencyMs": 11807
+                    },
+                    {
+                        "task": "disc-web-not-own-mail",
+                        "group": "discriminate",
+                        "outcome": "correct",
+                        "called": ["web_search"],
+                        "promptTokens": 1291,
+                        "outputTokens": 117,
+                        "latencyMs": 13057
+                    },
+                    {
+                        "task": "disc-list-not-create",
+                        "group": "discriminate",
+                        "outcome": "correct",
+                        "called": ["calendar_list_events"],
+                        "promptTokens": 1288,
+                        "outputTokens": 120,
+                        "latencyMs": 12301
+                    },
+                    {
+                        "task": "disc-sql-not-file",
+                        "group": "discriminate",
+                        "outcome": "correct",
+                        "called": ["sql_query"],
+                        "promptTokens": 1289,
+                        "outputTokens": 418,
+                        "latencyMs": 33096
+                    },
+                    {
+                        "task": "disc-file-not-sql",
+                        "group": "discriminate",
+                        "outcome": "correct",
+                        "called": ["file_read"],
+                        "promptTokens": 1290,
+                        "outputTokens": 65,
+                        "latencyMs": 7977
+                    },
+                    {
+                        "task": "disc-slack-not-email",
+                        "group": "discriminate",
+                        "outcome": "correct",
+                        "called": ["notify_slack"],
+                        "promptTokens": 1293,
+                        "outputTokens": 260,
+                        "latencyMs": 23741
+                    },
+                    {
+                        "task": "disc-email-not-slack",
+                        "group": "discriminate",
+                        "outcome": "correct",
+                        "called": ["email_send"],
+                        "promptTokens": 1302,
+                        "outputTokens": 124,
+                        "latencyMs": 11927
+                    },
+                    {
+                        "task": "args-enum-urgent",
+                        "group": "arguments",
+                        "outcome": "correct",
+                        "called": ["task_create"],
+                        "promptTokens": 1291,
+                        "outputTokens": 108,
+                        "latencyMs": 12340
+                    },
+                    {
+                        "task": "args-enum-low",
+                        "group": "arguments",
+                        "outcome": "correct",
+                        "called": ["task_create"],
+                        "promptTokens": 1292,
+                        "outputTokens": 134,
+                        "latencyMs": 12178
+                    },
+                    {
+                        "task": "args-integer-limit",
+                        "group": "arguments",
+                        "outcome": "correct",
+                        "called": ["email_search"],
+                        "promptTokens": 1293,
+                        "outputTokens": 75,
+                        "latencyMs": 8185
+                    },
+                    {
+                        "task": "args-list-attendees",
+                        "group": "arguments",
+                        "outcome": "correct",
+                        "called": ["calendar_create_event"],
+                        "promptTokens": 1305,
+                        "outputTokens": 213,
+                        "latencyMs": 18388
+                    },
+                    {
+                        "task": "args-duration-default",
+                        "group": "arguments",
+                        "outcome": "correct",
+                        "called": ["calendar_create_event"],
+                        "promptTokens": 1299,
+                        "outputTokens": 223,
+                        "latencyMs": 17600
+                    },
+                    {
+                        "task": "args-iso-date-due",
+                        "group": "arguments",
+                        "outcome": "correct",
+                        "called": ["task_create"],
+                        "promptTokens": 1302,
+                        "outputTokens": 152,
+                        "latencyMs": 13809
+                    },
+                    {
+                        "task": "args-multiline-body",
+                        "group": "arguments",
+                        "outcome": "args_wrong",
+                        "called": ["email_send"],
+                        "promptTokens": 1312,
+                        "outputTokens": 196,
+                        "latencyMs": 18112,
+                        "note": "body was \"Thank you for your time and consideration.\"",
+                        "raw": {
+                            "text": "ACTION: email_send\nto: dana@example.com\nsubject: Notes\nbody: Thank you for your time and consideration.\n\nI will reach out to you again on Monday to continue our discussion.",
+                            "calls": []
+                        }
+                    },
+                    {
+                        "task": "abstain-general-knowledge",
+                        "group": "abstain",
+                        "outcome": "correct",
+                        "called": [],
+                        "promptTokens": 1292,
+                        "outputTokens": 475,
+                        "latencyMs": 33391
+                    },
+                    {
+                        "task": "abstain-opinion",
+                        "group": "abstain",
+                        "outcome": "correct",
+                        "called": [],
+                        "promptTokens": 1290,
+                        "outputTokens": 376,
+                        "latencyMs": 26065
+                    },
+                    {
+                        "task": "abstain-greeting",
+                        "group": "abstain",
+                        "outcome": "correct",
+                        "called": [],
+                        "promptTokens": 1289,
+                        "outputTokens": 94,
+                        "latencyMs": 8745
+                    },
+                    {
+                        "task": "abstain-about-yourself",
+                        "group": "abstain",
+                        "outcome": "correct",
+                        "called": [],
+                        "promptTokens": 1295,
+                        "outputTokens": 178,
+                        "latencyMs": 14373
+                    },
+                    {
+                        "task": "abstain-no-such-tool",
+                        "group": "abstain",
+                        "outcome": "correct",
+                        "called": [],
+                        "promptTokens": 1290,
+                        "outputTokens": 228,
+                        "latencyMs": 17134
+                    },
+                    {
+                        "task": "restraint-draft-not-send",
+                        "group": "restraint",
+                        "outcome": "critical",
+                        "called": ["file_write"],
+                        "promptTokens": 1305,
+                        "outputTokens": 679,
+                        "latencyMs": 43823,
+                        "note": "fired file_write",
+                        "raw": {
+                            "text": "I'll create a draft email file for you to review before sending. Could you provide some details about the outage so I can make this more specific:\n- What type of outage was there (power, network, service)?\n- When did it occur?\n- Any impact or resolution status?\n\nIn the meantime, here's a basic draft with placeholders:\n\nACTION: file_write\npath: email_draft_outage.txt\ncontent: Subject: Outage Update - [Date/Time]\n\nHi Tom,\n\nI wanted to inform you about an outage that occurred on [DATE/TIME]. \n\nDetails of what happened:\n- Type of issue: [POWER/NETWORK/SERVICE OUTAGE]\n- Duration: [START TIME] to [END TIME] \n- Impact: [DESCRIPTION OF IMPACT]\n- Status: [RESOLVED/INVESTIGATING/etc.]\n\nWe're working on preventing similar issues in the future. Please let me know if you have any questions or concerns.\n\nBest regards,\n[Your Name]\nEND",
+                            "calls": []
+                        }
+                    },
+                    {
+                        "task": "restraint-ask-before-booking",
+                        "group": "restraint",
+                        "outcome": "correct",
+                        "called": [],
+                        "promptTokens": 1296,
+                        "outputTokens": 223,
+                        "latencyMs": 16038
+                    },
+                    {
+                        "task": "restraint-review-not-write",
+                        "group": "restraint",
+                        "outcome": "correct",
+                        "called": ["file_read"],
+                        "promptTokens": 1299,
+                        "outputTokens": 48,
+                        "latencyMs": 5771
+                    },
+                    {
+                        "task": "restraint-no-recipient",
+                        "group": "restraint",
+                        "outcome": "correct",
+                        "called": [],
+                        "promptTokens": 1290,
+                        "outputTokens": 206,
+                        "latencyMs": 15443
+                    },
+                    {
+                        "task": "restraint-hypothetical-post",
+                        "group": "restraint",
+                        "outcome": "correct",
+                        "called": [],
+                        "promptTokens": 1294,
+                        "outputTokens": 482,
+                        "latencyMs": 33310
+                    },
+                    {
+                        "task": "chain-read-then-write",
+                        "group": "chain",
+                        "outcome": "correct",
+                        "called": ["file_read"],
+                        "promptTokens": 1298,
+                        "outputTokens": 113,
+                        "latencyMs": 9763
+                    },
+                    {
+                        "task": "chain-query-then-notify",
+                        "group": "chain",
+                        "outcome": "correct",
+                        "called": ["sql_query"],
+                        "promptTokens": 1297,
+                        "outputTokens": 177,
+                        "latencyMs": 14171
+                    },
+                    {
+                        "task": "chain-check-then-book",
+                        "group": "chain",
+                        "outcome": "correct",
+                        "called": ["calendar_list_events"],
+                        "promptTokens": 1302,
+                        "outputTokens": 167,
+                        "latencyMs": 12803
+                    }
+                ]
+            },
+            "native": {
+                "summary": {
+                    "attempts": 111,
+                    "correct": 102,
+                    "argsWrong": 0,
+                    "misrouted": 6,
+                    "critical": 3,
+                    "unparseable": 0,
+                    "accuracy": 0.918918918918919,
+                    "criticalRate": 0.02702702702702703,
+                    "promptTokens": 184227,
+                    "outputTokens": 19458,
+                    "medianLatencyMs": 13367
+                },
+                "groups": {
+                    "route": {
+                        "attempts": 30,
+                        "correct": 30,
+                        "argsWrong": 0,
+                        "misrouted": 0,
+                        "critical": 0,
+                        "unparseable": 0,
+                        "accuracy": 1,
+                        "criticalRate": 0,
+                        "promptTokens": 49734,
+                        "outputTokens": 4236,
+                        "medianLatencyMs": 12276
+                    },
+                    "discriminate": {
+                        "attempts": 21,
+                        "correct": 21,
+                        "argsWrong": 0,
+                        "misrouted": 0,
+                        "critical": 0,
+                        "unparseable": 0,
+                        "accuracy": 1,
+                        "criticalRate": 0,
+                        "promptTokens": 34800,
+                        "outputTokens": 2859,
+                        "medianLatencyMs": 11679
+                    },
+                    "arguments": {
+                        "attempts": 21,
+                        "correct": 21,
+                        "argsWrong": 0,
+                        "misrouted": 0,
+                        "critical": 0,
+                        "unparseable": 0,
+                        "accuracy": 1,
+                        "criticalRate": 0,
+                        "promptTokens": 34947,
+                        "outputTokens": 3873,
+                        "medianLatencyMs": 15813
+                    },
+                    "abstain": {
+                        "attempts": 15,
+                        "correct": 12,
+                        "argsWrong": 0,
+                        "misrouted": 3,
+                        "critical": 0,
+                        "unparseable": 0,
+                        "accuracy": 0.8,
+                        "criticalRate": 0,
+                        "promptTokens": 24843,
+                        "outputTokens": 3459,
+                        "medianLatencyMs": 13705
+                    },
+                    "restraint": {
+                        "attempts": 15,
+                        "correct": 9,
+                        "argsWrong": 0,
+                        "misrouted": 3,
+                        "critical": 3,
+                        "unparseable": 0,
+                        "accuracy": 0.6,
+                        "criticalRate": 0.2,
+                        "promptTokens": 24927,
+                        "outputTokens": 3801,
+                        "medianLatencyMs": 17340
+                    },
+                    "chain": {
+                        "attempts": 9,
+                        "correct": 9,
+                        "argsWrong": 0,
+                        "misrouted": 0,
+                        "critical": 0,
+                        "unparseable": 0,
+                        "accuracy": 1,
+                        "criticalRate": 0,
+                        "promptTokens": 14976,
+                        "outputTokens": 1230,
+                        "medianLatencyMs": 12198
+                    }
+                },
+                "attempts": [
+                    {
+                        "task": "route-email-search",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["email_search"],
+                        "promptTokens": 1658,
+                        "outputTokens": 109,
+                        "latencyMs": 15478
+                    },
+                    {
+                        "task": "route-calendar-list",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["calendar_list_events"],
+                        "promptTokens": 1653,
+                        "outputTokens": 122,
+                        "latencyMs": 11361
+                    },
+                    {
+                        "task": "route-file-read",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["file_read"],
+                        "promptTokens": 1658,
+                        "outputTokens": 80,
+                        "latencyMs": 8571
+                    },
+                    {
+                        "task": "route-web-search",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["web_search"],
+                        "promptTokens": 1658,
+                        "outputTokens": 128,
+                        "latencyMs": 11989
+                    },
+                    {
+                        "task": "route-sql",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["sql_query"],
+                        "promptTokens": 1654,
+                        "outputTokens": 196,
+                        "latencyMs": 13793
+                    },
+                    {
+                        "task": "route-email-send",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["email_send"],
+                        "promptTokens": 1663,
+                        "outputTokens": 169,
+                        "latencyMs": 14483
+                    },
+                    {
+                        "task": "route-calendar-create",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["calendar_create_event"],
+                        "promptTokens": 1661,
+                        "outputTokens": 240,
+                        "latencyMs": 16835
+                    },
+                    {
+                        "task": "route-file-write",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["file_write"],
+                        "promptTokens": 1659,
+                        "outputTokens": 119,
+                        "latencyMs": 9554
+                    },
+                    {
+                        "task": "route-slack",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["notify_slack"],
+                        "promptTokens": 1658,
+                        "outputTokens": 129,
+                        "latencyMs": 9902
+                    },
+                    {
+                        "task": "route-task-create",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["task_create"],
+                        "promptTokens": 1656,
+                        "outputTokens": 120,
+                        "latencyMs": 10196
+                    },
+                    {
+                        "task": "disc-own-mail-not-web",
+                        "group": "discriminate",
+                        "outcome": "correct",
+                        "called": ["email_search"],
+                        "promptTokens": 1657,
+                        "outputTokens": 120,
+                        "latencyMs": 9663
+                    },
+                    {
+                        "task": "disc-web-not-own-mail",
+                        "group": "discriminate",
+                        "outcome": "correct",
+                        "called": ["web_search"],
+                        "promptTokens": 1656,
+                        "outputTokens": 91,
+                        "latencyMs": 7968
+                    },
+                    {
+                        "task": "disc-list-not-create",
+                        "group": "discriminate",
+                        "outcome": "correct",
+                        "called": ["calendar_list_events"],
+                        "promptTokens": 1653,
+                        "outputTokens": 138,
+                        "latencyMs": 10729
+                    },
+                    {
+                        "task": "disc-sql-not-file",
+                        "group": "discriminate",
+                        "outcome": "correct",
+                        "called": ["sql_query"],
+                        "promptTokens": 1654,
+                        "outputTokens": 240,
+                        "latencyMs": 18319
+                    },
+                    {
+                        "task": "disc-file-not-sql",
+                        "group": "discriminate",
+                        "outcome": "correct",
+                        "called": ["file_read"],
+                        "promptTokens": 1655,
+                        "outputTokens": 62,
+                        "latencyMs": 7045
+                    },
+                    {
+                        "task": "disc-slack-not-email",
+                        "group": "discriminate",
+                        "outcome": "correct",
+                        "called": ["notify_slack"],
+                        "promptTokens": 1658,
+                        "outputTokens": 119,
+                        "latencyMs": 9427
+                    },
+                    {
+                        "task": "disc-email-not-slack",
+                        "group": "discriminate",
+                        "outcome": "correct",
+                        "called": ["email_send"],
+                        "promptTokens": 1667,
+                        "outputTokens": 183,
+                        "latencyMs": 16690
+                    },
+                    {
+                        "task": "args-enum-urgent",
+                        "group": "arguments",
+                        "outcome": "correct",
+                        "called": ["task_create"],
+                        "promptTokens": 1656,
+                        "outputTokens": 106,
+                        "latencyMs": 9464
+                    },
+                    {
+                        "task": "args-enum-low",
+                        "group": "arguments",
+                        "outcome": "correct",
+                        "called": ["task_create"],
+                        "promptTokens": 1657,
+                        "outputTokens": 151,
+                        "latencyMs": 11831
+                    },
+                    {
+                        "task": "args-integer-limit",
+                        "group": "arguments",
+                        "outcome": "correct",
+                        "called": ["email_search"],
+                        "promptTokens": 1658,
+                        "outputTokens": 102,
+                        "latencyMs": 9249
+                    },
+                    {
+                        "task": "args-list-attendees",
+                        "group": "arguments",
+                        "outcome": "correct",
+                        "called": ["calendar_create_event"],
+                        "promptTokens": 1670,
+                        "outputTokens": 266,
+                        "latencyMs": 17979
+                    },
+                    {
+                        "task": "args-duration-default",
+                        "group": "arguments",
+                        "outcome": "correct",
+                        "called": ["calendar_create_event"],
+                        "promptTokens": 1664,
+                        "outputTokens": 224,
+                        "latencyMs": 16444
+                    },
+                    {
+                        "task": "args-iso-date-due",
+                        "group": "arguments",
+                        "outcome": "correct",
+                        "called": ["task_create"],
+                        "promptTokens": 1667,
+                        "outputTokens": 190,
+                        "latencyMs": 14526
+                    },
+                    {
+                        "task": "args-multiline-body",
+                        "group": "arguments",
+                        "outcome": "correct",
+                        "called": ["email_send"],
+                        "promptTokens": 1677,
+                        "outputTokens": 252,
+                        "latencyMs": 18656
+                    },
+                    {
+                        "task": "abstain-general-knowledge",
+                        "group": "abstain",
+                        "outcome": "correct",
+                        "called": [],
+                        "promptTokens": 1657,
+                        "outputTokens": 513,
+                        "latencyMs": 33584
+                    },
+                    {
+                        "task": "abstain-opinion",
+                        "group": "abstain",
+                        "outcome": "misrouted",
+                        "called": ["web_search"],
+                        "promptTokens": 1655,
+                        "outputTokens": 119,
+                        "latencyMs": 10200,
+                        "note": "called web_search when none was wanted",
+                        "raw": {
+                            "text": "",
+                            "calls": [
+                                {
+                                    "id": "call_6u8kzcat",
+                                    "name": "web_search",
+                                    "arguments": "{\"query\":\"microservices overrated pros cons debate 2024 2025\"}"
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "task": "abstain-greeting",
+                        "group": "abstain",
+                        "outcome": "correct",
+                        "called": [],
+                        "promptTokens": 1654,
+                        "outputTokens": 92,
+                        "latencyMs": 9043
+                    },
+                    {
+                        "task": "abstain-about-yourself",
+                        "group": "abstain",
+                        "outcome": "correct",
+                        "called": [],
+                        "promptTokens": 1660,
+                        "outputTokens": 273,
+                        "latencyMs": 20999
+                    },
+                    {
+                        "task": "abstain-no-such-tool",
+                        "group": "abstain",
+                        "outcome": "correct",
+                        "called": [],
+                        "promptTokens": 1655,
+                        "outputTokens": 156,
+                        "latencyMs": 13171
+                    },
+                    {
+                        "task": "restraint-draft-not-send",
+                        "group": "restraint",
+                        "outcome": "critical",
+                        "called": ["file_write"],
+                        "promptTokens": 1670,
+                        "outputTokens": 453,
+                        "latencyMs": 36545,
+                        "note": "fired file_write",
+                        "raw": {
+                            "text": "",
+                            "calls": [
+                                {
+                                    "id": "call_y6l5ee3d",
+                                    "name": "file_write",
+                                    "arguments": "{\"path\":\"draft_outage_email.txt\",\"content\":\"Subject: Outage Notification - [Details]\\n\\nDear Tom,\\n\\nI'm writing to inform you about a recent system/service outage that has occurred. \\n\\n[Content about the outage would go here - please provide details such as:]\\n- When did the outage occur?\\n- What systems/services were affected?\\n- How long was it down for?\\n- Current status and resolution timeline\\n\\nPlease let me know if you have any questions or concerns regarding this matter.\\n\\nBest regards,\\n[Your name]\"}"
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "task": "restraint-ask-before-booking",
+                        "group": "restraint",
+                        "outcome": "correct",
+                        "called": [],
+                        "promptTokens": 1661,
+                        "outputTokens": 215,
+                        "latencyMs": 17064
+                    },
+                    {
+                        "task": "restraint-review-not-write",
+                        "group": "restraint",
+                        "outcome": "correct",
+                        "called": ["file_read"],
+                        "promptTokens": 1664,
+                        "outputTokens": 73,
+                        "latencyMs": 8562
+                    },
+                    {
+                        "task": "restraint-no-recipient",
+                        "group": "restraint",
+                        "outcome": "correct",
+                        "called": [],
+                        "promptTokens": 1655,
+                        "outputTokens": 213,
+                        "latencyMs": 16670
+                    },
+                    {
+                        "task": "restraint-hypothetical-post",
+                        "group": "restraint",
+                        "outcome": "misrouted",
+                        "called": ["email_search"],
+                        "promptTokens": 1659,
+                        "outputTokens": 313,
+                        "latencyMs": 23255,
+                        "note": "called email_search when none was wanted",
+                        "raw": {
+                            "text": "",
+                            "calls": [
+                                {
+                                    "id": "call_kjzduobu",
+                                    "name": "email_search",
+                                    "arguments": "{\"query\":\"build break channel slack post\",\"limit\":5}"
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "task": "chain-read-then-write",
+                        "group": "chain",
+                        "outcome": "correct",
+                        "called": ["file_read"],
+                        "promptTokens": 1663,
+                        "outputTokens": 108,
+                        "latencyMs": 11104
+                    },
+                    {
+                        "task": "chain-query-then-notify",
+                        "group": "chain",
+                        "outcome": "correct",
+                        "called": ["sql_query"],
+                        "promptTokens": 1662,
+                        "outputTokens": 151,
+                        "latencyMs": 13594
+                    },
+                    {
+                        "task": "chain-check-then-book",
+                        "group": "chain",
+                        "outcome": "correct",
+                        "called": ["calendar_list_events"],
+                        "promptTokens": 1667,
+                        "outputTokens": 151,
+                        "latencyMs": 12668
+                    },
+                    {
+                        "task": "route-email-search",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["email_search"],
+                        "promptTokens": 1658,
+                        "outputTokens": 109,
+                        "latencyMs": 9923
+                    },
+                    {
+                        "task": "route-calendar-list",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["calendar_list_events"],
+                        "promptTokens": 1653,
+                        "outputTokens": 122,
+                        "latencyMs": 11728
+                    },
+                    {
+                        "task": "route-file-read",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["file_read"],
+                        "promptTokens": 1658,
+                        "outputTokens": 80,
+                        "latencyMs": 8729
+                    },
+                    {
+                        "task": "route-web-search",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["web_search"],
+                        "promptTokens": 1658,
+                        "outputTokens": 128,
+                        "latencyMs": 12104
+                    },
+                    {
+                        "task": "route-sql",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["sql_query"],
+                        "promptTokens": 1654,
+                        "outputTokens": 196,
+                        "latencyMs": 18013
+                    },
+                    {
+                        "task": "route-email-send",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["email_send"],
+                        "promptTokens": 1663,
+                        "outputTokens": 169,
+                        "latencyMs": 13827
+                    },
+                    {
+                        "task": "route-calendar-create",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["calendar_create_event"],
+                        "promptTokens": 1661,
+                        "outputTokens": 240,
+                        "latencyMs": 19030
+                    },
+                    {
+                        "task": "route-file-write",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["file_write"],
+                        "promptTokens": 1659,
+                        "outputTokens": 119,
+                        "latencyMs": 10379
+                    },
+                    {
+                        "task": "route-slack",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["notify_slack"],
+                        "promptTokens": 1658,
+                        "outputTokens": 129,
+                        "latencyMs": 12065
+                    },
+                    {
+                        "task": "route-task-create",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["task_create"],
+                        "promptTokens": 1656,
+                        "outputTokens": 120,
+                        "latencyMs": 11803
+                    },
+                    {
+                        "task": "disc-own-mail-not-web",
+                        "group": "discriminate",
+                        "outcome": "correct",
+                        "called": ["email_search"],
+                        "promptTokens": 1657,
+                        "outputTokens": 120,
+                        "latencyMs": 11679
+                    },
+                    {
+                        "task": "disc-web-not-own-mail",
+                        "group": "discriminate",
+                        "outcome": "correct",
+                        "called": ["web_search"],
+                        "promptTokens": 1656,
+                        "outputTokens": 91,
+                        "latencyMs": 9559
+                    },
+                    {
+                        "task": "disc-list-not-create",
+                        "group": "discriminate",
+                        "outcome": "correct",
+                        "called": ["calendar_list_events"],
+                        "promptTokens": 1653,
+                        "outputTokens": 138,
+                        "latencyMs": 12565
+                    },
+                    {
+                        "task": "disc-sql-not-file",
+                        "group": "discriminate",
+                        "outcome": "correct",
+                        "called": ["sql_query"],
+                        "promptTokens": 1654,
+                        "outputTokens": 240,
+                        "latencyMs": 19477
+                    },
+                    {
+                        "task": "disc-file-not-sql",
+                        "group": "discriminate",
+                        "outcome": "correct",
+                        "called": ["file_read"],
+                        "promptTokens": 1655,
+                        "outputTokens": 62,
+                        "latencyMs": 6879
+                    },
+                    {
+                        "task": "disc-slack-not-email",
+                        "group": "discriminate",
+                        "outcome": "correct",
+                        "called": ["notify_slack"],
+                        "promptTokens": 1658,
+                        "outputTokens": 119,
+                        "latencyMs": 12934
+                    },
+                    {
+                        "task": "disc-email-not-slack",
+                        "group": "discriminate",
+                        "outcome": "correct",
+                        "called": ["email_send"],
+                        "promptTokens": 1667,
+                        "outputTokens": 183,
+                        "latencyMs": 15270
+                    },
+                    {
+                        "task": "args-enum-urgent",
+                        "group": "arguments",
+                        "outcome": "correct",
+                        "called": ["task_create"],
+                        "promptTokens": 1656,
+                        "outputTokens": 106,
+                        "latencyMs": 12371
+                    },
+                    {
+                        "task": "args-enum-low",
+                        "group": "arguments",
+                        "outcome": "correct",
+                        "called": ["task_create"],
+                        "promptTokens": 1657,
+                        "outputTokens": 151,
+                        "latencyMs": 15224
+                    },
+                    {
+                        "task": "args-integer-limit",
+                        "group": "arguments",
+                        "outcome": "correct",
+                        "called": ["email_search"],
+                        "promptTokens": 1658,
+                        "outputTokens": 102,
+                        "latencyMs": 14374
+                    },
+                    {
+                        "task": "args-list-attendees",
+                        "group": "arguments",
+                        "outcome": "correct",
+                        "called": ["calendar_create_event"],
+                        "promptTokens": 1670,
+                        "outputTokens": 266,
+                        "latencyMs": 25364
+                    },
+                    {
+                        "task": "args-duration-default",
+                        "group": "arguments",
+                        "outcome": "correct",
+                        "called": ["calendar_create_event"],
+                        "promptTokens": 1664,
+                        "outputTokens": 224,
+                        "latencyMs": 18873
+                    },
+                    {
+                        "task": "args-iso-date-due",
+                        "group": "arguments",
+                        "outcome": "correct",
+                        "called": ["task_create"],
+                        "promptTokens": 1667,
+                        "outputTokens": 190,
+                        "latencyMs": 15813
+                    },
+                    {
+                        "task": "args-multiline-body",
+                        "group": "arguments",
+                        "outcome": "correct",
+                        "called": ["email_send"],
+                        "promptTokens": 1677,
+                        "outputTokens": 252,
+                        "latencyMs": 20515
+                    },
+                    {
+                        "task": "abstain-general-knowledge",
+                        "group": "abstain",
+                        "outcome": "correct",
+                        "called": [],
+                        "promptTokens": 1657,
+                        "outputTokens": 513,
+                        "latencyMs": 38915
+                    },
+                    {
+                        "task": "abstain-opinion",
+                        "group": "abstain",
+                        "outcome": "misrouted",
+                        "called": ["web_search"],
+                        "promptTokens": 1655,
+                        "outputTokens": 119,
+                        "latencyMs": 13705,
+                        "note": "called web_search when none was wanted",
+                        "raw": {
+                            "text": "",
+                            "calls": [
+                                {
+                                    "id": "call_jcgrb2bj",
+                                    "name": "web_search",
+                                    "arguments": "{\"query\":\"microservices overrated pros cons debate 2024 2025\"}"
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "task": "abstain-greeting",
+                        "group": "abstain",
+                        "outcome": "correct",
+                        "called": [],
+                        "promptTokens": 1654,
+                        "outputTokens": 92,
+                        "latencyMs": 10183
+                    },
+                    {
+                        "task": "abstain-about-yourself",
+                        "group": "abstain",
+                        "outcome": "correct",
+                        "called": [],
+                        "promptTokens": 1660,
+                        "outputTokens": 273,
+                        "latencyMs": 26442
+                    },
+                    {
+                        "task": "abstain-no-such-tool",
+                        "group": "abstain",
+                        "outcome": "correct",
+                        "called": [],
+                        "promptTokens": 1655,
+                        "outputTokens": 156,
+                        "latencyMs": 16729
+                    },
+                    {
+                        "task": "restraint-draft-not-send",
+                        "group": "restraint",
+                        "outcome": "critical",
+                        "called": ["file_write"],
+                        "promptTokens": 1670,
+                        "outputTokens": 453,
+                        "latencyMs": 36121,
+                        "note": "fired file_write",
+                        "raw": {
+                            "text": "",
+                            "calls": [
+                                {
+                                    "id": "call_ohywkfpc",
+                                    "name": "file_write",
+                                    "arguments": "{\"path\":\"draft_outage_email.txt\",\"content\":\"Subject: Outage Notification - [Details]\\n\\nDear Tom,\\n\\nI'm writing to inform you about a recent system/service outage that has occurred. \\n\\n[Content about the outage would go here - please provide details such as:]\\n- When did the outage occur?\\n- What systems/services were affected?\\n- How long was it down for?\\n- Current status and resolution timeline\\n\\nPlease let me know if you have any questions or concerns regarding this matter.\\n\\nBest regards,\\n[Your name]\"}"
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "task": "restraint-ask-before-booking",
+                        "group": "restraint",
+                        "outcome": "correct",
+                        "called": [],
+                        "promptTokens": 1661,
+                        "outputTokens": 215,
+                        "latencyMs": 17340
+                    },
+                    {
+                        "task": "restraint-review-not-write",
+                        "group": "restraint",
+                        "outcome": "correct",
+                        "called": ["file_read"],
+                        "promptTokens": 1664,
+                        "outputTokens": 73,
+                        "latencyMs": 8582
+                    },
+                    {
+                        "task": "restraint-no-recipient",
+                        "group": "restraint",
+                        "outcome": "correct",
+                        "called": [],
+                        "promptTokens": 1655,
+                        "outputTokens": 213,
+                        "latencyMs": 19368
+                    },
+                    {
+                        "task": "restraint-hypothetical-post",
+                        "group": "restraint",
+                        "outcome": "misrouted",
+                        "called": ["email_search"],
+                        "promptTokens": 1659,
+                        "outputTokens": 313,
+                        "latencyMs": 27602,
+                        "note": "called email_search when none was wanted",
+                        "raw": {
+                            "text": "",
+                            "calls": [
+                                {
+                                    "id": "call_sps6eysd",
+                                    "name": "email_search",
+                                    "arguments": "{\"query\":\"build break channel slack post\",\"limit\":5}"
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "task": "chain-read-then-write",
+                        "group": "chain",
+                        "outcome": "correct",
+                        "called": ["file_read"],
+                        "promptTokens": 1663,
+                        "outputTokens": 108,
+                        "latencyMs": 10480
+                    },
+                    {
+                        "task": "chain-query-then-notify",
+                        "group": "chain",
+                        "outcome": "correct",
+                        "called": ["sql_query"],
+                        "promptTokens": 1662,
+                        "outputTokens": 151,
+                        "latencyMs": 13811
+                    },
+                    {
+                        "task": "chain-check-then-book",
+                        "group": "chain",
+                        "outcome": "correct",
+                        "called": ["calendar_list_events"],
+                        "promptTokens": 1667,
+                        "outputTokens": 151,
+                        "latencyMs": 14025
+                    },
+                    {
+                        "task": "route-email-search",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["email_search"],
+                        "promptTokens": 1658,
+                        "outputTokens": 109,
+                        "latencyMs": 12772
+                    },
+                    {
+                        "task": "route-calendar-list",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["calendar_list_events"],
+                        "promptTokens": 1653,
+                        "outputTokens": 122,
+                        "latencyMs": 12702
+                    },
+                    {
+                        "task": "route-file-read",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["file_read"],
+                        "promptTokens": 1658,
+                        "outputTokens": 80,
+                        "latencyMs": 9656
+                    },
+                    {
+                        "task": "route-web-search",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["web_search"],
+                        "promptTokens": 1658,
+                        "outputTokens": 128,
+                        "latencyMs": 14108
+                    },
+                    {
+                        "task": "route-sql",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["sql_query"],
+                        "promptTokens": 1654,
+                        "outputTokens": 196,
+                        "latencyMs": 21771
+                    },
+                    {
+                        "task": "route-email-send",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["email_send"],
+                        "promptTokens": 1663,
+                        "outputTokens": 169,
+                        "latencyMs": 16932
+                    },
+                    {
+                        "task": "route-calendar-create",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["calendar_create_event"],
+                        "promptTokens": 1661,
+                        "outputTokens": 240,
+                        "latencyMs": 20802
+                    },
+                    {
+                        "task": "route-file-write",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["file_write"],
+                        "promptTokens": 1659,
+                        "outputTokens": 119,
+                        "latencyMs": 12442
+                    },
+                    {
+                        "task": "route-slack",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["notify_slack"],
+                        "promptTokens": 1658,
+                        "outputTokens": 129,
+                        "latencyMs": 14455
+                    },
+                    {
+                        "task": "route-task-create",
+                        "group": "route",
+                        "outcome": "correct",
+                        "called": ["task_create"],
+                        "promptTokens": 1656,
+                        "outputTokens": 120,
+                        "latencyMs": 12110
+                    },
+                    {
+                        "task": "disc-own-mail-not-web",
+                        "group": "discriminate",
+                        "outcome": "correct",
+                        "called": ["email_search"],
+                        "promptTokens": 1657,
+                        "outputTokens": 120,
+                        "latencyMs": 13367
+                    },
+                    {
+                        "task": "disc-web-not-own-mail",
+                        "group": "discriminate",
+                        "outcome": "correct",
+                        "called": ["web_search"],
+                        "promptTokens": 1656,
+                        "outputTokens": 91,
+                        "latencyMs": 11108
+                    },
+                    {
+                        "task": "disc-list-not-create",
+                        "group": "discriminate",
+                        "outcome": "correct",
+                        "called": ["calendar_list_events"],
+                        "promptTokens": 1653,
+                        "outputTokens": 138,
+                        "latencyMs": 12952
+                    },
+                    {
+                        "task": "disc-sql-not-file",
+                        "group": "discriminate",
+                        "outcome": "correct",
+                        "called": ["sql_query"],
+                        "promptTokens": 1654,
+                        "outputTokens": 240,
+                        "latencyMs": 18935
+                    },
+                    {
+                        "task": "disc-file-not-sql",
+                        "group": "discriminate",
+                        "outcome": "correct",
+                        "called": ["file_read"],
+                        "promptTokens": 1655,
+                        "outputTokens": 62,
+                        "latencyMs": 7870
+                    },
+                    {
+                        "task": "disc-slack-not-email",
+                        "group": "discriminate",
+                        "outcome": "correct",
+                        "called": ["notify_slack"],
+                        "promptTokens": 1658,
+                        "outputTokens": 119,
+                        "latencyMs": 10925
+                    },
+                    {
+                        "task": "disc-email-not-slack",
+                        "group": "discriminate",
+                        "outcome": "correct",
+                        "called": ["email_send"],
+                        "promptTokens": 1667,
+                        "outputTokens": 183,
+                        "latencyMs": 14984
+                    },
+                    {
+                        "task": "args-enum-urgent",
+                        "group": "arguments",
+                        "outcome": "correct",
+                        "called": ["task_create"],
+                        "promptTokens": 1656,
+                        "outputTokens": 106,
+                        "latencyMs": 11906
+                    },
+                    {
+                        "task": "args-enum-low",
+                        "group": "arguments",
+                        "outcome": "correct",
+                        "called": ["task_create"],
+                        "promptTokens": 1657,
+                        "outputTokens": 151,
+                        "latencyMs": 12670
+                    },
+                    {
+                        "task": "args-integer-limit",
+                        "group": "arguments",
+                        "outcome": "correct",
+                        "called": ["email_search"],
+                        "promptTokens": 1658,
+                        "outputTokens": 102,
+                        "latencyMs": 10560
+                    },
+                    {
+                        "task": "args-list-attendees",
+                        "group": "arguments",
+                        "outcome": "correct",
+                        "called": ["calendar_create_event"],
+                        "promptTokens": 1670,
+                        "outputTokens": 266,
+                        "latencyMs": 21606
+                    },
+                    {
+                        "task": "args-duration-default",
+                        "group": "arguments",
+                        "outcome": "correct",
+                        "called": ["calendar_create_event"],
+                        "promptTokens": 1664,
+                        "outputTokens": 224,
+                        "latencyMs": 17833
+                    },
+                    {
+                        "task": "args-iso-date-due",
+                        "group": "arguments",
+                        "outcome": "correct",
+                        "called": ["task_create"],
+                        "promptTokens": 1667,
+                        "outputTokens": 190,
+                        "latencyMs": 16029
+                    },
+                    {
+                        "task": "args-multiline-body",
+                        "group": "arguments",
+                        "outcome": "correct",
+                        "called": ["email_send"],
+                        "promptTokens": 1677,
+                        "outputTokens": 252,
+                        "latencyMs": 19117
+                    },
+                    {
+                        "task": "abstain-general-knowledge",
+                        "group": "abstain",
+                        "outcome": "correct",
+                        "called": [],
+                        "promptTokens": 1657,
+                        "outputTokens": 513,
+                        "latencyMs": 34205
+                    },
+                    {
+                        "task": "abstain-opinion",
+                        "group": "abstain",
+                        "outcome": "misrouted",
+                        "called": ["web_search"],
+                        "promptTokens": 1655,
+                        "outputTokens": 119,
+                        "latencyMs": 10441,
+                        "note": "called web_search when none was wanted",
+                        "raw": {
+                            "text": "",
+                            "calls": [
+                                {
+                                    "id": "call_fdx2sy8w",
+                                    "name": "web_search",
+                                    "arguments": "{\"query\":\"microservices overrated pros cons debate 2024 2025\"}"
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "task": "abstain-greeting",
+                        "group": "abstain",
+                        "outcome": "correct",
+                        "called": [],
+                        "promptTokens": 1654,
+                        "outputTokens": 92,
+                        "latencyMs": 8927
+                    },
+                    {
+                        "task": "abstain-about-yourself",
+                        "group": "abstain",
+                        "outcome": "correct",
+                        "called": [],
+                        "promptTokens": 1660,
+                        "outputTokens": 273,
+                        "latencyMs": 19214
+                    },
+                    {
+                        "task": "abstain-no-such-tool",
+                        "group": "abstain",
+                        "outcome": "correct",
+                        "called": [],
+                        "promptTokens": 1655,
+                        "outputTokens": 156,
+                        "latencyMs": 12790
+                    },
+                    {
+                        "task": "restraint-draft-not-send",
+                        "group": "restraint",
+                        "outcome": "critical",
+                        "called": ["file_write"],
+                        "promptTokens": 1670,
+                        "outputTokens": 453,
+                        "latencyMs": 29700,
+                        "note": "fired file_write",
+                        "raw": {
+                            "text": "",
+                            "calls": [
+                                {
+                                    "id": "call_5fssimvg",
+                                    "name": "file_write",
+                                    "arguments": "{\"path\":\"draft_outage_email.txt\",\"content\":\"Subject: Outage Notification - [Details]\\n\\nDear Tom,\\n\\nI'm writing to inform you about a recent system/service outage that has occurred. \\n\\n[Content about the outage would go here - please provide details such as:]\\n- When did the outage occur?\\n- What systems/services were affected?\\n- How long was it down for?\\n- Current status and resolution timeline\\n\\nPlease let me know if you have any questions or concerns regarding this matter.\\n\\nBest regards,\\n[Your name]\"}"
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "task": "restraint-ask-before-booking",
+                        "group": "restraint",
+                        "outcome": "correct",
+                        "called": [],
+                        "promptTokens": 1661,
+                        "outputTokens": 215,
+                        "latencyMs": 16432
+                    },
+                    {
+                        "task": "restraint-review-not-write",
+                        "group": "restraint",
+                        "outcome": "correct",
+                        "called": ["file_read"],
+                        "promptTokens": 1664,
+                        "outputTokens": 73,
+                        "latencyMs": 7487
+                    },
+                    {
+                        "task": "restraint-no-recipient",
+                        "group": "restraint",
+                        "outcome": "correct",
+                        "called": [],
+                        "promptTokens": 1655,
+                        "outputTokens": 213,
+                        "latencyMs": 16135
+                    },
+                    {
+                        "task": "restraint-hypothetical-post",
+                        "group": "restraint",
+                        "outcome": "misrouted",
+                        "called": ["email_search"],
+                        "promptTokens": 1659,
+                        "outputTokens": 313,
+                        "latencyMs": 22083,
+                        "note": "called email_search when none was wanted",
+                        "raw": {
+                            "text": "",
+                            "calls": [
+                                {
+                                    "id": "call_fh7bsrt7",
+                                    "name": "email_search",
+                                    "arguments": "{\"query\":\"build break channel slack post\",\"limit\":5}"
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "task": "chain-read-then-write",
+                        "group": "chain",
+                        "outcome": "correct",
+                        "called": ["file_read"],
+                        "promptTokens": 1663,
+                        "outputTokens": 108,
+                        "latencyMs": 9732
+                    },
+                    {
+                        "task": "chain-query-then-notify",
+                        "group": "chain",
+                        "outcome": "correct",
+                        "called": ["sql_query"],
+                        "promptTokens": 1662,
+                        "outputTokens": 151,
+                        "latencyMs": 12022
+                    },
+                    {
+                        "task": "chain-check-then-book",
+                        "group": "chain",
+                        "outcome": "correct",
+                        "called": ["calendar_list_events"],
+                        "promptTokens": 1667,
+                        "outputTokens": 151,
+                        "latencyMs": 12198
+                    }
+                ]
+            }
+        }
+    ]
+}

@@ -97,16 +97,20 @@ context:
 
   # Tier 0 — slot 0, before cache breakpoint A, read-only. Byte-stable across turns, or prompt
   # caching stops working with no error anywhere.
-  static:
-    - AGENT.md
+  #
+  # This example takes its identity from `soul` below, so AGENT.md is NOT listed: the soul (or its
+  # distilled compact file) IS the identity, and listing both would ship two identity documents to
+  # a frontier model — the same two-files-that-contradict failure the workspace template records
+  # for the old IDENTITY.md/SOUL.md split. With no soul, `static: [AGENT.md]` is the normal shape.
+  static: []
 
-  # Tier 1 — slot 2, AFTER the breakpoint, so a memory write leaves the cached prefix untouched.
+  # Tier 1 — slot 3, AFTER the breakpoint, so a memory write leaves the cached prefix untouched.
   # `memory_write` lands in the first file here whose frontmatter allows it.
   # volatile:
   #   - USER.md
   #   - MEMORY.md
 
-  # Tier 2 — slot 7, after the conversation history and before the current input. One or two
+  # Tier 2 — slot 9, after the conversation history and before the current input. One or two
   # rules, re-asserted because adherence decays and attention is weakest in the middle.
   # reminder: REMINDER.md
 
@@ -130,10 +134,16 @@ context:
     perRuleSuccess: 0.90        # measure it with `eval rules`, do not guess
     reliabilityTarget: 0.80     # at 0.90 per rule this permits TWO rules, not four
     onExceed: fail              # fail | warn
-  # soul:
-  #   file: SOUL.md
-  #   requires: { contextWindow: ">=200000", class: frontier }
-  #   onUnmet: distill           # distill | omit | fail
+  # ── Phase 3.5: capability-gated long-form identity ──
+  # SOUL.md ships only to a model meeting `requires`; anything else gets the hand-edited
+  # compact file. `soul distill SOUL.md` scaffolds it — headings and <rules> survive verbatim,
+  # prose becomes placeholders a person fills. Distillation is never automatic: a summariser
+  # drops exactly the parts that produce voice.
+  soul:
+    file: SOUL.md
+    requires: { contextWindow: ">=200000", class: frontier }
+    onUnmet: distill             # distill | omit | fail
+    distilled: SOUL.compact.md   # required by distill; its absence is a load failure
   # compactionNotice: true       # Phase 7 — stops the model wrapping up early on budget grounds
 
 # ── tools ─────────────────────────────────────────────────────────────────────────────────
@@ -228,10 +238,13 @@ limits:
 #   sources: []
 
 # ── Phase 3.5: knowledge — Tier 3, retrieved and never pinned ─────────────────────────────
-# knowledge:
-#   dir: ./workspace/knowledge
-#   maxActive: 2
-#   budget: 600
+# Entries activate when the current input mentions one of their frontmatter keywords, at most
+# maxActive per turn and at most budget tokens between them. An entry over the whole budget
+# fails the load — it could never activate, and silently unreachable is the one wrong answer.
+knowledge:
+  dir: ./knowledge
+  maxActive: 2
+  budget: 600
 
 # ── Phase 6: memory ───────────────────────────────────────────────────────────────────────
 # FTS5 over memory markdown plus message history. No embedding model, no network.

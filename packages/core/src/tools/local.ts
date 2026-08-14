@@ -149,7 +149,7 @@ const memoryWrite: Tool = {
 
         if (target?.path !== undefined) {
             await appendFile(target.path, line, "utf8")
-            // Named rather than described, because the model sees this file's contents in slot 2 on
+            // Named rather than described, because the model sees this file's contents in slot 3 on
             // the next turn and the two should be recognisably the same thing.
             return `Saved to ${target.name}.`
         }

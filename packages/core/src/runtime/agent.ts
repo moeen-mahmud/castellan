@@ -2,7 +2,7 @@
  * A single agent: a manifest plus its resolved model roles, identity, and persisted sessions.
  *
  * The workspace is read **once, at load**, and its `static` tier held as one string. That is not
- * an optimisation. Slot 0 is half of the cache-stable prefix, and re-reading the files per turn
+ * an optimization. Slot 0 is half of the cache-stable prefix, and re-reading the files per turn
  * would let an editor save change the prefix mid-session, quietly destroying prompt caching
  * with no error and no symptom other than the bill.
  *
@@ -12,6 +12,7 @@
  * to an in-memory SQLite database rather than to a different implementation.
  */
 
+import { isAbsolute, resolve } from "node:path"
 import type { ErrorDetail } from "../errors.ts"
 import type { EventBus } from "../events/bus.ts"
 import { newTurnId } from "../loop/ids.ts"
@@ -20,19 +21,24 @@ import type { LoadedManifest } from "../manifest/load.ts"
 import type { AgentManifest } from "../manifest/schema.ts"
 import type { PromptStyle } from "../model/prompt-style.ts"
 import type { ChatMessage } from "../model/provider.ts"
-import { type ResolvedRoles, type ResolveRolesOptions, resolveRoles } from "../model/roles.ts"
+
+import { type ResolvedRoles, resolveRoles, type ResolveRolesOptions } from "../model/roles.ts"
+
 import type { SessionSummary, Store, TurnRecord } from "../store/store.ts"
 import { passThroughFilter, type StreamFilter } from "../tools/dialect/dialect.ts"
 import { nativeDialect, nativeWireTokens } from "../tools/dialect/native.ts"
 import { nltDialect } from "../tools/dialect/nlt.ts"
 import { ToolRegistry } from "../tools/registry.ts"
+import { activateKnowledge, type KnowledgeBase, loadKnowledge } from "../workspace/knowledge.ts"
 import {
     loadWorkspace,
     planWorkspace,
     ruleBudgetFailure,
     type Workspace,
+    type WorkspaceFileRef,
     writeTarget,
 } from "../workspace/load.ts"
+import { planSoul } from "../workspace/soul.ts"
 
 export interface AgentCreateOptions extends ResolveRolesOptions {
     /**
@@ -67,6 +73,12 @@ export interface AgentDescription {
     }[]
     readonly dialect: string
     readonly tools: readonly string[]
+    /** Tier 3 entries and their gates. Empty when the manifest configures none. */
+    readonly knowledge: readonly {
+        readonly name: string
+        readonly keywords: readonly string[]
+        readonly tokens: number
+    }[]
     /**
      * What the catalogue costs per turn, whichever channel carries it.
      *
@@ -92,6 +104,8 @@ export class Agent {
     readonly store: Store
     /** Resolved once, at load. Never searched, never extended at runtime. */
     readonly tools: ToolRegistry
+    /** Tier 3, read once at load. `undefined` when the manifest configures none. */
+    readonly knowledge: KnowledgeBase | undefined
 
     #bus: EventBus
     #toolRuntime: ToolRuntime | undefined
@@ -104,6 +118,7 @@ export class Agent {
         bus: EventBus
         store: Store
         tools: ToolRegistry
+        knowledge: KnowledgeBase | undefined
     }) {
         this.id = init.loaded.manifest.id
         this.manifest = init.loaded.manifest
@@ -116,6 +131,7 @@ export class Agent {
         this.#bus = init.bus
         this.store = init.store
         this.tools = init.tools
+        this.knowledge = init.knowledge
 
         // Configuration, never inference. Reading the model id to pick a dialect would mean behaviour
         // changing silently when someone edits `model.main.id`, and a per-model difference nobody can
@@ -124,7 +140,7 @@ export class Agent {
 
         // Resolved once, here, rather than per call: which file a note goes to is a property of the
         // manifest, and re-deriving it inside a handler would let it disagree with the tier the
-        // model is actually shown in slot 2.
+        // model is actually shown in slot 3.
         const target = writeTarget(init.workspace)
 
         // The catalogue is rendered here, once, for the same reason the identity files are read
@@ -161,7 +177,24 @@ export class Agent {
         // Roles first: the workspace is rendered for the model in front of it, so the resolved
         // `promptStyle` has to exist before the files are read.
         const roles = resolveRoles(loaded.manifest, options)
-        const { workspace, warnings } = readWorkspace(loaded, roles.main.capabilities.promptStyle)
+        const style = roles.main.capabilities.promptStyle
+        const { workspace, warnings } = readWorkspace(loaded, style)
+
+        // Tier 3, read here for the same reason the workspace is: disk at boot, never per turn.
+        // Rendered with the same style so the two cannot drift.
+        const knowledgeConfig = loaded.manifest.knowledge
+        const knowledge =
+            knowledgeConfig === undefined
+                ? undefined
+                : loadKnowledge({
+                      dir: isAbsolute(knowledgeConfig.dir)
+                          ? knowledgeConfig.dir
+                          : resolve(loaded.dir, knowledgeConfig.dir),
+                      maxActive: knowledgeConfig.maxActive,
+                      budget: knowledgeConfig.budget,
+                      style,
+                  })
+
         return new Agent({
             loaded,
             roles,
@@ -170,6 +203,7 @@ export class Agent {
             bus,
             store,
             tools: options.tools ?? ToolRegistry.empty(),
+            knowledge,
         })
     }
 
@@ -217,6 +251,8 @@ export class Agent {
             input,
         })
 
+        const active = this.knowledge === undefined ? [] : activateKnowledge(input, this.knowledge)
+
         const result = await runTurn({
             agentId: this.id,
             sessionKey,
@@ -229,8 +265,20 @@ export class Agent {
             // byte-identical. Re-reading it mid-session lands with the write path that changes it,
             // since a re-read with nothing writing is a filesystem call per turn for no observable
             // difference.
+            ...(this.workspace.examples === "" ? {} : { examples: this.workspace.examples }),
             ...(this.workspace.volatile === "" ? {} : { volatile: this.workspace.volatile }),
             ...(this.workspace.reminder === "" ? {} : { reminder: this.workspace.reminder }),
+            // Activated once per turn against the input — the selection is a function of the turn,
+            // so it is stable across the steps within one and re-selecting per step would let two
+            // steps of the same turn argue from different reference material.
+            ...(active.length === 0
+                ? {}
+                : {
+                      knowledge: active.map((entry) => ({
+                          name: entry.name,
+                          content: entry.content,
+                      })),
+                  }),
             role: this.roles.main,
             window: this.window,
             reserveOutput: this.manifest.context.reserveOutput,
@@ -302,6 +350,11 @@ export class Agent {
             })),
             dialect: this.#toolRuntime?.dialect.id ?? this.manifest.tools.dialect,
             tools: this.tools.specs().map((spec) => spec.slug),
+            knowledge: (this.knowledge?.entries ?? []).map((entry) => ({
+                name: entry.name,
+                keywords: entry.keywords,
+                tokens: entry.tokens,
+            })),
             catalogueTokens:
                 (this.#toolRuntime?.blocks ?? []).reduce((sum, block) => sum + block.tokens, 0) +
                 (this.#toolRuntime?.wireTokens ?? 0),
@@ -310,29 +363,62 @@ export class Agent {
 }
 
 /**
- * Load the workspace, then check its rule budget.
+ * Plan, gate, and load the workspace: the deprecated-alias resolution, the soul gate, and the
+ * tiered load, in that order.
  *
- * Both are load-time and both fail loudly. The ordering matters only in that the budget failure is
- * about size and the rule failure is about count, and an author over on both should hear about the
- * size first — it is the one that is mechanically true regardless of which model is configured.
+ * Exported because `validate` calls it too. The soul gate and the alias conflict first lived only
+ * on this path, which is the asymmetry the rule guard already taught: a check only `run` performs
+ * is a check `validate` disagrees with. The rule budget is deliberately *not* applied here — each
+ * caller applies `ruleBudgetFailure` under its own `onExceed`.
  */
-function readWorkspace(
+export function resolveWorkspace(
     loaded: LoadedManifest,
     style: PromptStyle,
 ): { workspace: Workspace; warnings: ErrorDetail[] } {
     const { context } = loaded.manifest
     const plan = planWorkspace(context, loaded.dir)
-    const workspace = loadWorkspace({ refs: plan.refs, budgets: context.budgets, style })
     const warnings = [...plan.warnings]
 
-    // Counted across static and reminder together, because the model does not know they came from
-    // different files. `volatile` is excluded: it holds facts about the person, not obligations.
-    const failure = ruleBudgetFailure(workspace, context.rules)
+    // The soul gate runs against the model actually configured, and whichever file wins — the full
+    // document, the hand-edited compact one, or nothing — loads as an ordinary static ref, ahead of
+    // the declared list: identity leads. A second loading path for souls would be the one nobody
+    // tests.
+    let refs: readonly WorkspaceFileRef[] = plan.refs
+    if (context.soul !== undefined) {
+        const workspaceDir = isAbsolute(context.workspace)
+            ? context.workspace
+            : resolve(loaded.dir, context.workspace)
+        const soul = planSoul(
+            context.soul,
+            { id: loaded.manifest.model.main.id, window: loaded.window },
+            workspaceDir,
+        )
+        warnings.push(...soul.warnings)
+        if (soul.ref !== undefined) refs = [soul.ref, ...refs]
+    }
+
+    const workspace = loadWorkspace({ refs, budgets: context.budgets, style })
+    return { workspace, warnings }
+}
+
+/**
+ * `resolveWorkspace` plus this agent's `onExceed` applied to the rule budget.
+ *
+ * Counted across static and reminder together, because the model does not know they came from
+ * different files. `volatile` is excluded: it holds facts about the person, not obligations.
+ */
+function readWorkspace(
+    loaded: LoadedManifest,
+    style: PromptStyle,
+): { workspace: Workspace; warnings: ErrorDetail[] } {
+    const { workspace, warnings } = resolveWorkspace(loaded, style)
+
+    const failure = ruleBudgetFailure(workspace, loaded.manifest.context.rules)
     if (failure !== undefined) {
         // `warn` is the escape for a miscounted line, and it still says so. Silence is not an
         // option here: an author over budget and unaware of it is the case the guard exists for.
-        if (context.rules.onExceed === "fail") throw failure
-        warnings.push(failure.toDetail())
+        if (loaded.manifest.context.rules.onExceed === "fail") throw failure
+        return { workspace, warnings: [...warnings, failure.toDetail()] }
     }
 
     return { workspace, warnings }

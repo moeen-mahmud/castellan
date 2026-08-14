@@ -210,20 +210,28 @@ slot  content                                    pinned  cache          phase
 ────  ─────────────────────────────────────────  ──────  ─────────────  ─────
  0    system: workspace `static` tier              yes     ┐ breakpoint A
  1    tool dialect preamble + tool catalogue       yes     ┘
- 2    workspace `volatile` tier                    yes
- 3    active skill body (0 or 1)                   no      ─ breakpoint B  5
- 4    retrieved memory passages (k)                no                      6
- 5    rolling digest (compaction output)           no                      7
- 6    recent message window                        no
- 7    workspace `reminder` tier                    yes
- 8    current input + current task line            yes
- 9    last error, if any                           yes
+ 2    user: examples, under `examplesIn: user`     yes     byte-stable
+ 3    workspace `volatile` tier                    yes
+ 4    active skill body (0 or 1)                   no      ─ breakpoint B  5
+ 5    activated knowledge entries                  no
+ 6    retrieved memory passages (k)                no                      6
+ 7    rolling digest (compaction output)           no                      7
+ 8    recent message window                        no
+ 9    workspace `reminder` tier                    yes
+10    current input + current task line            yes
+11    last error, if any                           yes
 ```
 
 **Slot number equals prompt position.** The two are kept equal so this table can be read in
 order; inserting a slot means renumbering, which is cheap because every reference in the tree
-is by name (`SLOT.input`, never `8`). Slots 2 and 7 were inserted for the workspace tiers with
-no logic or test churn at all.
+is by name (`SLOT.input`, never `10`). Slots for the workspace tiers, and later for examples and
+knowledge, were inserted with no logic or test churn at all.
+
+Slot 2 sits *before* the volatile tier deliberately: extracted examples are byte-stable for the
+lifetime of the agent, and OpenAI-compatible prefix caching is contiguous — behind the mutating
+volatile tier they would fall out of the cacheable region on every memory write despite never
+changing. Slot 5 is the one workspace-derived slot that is **not pinned**: knowledge is retrieved
+per turn and compaction may drop it, where it must never drop a tier.
 
 Slot 0 is the workspace's `static` tier per `07-SPEC-WORKSPACE.md`. `SLOT.identity` is still its
 name in code, because that is what the slot *holds* — the tier name says where the text came from,
@@ -615,7 +623,7 @@ read at boot.
 turn input and the previous assistant turn. Score threshold; at most one active skill per
 turn by default (`skills.maxActive`).
 
-**Injection**: the full SKILL.md body enters context slot 3.
+**Injection**: the full SKILL.md body enters context slot 4.
 
 **Scripts**: a skill may ship `scripts/`. Those register as tools named
 `skill.<skill>.<script>`, visible **only while the skill is active**. Executed via

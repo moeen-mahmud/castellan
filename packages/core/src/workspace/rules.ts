@@ -64,6 +64,46 @@ const IMPERATIVE =
 /** Leading list marker, blockquote, or heading hash — stripped before the patterns run. */
 const LEADER = /^\s*(?:[-*+]|\d+[.)]|>|#{1,6})\s+/
 
+const RULES_OPEN = /^[ \t]*<rules(?:\s[^>]*)?>[ \t]*$/
+const RULES_CLOSE = /^[ \t]*<\/rules>[ \t]*$/
+
+/**
+ * Only the text inside `<rules>` blocks, for the one file where prose is not obligation: the
+ * full soul document.
+ *
+ * A constitution-style document explains at length — that is its entire premise, and it ships only
+ * to a model its author has declared capable of deriving rules from explanation. Running the
+ * keyword heuristic over that explanation counts sentences like "never gets tired of being asked"
+ * as rules and fails every soul-bearing manifest, which would ban the feature the gate exists to
+ * ship. The `<rules>` blocks still count: they survive distillation verbatim and hold on every
+ * model, so they are obligations wherever they appear. The *distilled* file gets no such exemption
+ * — it ships to small models, where the budget is the point.
+ */
+export function rulesBlocksOnly(text: string): string {
+    const kept: string[] = []
+    let inFence = false
+    let inRules = false
+
+    for (const line of text.split("\n")) {
+        if (FENCE.test(line)) {
+            inFence = !inFence
+            continue
+        }
+        if (inFence) continue
+        if (RULES_OPEN.test(line)) {
+            inRules = true
+            continue
+        }
+        if (RULES_CLOSE.test(line)) {
+            inRules = false
+            continue
+        }
+        if (inRules) kept.push(line)
+    }
+
+    return kept.join("\n")
+}
+
 export function countRules(text: string): CountedRule[] {
     const found: CountedRule[] = []
     let inFence = false

@@ -16,9 +16,8 @@ import {
     type ErrorDetail,
     HarnessError,
     loadManifest,
-    loadWorkspace,
-    planWorkspace,
     resolveCapabilities,
+    resolveWorkspace,
     ruleBudgetFailure,
 } from "@castellan/core"
 import { EXIT_FAILURE, EXIT_OK } from "#lib/const"
@@ -39,23 +38,21 @@ export function workspaceCommand(options: WorkspaceOptions): number {
             manifest.model.main.capabilities,
         )
 
-        const plan = planWorkspace(manifest.context, loaded.dir)
-        const workspace = loadWorkspace({
-            refs: plan.refs,
-            budgets: manifest.context.budgets,
-            style: capabilities.promptStyle,
-        })
+        // The same resolution `run` uses, soul gate included — the file the gate selects is a file
+        // someone wrote, and its writing deserves the same reading as any other identity file.
+        const { workspace, warnings } = resolveWorkspace(loaded, capabilities.promptStyle)
 
         // The authoring checks read the *authored* text, never the rendered form. An author fixes
         // what they wrote, and telling them about a heading the renderer inserted would send them
         // looking for a line that is not in their file.
         const findings: ErrorDetail[] = [
-            ...plan.warnings,
+            ...warnings,
             ...checkAuthoring(
                 workspace.files.map((file) => ({
                     name: file.name,
                     authored: file.authored,
                     tier: file.tier,
+                    field: file.field,
                 })),
             ),
         ]

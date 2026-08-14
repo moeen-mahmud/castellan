@@ -94,6 +94,19 @@ export const RULE_TASKS: readonly string[] = [
     "What is the largest ocean on Earth?",
     "In what year did the first Moon landing happen?",
     "What gas do plants absorb from the air?",
+    // The second ten exist because a deterministic endpoint makes repeats worthless: at
+    // temperature 0 the same task returns the same bytes every pass, so the only way to grow the
+    // sample is to grow the task list. Same design as the first ten — short, factual, neutral.
+    "How many continents are there?",
+    "What metal is liquid at room temperature?",
+    "Who painted the ceiling of the Sistine Chapel?",
+    "What is the longest river in Africa?",
+    "How many strings does a standard violin have?",
+    "What country has the largest population?",
+    "In what year did the Berlin Wall fall?",
+    "What is the chemical symbol for gold?",
+    "How many minutes are in a full day?",
+    "Which language has the most native speakers?",
 ]
 
 /** Rule counts to probe. The guard's interesting region is 1–4; 6 shows the curve continuing. */

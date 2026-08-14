@@ -131,8 +131,17 @@ inbound (channel | API | schedule)
   vocabulary in v1.
 - **Workspace files are tiered, not a flat list.** Static (cached, read-only) before breakpoint A,
   volatile after it, reminder past the history. Frontmatter and HTML comments are stripped before
-  injection. `context.files` survives as a deprecated alias that warns. Built in Phase 3.5's first
-  half; `promptStyle`, `SOUL.md` and `knowledge/` are the second.
+  injection. `context.files` survives as a deprecated alias that warns. All of Phase 3.5 is built:
+  tiers, `promptStyle`, `examplesIn` placement, `SOUL.md` gating, and `knowledge/`.
+- **A soul replaces `AGENT.md`, gated on the model.** `context.soul.requires` decides whether the
+  full document ships or the hand-edited compact file does (`onUnmet: distill`), and `soul distill`
+  only scaffolds — headings and `<rules>` survive verbatim, prose becomes placeholders a person
+  fills, because a summariser drops exactly the parts that produce voice. Listing a soul *and*
+  `AGENT.md` ships two identities; don't.
+- **Knowledge is Tier 3: keyword-gated, budgeted, never pinned.** Entries activate when the turn's
+  input mentions a frontmatter keyword, at most `maxActive` per turn under `knowledge.budget`, in
+  their own slot that compaction may drop. The selector is a ranking-only seam Phase 6 can attach a
+  scored retriever to — and must not build a second index for.
 - **Vendor prompting guidance is encoded as a capability, never a constant.** Published advice is
   written for frontier models and a good fraction of it inverts at 3–8B — Anthropic now says to
   *remove* emphatic phrasing because models overtrigger on it; a 7B model needs it. That lives in
@@ -296,7 +305,22 @@ Never claim a performance property without a number in `evals/` and a script to 
   into a file the agent's own context never reads is worse than a failed call.
 - **Slot number equals prompt position** in `SLOT` (`context/blocks.ts`). The two are kept equal so
   the table in `01-ARCHITECTURE.md` can be read in order; inserting a slot means renumbering, which
-  is cheap because every reference is by name (`SLOT.input`, never `8`).
+  is cheap because every reference is by name (`SLOT.input`, never `10`) — proven when `examples`
+  and `knowledge` renumbered everything below slot 2 and zero tests changed.
+- **The examples slot sits *before* the volatile tier.** Extracted examples are byte-stable and
+  prefix caching is contiguous: behind the mutating volatile tier they would fall out of the
+  cacheable region on every memory write despite never changing. And extraction is a *move*, never
+  a rewrite — tags intact, prose byte-identical, tokens still billed to the file that authored them.
+- **The full soul document's prose is exempt from the rule count; nothing else is.** A constitution
+  explains at length by design and ships only to models declared capable (via `requires`) of
+  deriving rules from explanation — the keyword heuristic counted 9 "rules" in the reference soul's
+  prose the first time it ran. Its `<rules>` blocks still count, and the *distilled* file counts in
+  full: it ships to small models, where the budget is the point. Keyed on
+  `field === "context.soul.file"`, in both `ruleBudgetFailure` and the authoring checks.
+- **Knowledge activation stops at the first entry that does not fit the budget — no skip-past.**
+  Skipping would let a worse-ranked entry displace a better-ranked one purely by being short. An
+  entry bigger than the whole budget fails the load; selection happens once per *turn*, never per
+  step, so two steps of one turn cannot argue from different reference material.
 - **A `ChatMessage` is no longer just `{role, content}`.** Under the `native` dialect it carries
   `toolCalls` or `toolCallId`, and every layer that copies a message must copy those too — the wire
   mapper in `chat-completions.ts`, the `message` field on `ContextBlock`, and the store's

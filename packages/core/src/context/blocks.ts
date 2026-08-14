@@ -27,21 +27,36 @@ export const SLOT = {
     /** Tool dialect preamble and catalogue. Pinned, cache breakpoint A. Phase 3. */
     tools: 1,
     /**
+     * Workspace example blocks as a user message, under `examplesIn: user`. Pinned. Phase 3.5.
+     *
+     * *Before* `volatile`, and the ordering is the point: extracted examples are byte-stable for
+     * the lifetime of the agent, and OpenAI-compatible prompt caching is contiguous-prefix-based.
+     * Placed after the volatile tier they would fall out of the cacheable region on every memory
+     * write despite never changing. Empty under `examplesIn: system`, where the blocks stay
+     * embedded in the static tier exactly as authored.
+     */
+    examples: 2,
+    /**
      * Workspace `volatile` tier — the user model and working memory. Pinned. Phase 3.5.
      *
      * *After* breakpoint A, and that is the entire reason the tier exists: this content changes when
      * the agent writes to memory, and content ahead of the breakpoint that changes invalidates the
      * cached prefix on every write. The cost rises and nothing anywhere reports it.
      */
-    volatile: 2,
+    volatile: 3,
     /** Active skill body. Cache breakpoint B. Phase 5. */
-    skill: 3,
+    skill: 4,
+    /**
+     * Activated knowledge entries. **Not pinned** — Tier 3 is retrieved, never carried, so
+     * compaction may drop it where it must never drop a workspace tier. Phase 3.5.
+     */
+    knowledge: 5,
     /** Retrieved memory passages. Phase 6. */
-    memory: 4,
+    memory: 6,
     /** Rolling digest, the output of compaction. Phase 7. */
-    digest: 5,
+    digest: 7,
     /** Recent message window. */
-    history: 6,
+    history: 8,
     /**
      * Workspace `reminder` tier — one or two re-asserted rules. Pinned. Phase 3.5.
      *
@@ -50,11 +65,11 @@ export const SLOT = {
      * ends of the context than in the middle, and a rule stated once at the top of a thirty-turn
      * session is effectively in the middle.
      */
-    reminder: 7,
+    reminder: 9,
     /** Current input and current task line. Pinned. */
-    input: 8,
+    input: 10,
     /** Last error, if any. Pinned. */
-    error: 9,
+    error: 11,
 } as const
 
 export type SlotName = keyof typeof SLOT

@@ -4,7 +4,7 @@
  * Phase 1 has no tools, so a step is a single model call whose text is the reply. The shape is
  * already the shape the tool loop needs — parse, execute, observe slot into `runStep`'s caller
  * rather than into `runStep` itself — so Phase 3 adds a dialect and an executor without
- * reorganising this.
+ * reorganizing this.
  */
 
 import type { EventBus } from "../events/bus.ts"

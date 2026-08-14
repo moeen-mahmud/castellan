@@ -564,13 +564,21 @@ Second half — in progress:
   `07-SPEC-WORKSPACE.md`, reported as warnings with `--strict` for CI
 - [x] `scripts/eval-rules.ts` and `evals/fixtures/rules.ts` — measures `perRuleSuccess` against a
   real endpoint, and checks the guard's independence assumption while it is there
-- [ ] `examplesIn` / `skillsIn` placement — the capability is resolved and carried; moving example
-  blocks into a user message needs the assembly change and the eval that settles the default
-- [ ] `knowledge/` — Tier 3, activation by frontmatter keyword gate, `maxActive`, own budget.
-  Schema is in place and refused at load
-- [ ] `SOUL.md` — `requires` / `onUnmet`, plus `soul distill` emitting an editable scaffold.
-  Schema is in place and refused at load
-- [ ] `evals/prompt-style/` — the two unresolved `promptStyle` questions, with committed numbers
+- [x] `examplesIn` placement — `extractExamples` (a move, never a rewrite; fence-aware, tags kept)
+  feeds a new user-message slot **before** the volatile tier, because the extracted text is
+  byte-stable and prefix caching is contiguous. `skillsIn` stays carried-only: skills arrive in
+  Phase 5, so there is nothing to place
+- [x] `knowledge/` — Tier 3, activation by frontmatter keyword gate, `maxActive`, own budget,
+  slot 5, not pinned. Selector is a ranking-only seam Phase 6 can attach a scored retriever to
+- [x] `SOUL.md` — `requires` / `onUnmet`, plus `soul distill` emitting an editable scaffold
+  (headings and `<rules>` verbatim, `{{PLACEHOLDER}}` per section so the `workspace` command
+  nags until a person fills it)
+- [x] `evals/prompt-style/` — both questions measured on qwen3.5:9b and deepseek-chat with
+  committed numbers and raw replies. `examplesIn` saturates — both placements score 100% on a
+  well-authored example set, so every default stays on its vendor's advice with a measured floor.
+  `intensity` discriminates at 6 rules: the emphatic line moves qwen's all-rules compliance
+  +20pp (16/20 vs 12/20, entirely the `digits` rule, reproduced at two probe scales), supporting
+  the shipped small-model default; deepseek is 100/100 either way
 
 **Files.** `packages/core/src/workspace/`, `model/prompt-style.ts`, `manifest/schema.ts`,
 `context/assemble.ts`, `packages/cli/`, `evals/prompt-style/`
@@ -588,16 +596,22 @@ Second half — in progress:
 - [x] Rule guard: three rules at `perRuleSuccess: 0.90` / `reliabilityTarget: 0.80` fails the load
       quoting the computed figure; two pass
 - [x] `eval rules` reports a measured `perRuleSuccess` for the configured model
-- [ ] `evals/prompt-style/` settles both open questions on ≥2 models: (a) `examplesIn: system` vs
-      `user`, where Anthropic and OpenAI give opposite guidance; (b) `intensity: emphatic` vs
-      `neutral` on the smallest model, confirming the inversion is real rather than assumed
+- [x] `evals/prompt-style/` settles both open questions on ≥2 models: (a) `examplesIn` — no
+      measurable difference in either direction on a well-authored example set (100% adoption from
+      both placements, 240 observations, zero empties), so no default moves; (b) `intensity` — the
+      small-model half of the inversion is supported: +20pp all-rules compliance from the emphatic
+      framing line on qwen3.5:9b at 6 rules, mechanism isolated to one rule, while the frontier
+      half (overtriggering) is outside what a compliance probe can see and stays on published
+      guidance. Numbers and raw replies in `evals/prompt-style/`
 - [~] `workspace` flags a rule with no rationale clause, an undiverse or miscounted example set,
       heavy negative framing, an unfilled template placeholder, and a bulleted `AGENT.md`. The
       bullet check is **unconditional** rather than gated on every bound channel being
       `markdown: none|basic` — channels arrive in Phase 4 and the manifest section is refused
       until then, so gating it now would ship a check that can never fire. Deferred to Phase 4.
-- [ ] `SOUL.md` on a model failing `requires` behaves per `onUnmet`; `distill` ships the compact file
-- [ ] `knowledge/` activates on keyword, respects `maxActive` and its budget, and is **not** pinned
+- [x] `SOUL.md` on a model failing `requires` behaves per `onUnmet`; `distill` ships the compact file
+      — verified live on `examples/reference`: `deepseek-v4-pro` (393k window) gets `SOUL.md`,
+      `qwen3.5:9b` gets `SOUL.compact.md` with a warning naming both failed requirements
+- [x] `knowledge/` activates on keyword, respects `maxActive` and its budget, and is **not** pinned
 - [x] `bun run bench:boot` still under 1000 ms with a full workspace loaded — median 52.1 ms,
       `agents` phase 1.45 ms including the workspace read
 
@@ -718,6 +732,49 @@ budgets and the alias form the first half and are independently useful; renderin
   delivers. A `memory_write` therefore reaches the model's slot 2 on the next agent load rather than
   the next turn; the re-read belongs with the second half, since a re-read with nothing writing is a
   filesystem call per turn for no observable difference.
+
+### Second half — deviations from the plan as written
+
+- **The slot table was renumbered — and zero call sites changed.** `examples` (2) and `knowledge`
+  (5) needed positions, so everything from the volatile tier down moved. Every reference in the
+  tree is by name (`SLOT.input`, never a number), which is why the architecture doc calls
+  renumbering cheap; this was the first time the claim was exercised at scale, and 866 existing
+  tests passed untouched.
+- **The examples slot sits *before* the volatile tier, not after it.** Extracted examples are
+  byte-stable for the lifetime of the agent, and OpenAI-compatible prefix caching is contiguous —
+  placed behind the mutating volatile tier, they would fall out of the cacheable region on every
+  memory write despite never changing. Their tokens still count against the file that authored
+  them: moving examples must not make a file look cheaper than it is.
+- **The full soul document is exempt from the prose rule-count; its `<rules>` blocks are not.**
+  Found live, not designed: the first `validate` of a soul-bearing reference manifest counted 9
+  rules against a budget of 2, and every counted line was constitution prose ("never gets tired of
+  being asked"). A document whose premise is that the model derives rules from explanation will
+  always trip a keyword heuristic on its explanation, and it ships only to models the author has
+  declared — via `requires` — capable of that derivation. The *distilled* file gets no exemption:
+  it ships to small models, where the budget is the point. The same split applies to the
+  rule-shaped authoring checks (`rule_no_rationale`, `negative_framing`).
+- **A soul replaces `AGENT.md` rather than joining it.** The reference example first carried both,
+  which ships two identity documents to a frontier model — the same two-files-that-contradict
+  failure the template records for the old `IDENTITY.md`/`SOUL.md` split, recreated through the new
+  mechanism. The reference now demonstrates replacement, and the spec says so in bold.
+- **`soul distill` refuses to overwrite an existing compact file.** The compact file is the
+  hand-edited artefact; regenerating over someone's edits is exactly the loss automatic
+  distillation would cause, arriving through the tool built to avoid it. The scaffold's
+  placeholders are deliberately the `{{NAME}}` form the `workspace` command warns about, so an
+  unedited scaffold keeps reporting itself.
+- **`validate` now renders with the resolved `promptStyle`, closing a real asymmetry.** It loaded
+  the workspace with the default style while `run` rendered with the model's own — and budgets are
+  measured on rendered text, so the two could disagree about whether a file fits. `resolveWorkspace`
+  (plan + soul gate + load) is now one exported function both call, per the standing rule that a
+  check only `run` performs is a check `validate` disagrees with.
+- **Knowledge activation stops at the first entry that does not fit; it never skips past it.**
+  Skipping would let a worse-ranked entry displace a better-ranked one purely by being short, and
+  the selection would stop being explainable from the ranking — the same quiet-reordering shape the
+  tool registry refuses. An entry larger than the whole activation budget fails the *load*: it
+  could never activate, and silently-unreachable is the dropped-tool-call failure shape again.
+- **Knowledge is selected once per turn, not per step.** Activation is a function of the turn's
+  input; re-selecting per step would let two steps of one turn argue from different reference
+  material.
 
 ---
 

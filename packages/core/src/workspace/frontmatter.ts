@@ -13,7 +13,7 @@
  */
 
 import { parse as parseYaml } from "yaml"
-import { workspaceFrontmatterInvalid } from "../errors.ts"
+import { knowledgeFileInvalid, workspaceFrontmatterInvalid } from "../errors.ts"
 
 export type Tier = "static" | "volatile" | "reminder"
 export type Editable = "none" | "append" | "replace"
@@ -73,6 +73,57 @@ export function parseWorkspaceFile(name: string, raw: string): ParsedFile {
  */
 export function strip(text: string): string {
     return text.replace(HTML_COMMENT, "").replace(BLANK_RUN, "\n\n").trim()
+}
+
+export interface ParsedKnowledgeFile {
+    /** Lowercased, for the case-insensitive gate. Order preserved from the author. */
+    readonly keywords: readonly string[]
+    /** The body, with frontmatter and HTML comments removed. Ready for injection. */
+    readonly body: string
+}
+
+/**
+ * A knowledge file: the same leading `---` block and the same stripping, a different vocabulary.
+ *
+ * `keywords` is *required*, unlike every workspace key, because it is the entry's only way in:
+ * a knowledge file without keywords can never activate, and a file that can never activate is the
+ * starved-by-configuration shape this codebase refuses everywhere else.
+ */
+export function parseKnowledgeFile(name: string, raw: string): ParsedKnowledgeFile {
+    const match = FRONTMATTER.exec(raw)
+    if (match === null) {
+        throw knowledgeFileInvalid(name, "it has no frontmatter, so it declares no keywords.")
+    }
+
+    let parsed: unknown
+    try {
+        parsed = parseYaml(match[1] ?? "")
+    } catch (cause) {
+        throw knowledgeFileInvalid(name, "its frontmatter is not valid YAML.", cause)
+    }
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+        throw knowledgeFileInvalid(name, "its frontmatter did not parse to a mapping.")
+    }
+
+    const record = parsed as Record<string, unknown>
+    for (const key of Object.keys(record)) {
+        if (key === "keywords") continue
+        throw knowledgeFileInvalid(name, `it sets an unknown key "${key}". Known keys: keywords.`)
+    }
+
+    const keywords = record.keywords
+    if (
+        !Array.isArray(keywords) ||
+        keywords.length === 0 ||
+        keywords.some((keyword) => typeof keyword !== "string" || keyword.trim() === "")
+    ) {
+        throw knowledgeFileInvalid(name, "keywords must be a non-empty list of non-empty strings.")
+    }
+
+    return {
+        keywords: keywords.map((keyword: string) => keyword.trim().toLowerCase()),
+        body: strip(raw.slice(match[0].length)),
+    }
 }
 
 function readFrontmatter(name: string, source: string): Frontmatter {

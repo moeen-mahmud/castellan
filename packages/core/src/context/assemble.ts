@@ -1,14 +1,14 @@
 /**
  * Ordered, budgeted context assembly.
  *
- * Phase 1 filled slots 0 (identity), 6 (recent history) and 8 (current input); Phase 3 added slot 1
- * (tools) and Phase 3.5 slots 2 (workspace volatile) and 7 (workspace reminder). Still empty: 3
- * with skills, 4 with memory, 5 with compaction. The slot order is fixed in advance so that filling
- * them later cannot disturb the cache-stable prefix.
+ * Phase 1 filled slots 0 (identity), 8 (recent history) and 10 (current input); Phase 3 added slot 1
+ * (tools) and Phase 3.5 slots 2 (extracted examples), 3 (workspace volatile), 5 (knowledge) and 9
+ * (workspace reminder). Still empty: 4 with skills, 6 with memory, 7 with compaction. The slot order
+ * is fixed in advance so that filling them later cannot disturb the cache-stable prefix.
  *
  * History is trimmed from the oldest end when the budget is tight. That is a window, not
  * compaction — dropping the oldest turn outright is what Phase 7's ladder replaces with
- * something that summarises before it forgets.
+ * something that summarizes before it forgets.
  */
 
 import type { ChatMessage } from "../model/provider.ts"
@@ -19,7 +19,7 @@ export interface AssembleInput {
     /** Slot 0: the workspace's `static` tier, read once at agent load. Byte-stable per turn. */
     readonly identity: string
     /**
-     * Slot 2: the workspace's `volatile` tier — the user model and working memory.
+     * Slot 3: the workspace's `volatile` tier — the user model and working memory.
      *
      * Separate from `identity` for one reason, and it is not organisational: this content changes
      * when the agent writes to memory, and it sits *after* the cache breakpoint so that a write
@@ -28,7 +28,24 @@ export interface AssembleInput {
      */
     readonly volatile?: string
     /**
-     * Slot 7: the workspace's `reminder` tier, one or two re-asserted rules.
+     * Slot 2: the workspace's extracted example blocks, delivered as a **user** message under
+     * `examplesIn: user`.
+     *
+     * Before `volatile` rather than after it, because this content is byte-stable and prefix
+     * caching is contiguous: behind the mutating volatile tier it would fall out of the cacheable
+     * region on every memory write despite never changing. Absent under `examplesIn: system`,
+     * where the blocks never left the static tier.
+     */
+    readonly examples?: string
+    /**
+     * Slot 5: activated knowledge entries, already selected and budgeted by the caller.
+     *
+     * **Not pinned.** Tier 3 is retrieved per turn, never carried, so compaction may drop it —
+     * the exact opposite of the workspace tiers, which must survive every stage.
+     */
+    readonly knowledge?: readonly { name: string; content: string }[]
+    /**
+     * Slot 9: the workspace's `reminder` tier, one or two re-asserted rules.
      *
      * Placed after the history rather than with the other pinned instruction blocks, because rule
      * adherence decays across a conversation and attention is stronger at both ends of a context
@@ -99,8 +116,19 @@ export function assembleContext(input: AssembleInput): AssembledContext {
         pinned.push(block(SLOT.identity, "system", input.identity, true, "identity"))
     }
     for (const toolBlock of input.toolBlocks ?? []) pinned.push(toolBlock)
+    if (input.examples !== undefined && input.examples.trim() !== "") {
+        pinned.push(block(SLOT.examples, "user", input.examples, true, "workspace-examples"))
+    }
     if (input.volatile !== undefined && input.volatile.trim() !== "") {
         pinned.push(block(SLOT.volatile, "system", input.volatile, true, "workspace-volatile"))
+    }
+    // In the budget like everything else, but `pinned: false`: Tier 3 is retrieved, never carried,
+    // so compaction may drop it where it must never drop a workspace tier.
+    for (const entry of input.knowledge ?? []) {
+        if (entry.content.trim() === "") continue
+        pinned.push(
+            block(SLOT.knowledge, "system", entry.content, false, `knowledge:${entry.name}`),
+        )
     }
     if (input.reminder !== undefined && input.reminder.trim() !== "") {
         pinned.push(block(SLOT.reminder, "system", input.reminder, true, "workspace-reminder"))
@@ -143,12 +171,14 @@ export function assembleContext(input: AssembleInput): AssembledContext {
         message,
     }))
 
-    // Slot order, not insertion order: 0 and 1 lead so the cached prefix is the same bytes every
-    // turn, 2 opens the uncached region, and the pinned tail follows the history it applies to.
+    // Slot order, not insertion order: 0–2 lead so the cached prefix is the same bytes every
+    // turn, 3 opens the uncached region, and the pinned tail follows the history it applies to.
     const blocks = [
         ...pinned.filter((b) => b.slot === SLOT.identity),
         ...pinned.filter((b) => b.slot === SLOT.tools),
+        ...pinned.filter((b) => b.slot === SLOT.examples),
         ...pinned.filter((b) => b.slot === SLOT.volatile),
+        ...pinned.filter((b) => b.slot === SLOT.knowledge),
         ...historyBlocks,
         ...pinned.filter((b) => b.slot === SLOT.reminder),
         ...pinned.filter((b) => b.slot === SLOT.input || b.slot === SLOT.error),

@@ -8,12 +8,13 @@
  * renderer costs ~170-210 ms to import under Node, which would be most of this command's runtime.
  */
 
+import { isAbsolute, resolve } from "node:path"
 import {
     HarnessError,
+    loadKnowledge,
     loadManifest,
-    loadWorkspace,
-    planWorkspace,
     resolveCapabilities,
+    resolveWorkspace,
     ruleBudgetFailure,
 } from "@castellan/core"
 import { EXIT_FAILURE, EXIT_OK } from "#lib/const"
@@ -30,15 +31,33 @@ export function validateCommand(options: ValidateOptions): number {
         )
 
         // Loaded rather than counted, because the interesting failures are all in the loading:
-        // a budget bust, a tier the frontmatter disagrees with, an unreadable file. `validate` that
-        // only counted names would report ok on a manifest `run` refuses.
-        const plan = planWorkspace(manifest.context, loaded.dir)
-        const workspace = loadWorkspace({ refs: plan.refs, budgets: manifest.context.budgets })
+        // a budget bust, a tier the frontmatter disagrees with, an unreadable file, a soul gate
+        // resolving to a file disk does not have. `resolveWorkspace` is the same function `run`
+        // calls, with the same resolved style — budgets are measured on the rendered text, so a
+        // validator rendering differently would pass files the runtime refuses.
+        const { workspace, warnings: workspaceWarnings } = resolveWorkspace(
+            loaded,
+            capabilities.promptStyle,
+        )
         // The same check `run` applies, applied here for the same reason it exists at all: a
         // validator that accepts a manifest the runtime refuses is worse than no validator.
         const ruleFailure = ruleBudgetFailure(workspace, manifest.context.rules)
         if (ruleFailure !== undefined && manifest.context.rules.onExceed === "fail")
             throw ruleFailure
+
+        // Tier 3 loads exactly as `run` loads it, so a bad entry — no keywords, over the
+        // activation budget — is a validation failure rather than a first-turn surprise.
+        const knowledge =
+            manifest.knowledge === undefined
+                ? undefined
+                : loadKnowledge({
+                      dir: isAbsolute(manifest.knowledge.dir)
+                          ? manifest.knowledge.dir
+                          : resolve(loaded.dir, manifest.knowledge.dir),
+                      maxActive: manifest.knowledge.maxActive,
+                      budget: manifest.knowledge.budget,
+                      style: capabilities.promptStyle,
+                  })
 
         const tiers = (["static", "volatile", "reminder"] as const)
             .map((tier) => {
@@ -71,8 +90,16 @@ export function validateCommand(options: ValidateOptions): number {
                             })),
                             tokens: workspace.tokens,
                         },
+                        knowledge:
+                            knowledge === undefined
+                                ? []
+                                : knowledge.entries.map((entry) => ({
+                                      name: entry.name,
+                                      keywords: entry.keywords,
+                                      tokens: entry.tokens,
+                                  })),
                         warnings: [
-                            ...plan.warnings,
+                            ...workspaceWarnings,
                             ...(ruleFailure === undefined ? [] : [ruleFailure.toDetail()]),
                         ],
                     },
@@ -98,8 +125,14 @@ export function validateCommand(options: ValidateOptions): number {
                 `  capabilities thinking=${capabilities.thinking} promptCache=${capabilities.promptCache} nativeTools=${capabilities.nativeTools} strictSchema=${capabilities.strictSchema}\n` +
                 `  dialect      ${manifest.tools.dialect}\n` +
                 `  workspace    ${tiers === "" ? "(none)" : tiers}\n` +
+                (knowledge === undefined
+                    ? ""
+                    : `  knowledge    ${knowledge.entries.length} entries, maxActive=${knowledge.maxActive}, budget=${knowledge.budget}\n`) +
                 `  limits       maxSteps=${manifest.limits.maxSteps} turnTimeoutMs=${manifest.limits.turnTimeoutMs}\n` +
-                [...plan.warnings, ...(ruleFailure === undefined ? [] : [ruleFailure.toDetail()])]
+                [
+                    ...workspaceWarnings,
+                    ...(ruleFailure === undefined ? [] : [ruleFailure.toDetail()]),
+                ]
                     .map((warning) => `  warning      ${warning.message}\n`)
                     .join(""),
         )

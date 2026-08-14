@@ -10,7 +10,7 @@
  * window, and an overflow is a hard failure while waste is a rounding error.
  */
 
-/** Average characters per token for English prose in BPE vocabularies. */
+/** Average characters per token for English prose in Byte-Pair Encoding (BPE) vocabularies. */
 const CHARS_PER_TOKEN = 3.8
 
 export function estimateTokens(text: string): number {

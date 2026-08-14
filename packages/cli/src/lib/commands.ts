@@ -123,6 +123,26 @@ export const COMMANDS: readonly CommandSpec[] = [
         ],
     },
     {
+        // A scaffold, never a summary: headings and <rules> blocks survive verbatim, prose becomes
+        // placeholders a person fills. Automatic distillation of an identity document drops exactly
+        // the parts that produce voice, which is why this is a command and not something load does.
+        name: "soul",
+        summary: "scaffold a hand-edited compact identity from a long-form document",
+        args: [
+            { name: "action", required: true, help: "distill" },
+            { name: "file", required: true, help: "path to the long-form identity document" },
+        ],
+        flags: [
+            {
+                name: "out",
+                kind: "string",
+                placeholder: "path",
+                help: "where to write the scaffold",
+                defaultHelp: "<file>.compact.md beside the source",
+            },
+        ],
+    },
+    {
         name: "agents",
         summary: "list the agents one or more manifests produce",
         args: [{ ...MANIFEST, variadic: true, help: "one or more paths to an agent.yaml" }],

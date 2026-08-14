@@ -653,3 +653,61 @@ describe("failures inside a turn", () => {
         await runtime.stop()
     })
 })
+
+describe("knowledge", () => {
+    test("an entry enters the context only on turns that mention its keyword", async () => {
+        const dir = mkdtempSync(join(tmpdir(), "runtime-knowledge-"))
+        writeFileSync(
+            join(dir, "agent.yaml"),
+            `apiVersion: ${BRAND.apiVersion}
+id: test
+model:
+  main:
+    id: gpt-4o-mini
+    baseUrl: https://api.example.com/v1
+    apiKeyEnv: MODEL_API_KEY
+context:
+  files:
+    - IDENTITY.md
+knowledge:
+  dir: ./knowledge
+limits:
+  maxSteps: 2
+  turnTimeoutMs: 5000
+`,
+        )
+        writeFileSync(join(dir, "IDENTITY.md"), "You are a test fixture.")
+        const { mkdirSync } = await import("node:fs")
+        mkdirSync(join(dir, "knowledge"))
+        writeFileSync(
+            join(dir, "knowledge", "deploys.md"),
+            "---\nkeywords: [deploy]\n---\nStaging first, always.\n",
+        )
+
+        let bodies: { role: string; content: string }[][] = []
+        const runtime = await Runtime.create({
+            agents: [join(dir, "agent.yaml")],
+            env: ENV,
+            fetch: async (_url, init) => {
+                bodies.push(
+                    (JSON.parse(String(init?.body)) as { messages: (typeof bodies)[number] })
+                        .messages,
+                )
+                return sse([delta("ok"), "data: [DONE]\n\n"])
+            },
+        })
+        const agent = runtime.agent("test")
+
+        await agent.send("how do I deploy this?")
+        const withKnowledge = bodies[0] ?? []
+        expect(withKnowledge.some((m) => m.content.includes("Staging first"))).toBe(true)
+
+        bodies = []
+        await agent.send("what is the capital of France?")
+        const without = bodies[0] ?? []
+        expect(without.some((m) => m.content.includes("Staging first"))).toBe(false)
+
+        expect(agent.describe().knowledge.map((entry) => entry.name)).toEqual(["deploys.md"])
+        await runtime.stop()
+    })
+})

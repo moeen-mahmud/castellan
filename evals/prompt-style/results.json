@@ -1,0 +1,1194 @@
+{
+  "startedAt": "2026-08-14T11:00:56.546Z",
+  "tasks": 10,
+  "repeats": 2,
+  "maxTokens": 2000,
+  "reasoning": "none",
+  "intensityRuleCount": 4,
+  "models": [
+    {
+      "id": "deepseek-chat",
+      "label": "deepseek-chat",
+      "smallOpenWeight": false,
+      "reasoning": "endpoint default"
+    }
+  ],
+  "summaries": [
+    {
+      "question": "examples",
+      "model": "deepseek-chat",
+      "condition": "system",
+      "replies": 20,
+      "empties": 0,
+      "usable": true,
+      "rates": {
+        "prefix": 1,
+        "brevity": 1
+      }
+    },
+    {
+      "question": "examples",
+      "model": "deepseek-chat",
+      "condition": "user",
+      "replies": 20,
+      "empties": 0,
+      "usable": true,
+      "rates": {
+        "prefix": 1,
+        "brevity": 1
+      }
+    },
+    {
+      "question": "intensity",
+      "model": "deepseek-chat",
+      "condition": "emphatic",
+      "replies": 20,
+      "empties": 0,
+      "usable": true,
+      "rates": {
+        "suffix": 1,
+        "brevity": 1,
+        "no-commas": 1,
+        "lowercase": 1
+      },
+      "allFollowed": 1
+    },
+    {
+      "question": "intensity",
+      "model": "deepseek-chat",
+      "condition": "neutral",
+      "replies": 20,
+      "empties": 0,
+      "usable": true,
+      "rates": {
+        "suffix": 1,
+        "brevity": 1,
+        "no-commas": 1,
+        "lowercase": 1
+      },
+      "allFollowed": 1
+    }
+  ],
+  "attempts": [
+    {
+      "question": "examples",
+      "model": "deepseek-chat",
+      "condition": "system",
+      "task": "What is the capital of Portugal?",
+      "pass": 1,
+      "reply": "Short answer: Lisbon.",
+      "empty": false,
+      "checks": {
+        "prefix": true,
+        "brevity": true
+      }
+    },
+    {
+      "question": "examples",
+      "model": "deepseek-chat",
+      "condition": "system",
+      "task": "How many days are in February in a leap year?",
+      "pass": 1,
+      "reply": "Short answer: 29 days.",
+      "empty": false,
+      "checks": {
+        "prefix": true,
+        "brevity": true
+      }
+    },
+    {
+      "question": "examples",
+      "model": "deepseek-chat",
+      "condition": "system",
+      "task": "Name a programming language created at Bell Labs.",
+      "pass": 1,
+      "reply": "Short answer: C.",
+      "empty": false,
+      "checks": {
+        "prefix": true,
+        "brevity": true
+      }
+    },
+    {
+      "question": "examples",
+      "model": "deepseek-chat",
+      "condition": "system",
+      "task": "What does HTTP stand for?",
+      "pass": 1,
+      "reply": "Short answer: HyperText Transfer Protocol.",
+      "empty": false,
+      "checks": {
+        "prefix": true,
+        "brevity": true
+      }
+    },
+    {
+      "question": "examples",
+      "model": "deepseek-chat",
+      "condition": "system",
+      "task": "Which planet is closest to the Sun?",
+      "pass": 1,
+      "reply": "Short answer: Mercury.",
+      "empty": false,
+      "checks": {
+        "prefix": true,
+        "brevity": true
+      }
+    },
+    {
+      "question": "examples",
+      "model": "deepseek-chat",
+      "condition": "system",
+      "task": "What is the boiling point of water at sea level in Celsius?",
+      "pass": 1,
+      "reply": "Short answer: 100°C.",
+      "empty": false,
+      "checks": {
+        "prefix": true,
+        "brevity": true
+      }
+    },
+    {
+      "question": "examples",
+      "model": "deepseek-chat",
+      "condition": "system",
+      "task": "Who wrote the play Hamlet?",
+      "pass": 1,
+      "reply": "Short answer: William Shakespeare.",
+      "empty": false,
+      "checks": {
+        "prefix": true,
+        "brevity": true
+      }
+    },
+    {
+      "question": "examples",
+      "model": "deepseek-chat",
+      "condition": "system",
+      "task": "What is the largest ocean on Earth?",
+      "pass": 1,
+      "reply": "Short answer: the Pacific Ocean.",
+      "empty": false,
+      "checks": {
+        "prefix": true,
+        "brevity": true
+      }
+    },
+    {
+      "question": "examples",
+      "model": "deepseek-chat",
+      "condition": "system",
+      "task": "In what year did the first Moon landing happen?",
+      "pass": 1,
+      "reply": "Short answer: 1969.",
+      "empty": false,
+      "checks": {
+        "prefix": true,
+        "brevity": true
+      }
+    },
+    {
+      "question": "examples",
+      "model": "deepseek-chat",
+      "condition": "system",
+      "task": "What gas do plants absorb from the air?",
+      "pass": 1,
+      "reply": "Short answer: carbon dioxide.",
+      "empty": false,
+      "checks": {
+        "prefix": true,
+        "brevity": true
+      }
+    },
+    {
+      "question": "examples",
+      "model": "deepseek-chat",
+      "condition": "system",
+      "task": "What is the capital of Portugal?",
+      "pass": 2,
+      "reply": "Short answer: Lisbon.",
+      "empty": false,
+      "checks": {
+        "prefix": true,
+        "brevity": true
+      }
+    },
+    {
+      "question": "examples",
+      "model": "deepseek-chat",
+      "condition": "system",
+      "task": "How many days are in February in a leap year?",
+      "pass": 2,
+      "reply": "Short answer: 29 days.",
+      "empty": false,
+      "checks": {
+        "prefix": true,
+        "brevity": true
+      }
+    },
+    {
+      "question": "examples",
+      "model": "deepseek-chat",
+      "condition": "system",
+      "task": "Name a programming language created at Bell Labs.",
+      "pass": 2,
+      "reply": "Short answer: C.",
+      "empty": false,
+      "checks": {
+        "prefix": true,
+        "brevity": true
+      }
+    },
+    {
+      "question": "examples",
+      "model": "deepseek-chat",
+      "condition": "system",
+      "task": "What does HTTP stand for?",
+      "pass": 2,
+      "reply": "Short answer: HyperText Transfer Protocol.",
+      "empty": false,
+      "checks": {
+        "prefix": true,
+        "brevity": true
+      }
+    },
+    {
+      "question": "examples",
+      "model": "deepseek-chat",
+      "condition": "system",
+      "task": "Which planet is closest to the Sun?",
+      "pass": 2,
+      "reply": "Short answer: Mercury.",
+      "empty": false,
+      "checks": {
+        "prefix": true,
+        "brevity": true
+      }
+    },
+    {
+      "question": "examples",
+      "model": "deepseek-chat",
+      "condition": "system",
+      "task": "What is the boiling point of water at sea level in Celsius?",
+      "pass": 2,
+      "reply": "Short answer: 100°C.",
+      "empty": false,
+      "checks": {
+        "prefix": true,
+        "brevity": true
+      }
+    },
+    {
+      "question": "examples",
+      "model": "deepseek-chat",
+      "condition": "system",
+      "task": "Who wrote the play Hamlet?",
+      "pass": 2,
+      "reply": "Short answer: William Shakespeare.",
+      "empty": false,
+      "checks": {
+        "prefix": true,
+        "brevity": true
+      }
+    },
+    {
+      "question": "examples",
+      "model": "deepseek-chat",
+      "condition": "system",
+      "task": "What is the largest ocean on Earth?",
+      "pass": 2,
+      "reply": "Short answer: the Pacific Ocean.",
+      "empty": false,
+      "checks": {
+        "prefix": true,
+        "brevity": true
+      }
+    },
+    {
+      "question": "examples",
+      "model": "deepseek-chat",
+      "condition": "system",
+      "task": "In what year did the first Moon landing happen?",
+      "pass": 2,
+      "reply": "Short answer: 1969.",
+      "empty": false,
+      "checks": {
+        "prefix": true,
+        "brevity": true
+      }
+    },
+    {
+      "question": "examples",
+      "model": "deepseek-chat",
+      "condition": "system",
+      "task": "What gas do plants absorb from the air?",
+      "pass": 2,
+      "reply": "Short answer: carbon dioxide.",
+      "empty": false,
+      "checks": {
+        "prefix": true,
+        "brevity": true
+      }
+    },
+    {
+      "question": "examples",
+      "model": "deepseek-chat",
+      "condition": "user",
+      "task": "What is the capital of Portugal?",
+      "pass": 1,
+      "reply": "Short answer: Lisbon.",
+      "empty": false,
+      "checks": {
+        "prefix": true,
+        "brevity": true
+      }
+    },
+    {
+      "question": "examples",
+      "model": "deepseek-chat",
+      "condition": "user",
+      "task": "How many days are in February in a leap year?",
+      "pass": 1,
+      "reply": "Short answer: 29.",
+      "empty": false,
+      "checks": {
+        "prefix": true,
+        "brevity": true
+      }
+    },
+    {
+      "question": "examples",
+      "model": "deepseek-chat",
+      "condition": "user",
+      "task": "Name a programming language created at Bell Labs.",
+      "pass": 1,
+      "reply": "Short answer: C (also B, C++, and others).",
+      "empty": false,
+      "checks": {
+        "prefix": true,
+        "brevity": true
+      }
+    },
+    {
+      "question": "examples",
+      "model": "deepseek-chat",
+      "condition": "user",
+      "task": "What does HTTP stand for?",
+      "pass": 1,
+      "reply": "Short answer: HyperText Transfer Protocol.",
+      "empty": false,
+      "checks": {
+        "prefix": true,
+        "brevity": true
+      }
+    },
+    {
+      "question": "examples",
+      "model": "deepseek-chat",
+      "condition": "user",
+      "task": "Which planet is closest to the Sun?",
+      "pass": 1,
+      "reply": "Short answer: Mercury.",
+      "empty": false,
+      "checks": {
+        "prefix": true,
+        "brevity": true
+      }
+    },
+    {
+      "question": "examples",
+      "model": "deepseek-chat",
+      "condition": "user",
+      "task": "What is the boiling point of water at sea level in Celsius?",
+      "pass": 1,
+      "reply": "Short answer: 100°C.",
+      "empty": false,
+      "checks": {
+        "prefix": true,
+        "brevity": true
+      }
+    },
+    {
+      "question": "examples",
+      "model": "deepseek-chat",
+      "condition": "user",
+      "task": "Who wrote the play Hamlet?",
+      "pass": 1,
+      "reply": "Short answer: William Shakespeare.",
+      "empty": false,
+      "checks": {
+        "prefix": true,
+        "brevity": true
+      }
+    },
+    {
+      "question": "examples",
+      "model": "deepseek-chat",
+      "condition": "user",
+      "task": "What is the largest ocean on Earth?",
+      "pass": 1,
+      "reply": "Short answer: the Pacific Ocean.",
+      "empty": false,
+      "checks": {
+        "prefix": true,
+        "brevity": true
+      }
+    },
+    {
+      "question": "examples",
+      "model": "deepseek-chat",
+      "condition": "user",
+      "task": "In what year did the first Moon landing happen?",
+      "pass": 1,
+      "reply": "Short answer: 1969.",
+      "empty": false,
+      "checks": {
+        "prefix": true,
+        "brevity": true
+      }
+    },
+    {
+      "question": "examples",
+      "model": "deepseek-chat",
+      "condition": "user",
+      "task": "What gas do plants absorb from the air?",
+      "pass": 1,
+      "reply": "Short answer: carbon dioxide.",
+      "empty": false,
+      "checks": {
+        "prefix": true,
+        "brevity": true
+      }
+    },
+    {
+      "question": "examples",
+      "model": "deepseek-chat",
+      "condition": "user",
+      "task": "What is the capital of Portugal?",
+      "pass": 2,
+      "reply": "Short answer: Lisbon.",
+      "empty": false,
+      "checks": {
+        "prefix": true,
+        "brevity": true
+      }
+    },
+    {
+      "question": "examples",
+      "model": "deepseek-chat",
+      "condition": "user",
+      "task": "How many days are in February in a leap year?",
+      "pass": 2,
+      "reply": "Short answer: 29.",
+      "empty": false,
+      "checks": {
+        "prefix": true,
+        "brevity": true
+      }
+    },
+    {
+      "question": "examples",
+      "model": "deepseek-chat",
+      "condition": "user",
+      "task": "Name a programming language created at Bell Labs.",
+      "pass": 2,
+      "reply": "Short answer: C (also B, C++, and others).",
+      "empty": false,
+      "checks": {
+        "prefix": true,
+        "brevity": true
+      }
+    },
+    {
+      "question": "examples",
+      "model": "deepseek-chat",
+      "condition": "user",
+      "task": "What does HTTP stand for?",
+      "pass": 2,
+      "reply": "Short answer: HyperText Transfer Protocol.",
+      "empty": false,
+      "checks": {
+        "prefix": true,
+        "brevity": true
+      }
+    },
+    {
+      "question": "examples",
+      "model": "deepseek-chat",
+      "condition": "user",
+      "task": "Which planet is closest to the Sun?",
+      "pass": 2,
+      "reply": "Short answer: Mercury.",
+      "empty": false,
+      "checks": {
+        "prefix": true,
+        "brevity": true
+      }
+    },
+    {
+      "question": "examples",
+      "model": "deepseek-chat",
+      "condition": "user",
+      "task": "What is the boiling point of water at sea level in Celsius?",
+      "pass": 2,
+      "reply": "Short answer: 100°C.",
+      "empty": false,
+      "checks": {
+        "prefix": true,
+        "brevity": true
+      }
+    },
+    {
+      "question": "examples",
+      "model": "deepseek-chat",
+      "condition": "user",
+      "task": "Who wrote the play Hamlet?",
+      "pass": 2,
+      "reply": "Short answer: William Shakespeare.",
+      "empty": false,
+      "checks": {
+        "prefix": true,
+        "brevity": true
+      }
+    },
+    {
+      "question": "examples",
+      "model": "deepseek-chat",
+      "condition": "user",
+      "task": "What is the largest ocean on Earth?",
+      "pass": 2,
+      "reply": "Short answer: the Pacific Ocean.",
+      "empty": false,
+      "checks": {
+        "prefix": true,
+        "brevity": true
+      }
+    },
+    {
+      "question": "examples",
+      "model": "deepseek-chat",
+      "condition": "user",
+      "task": "In what year did the first Moon landing happen?",
+      "pass": 2,
+      "reply": "Short answer: 1969.",
+      "empty": false,
+      "checks": {
+        "prefix": true,
+        "brevity": true
+      }
+    },
+    {
+      "question": "examples",
+      "model": "deepseek-chat",
+      "condition": "user",
+      "task": "What gas do plants absorb from the air?",
+      "pass": 2,
+      "reply": "Short answer: carbon dioxide.",
+      "empty": false,
+      "checks": {
+        "prefix": true,
+        "brevity": true
+      }
+    },
+    {
+      "question": "intensity",
+      "model": "deepseek-chat",
+      "condition": "emphatic",
+      "task": "What is the capital of Portugal?",
+      "pass": 1,
+      "reply": "lisbon is the capital of portugal.\nDONE",
+      "empty": false,
+      "checks": {
+        "suffix": true,
+        "brevity": true,
+        "no-commas": true,
+        "lowercase": true
+      }
+    },
+    {
+      "question": "intensity",
+      "model": "deepseek-chat",
+      "condition": "emphatic",
+      "task": "How many days are in February in a leap year?",
+      "pass": 1,
+      "reply": "29 days in february in a leap year. done",
+      "empty": false,
+      "checks": {
+        "suffix": true,
+        "brevity": true,
+        "no-commas": true,
+        "lowercase": true
+      }
+    },
+    {
+      "question": "intensity",
+      "model": "deepseek-chat",
+      "condition": "emphatic",
+      "task": "Name a programming language created at Bell Labs.",
+      "pass": 1,
+      "reply": "c language created at bell labs. also c++ and unix shell. done",
+      "empty": false,
+      "checks": {
+        "suffix": true,
+        "brevity": true,
+        "no-commas": true,
+        "lowercase": true
+      }
+    },
+    {
+      "question": "intensity",
+      "model": "deepseek-chat",
+      "condition": "emphatic",
+      "task": "What does HTTP stand for?",
+      "pass": 1,
+      "reply": "hypertext transfer protocol\nDONE",
+      "empty": false,
+      "checks": {
+        "suffix": true,
+        "brevity": true,
+        "no-commas": true,
+        "lowercase": true
+      }
+    },
+    {
+      "question": "intensity",
+      "model": "deepseek-chat",
+      "condition": "emphatic",
+      "task": "Which planet is closest to the Sun?",
+      "pass": 1,
+      "reply": "mercury is closest to the sun.\nDONE",
+      "empty": false,
+      "checks": {
+        "suffix": true,
+        "brevity": true,
+        "no-commas": true,
+        "lowercase": true
+      }
+    },
+    {
+      "question": "intensity",
+      "model": "deepseek-chat",
+      "condition": "emphatic",
+      "task": "What is the boiling point of water at sea level in Celsius?",
+      "pass": 1,
+      "reply": "100 degrees celsius at sea level. that is the standard boiling point. DONE",
+      "empty": false,
+      "checks": {
+        "suffix": true,
+        "brevity": true,
+        "no-commas": true,
+        "lowercase": true
+      }
+    },
+    {
+      "question": "intensity",
+      "model": "deepseek-chat",
+      "condition": "emphatic",
+      "task": "Who wrote the play Hamlet?",
+      "pass": 1,
+      "reply": "william shakespeare wrote hamlet.\ndone",
+      "empty": false,
+      "checks": {
+        "suffix": true,
+        "brevity": true,
+        "no-commas": true,
+        "lowercase": true
+      }
+    },
+    {
+      "question": "intensity",
+      "model": "deepseek-chat",
+      "condition": "emphatic",
+      "task": "What is the largest ocean on Earth?",
+      "pass": 1,
+      "reply": "the pacific ocean\nDONE",
+      "empty": false,
+      "checks": {
+        "suffix": true,
+        "brevity": true,
+        "no-commas": true,
+        "lowercase": true
+      }
+    },
+    {
+      "question": "intensity",
+      "model": "deepseek-chat",
+      "condition": "emphatic",
+      "task": "In what year did the first Moon landing happen?",
+      "pass": 1,
+      "reply": "the first moon landing was in 1969\ndone",
+      "empty": false,
+      "checks": {
+        "suffix": true,
+        "brevity": true,
+        "no-commas": true,
+        "lowercase": true
+      }
+    },
+    {
+      "question": "intensity",
+      "model": "deepseek-chat",
+      "condition": "emphatic",
+      "task": "What gas do plants absorb from the air?",
+      "pass": 1,
+      "reply": "plants absorb carbon dioxide from the air for photosynthesis.  \nDONE",
+      "empty": false,
+      "checks": {
+        "suffix": true,
+        "brevity": true,
+        "no-commas": true,
+        "lowercase": true
+      }
+    },
+    {
+      "question": "intensity",
+      "model": "deepseek-chat",
+      "condition": "emphatic",
+      "task": "What is the capital of Portugal?",
+      "pass": 2,
+      "reply": "lisbon is the capital of portugal.\nDONE",
+      "empty": false,
+      "checks": {
+        "suffix": true,
+        "brevity": true,
+        "no-commas": true,
+        "lowercase": true
+      }
+    },
+    {
+      "question": "intensity",
+      "model": "deepseek-chat",
+      "condition": "emphatic",
+      "task": "How many days are in February in a leap year?",
+      "pass": 2,
+      "reply": "29 days in february in a leap year. done",
+      "empty": false,
+      "checks": {
+        "suffix": true,
+        "brevity": true,
+        "no-commas": true,
+        "lowercase": true
+      }
+    },
+    {
+      "question": "intensity",
+      "model": "deepseek-chat",
+      "condition": "emphatic",
+      "task": "Name a programming language created at Bell Labs.",
+      "pass": 2,
+      "reply": "c language. created by dennis ritchie at bell labs. DONE",
+      "empty": false,
+      "checks": {
+        "suffix": true,
+        "brevity": true,
+        "no-commas": true,
+        "lowercase": true
+      }
+    },
+    {
+      "question": "intensity",
+      "model": "deepseek-chat",
+      "condition": "emphatic",
+      "task": "What does HTTP stand for?",
+      "pass": 2,
+      "reply": "hypertext transfer protocol\nDONE",
+      "empty": false,
+      "checks": {
+        "suffix": true,
+        "brevity": true,
+        "no-commas": true,
+        "lowercase": true
+      }
+    },
+    {
+      "question": "intensity",
+      "model": "deepseek-chat",
+      "condition": "emphatic",
+      "task": "Which planet is closest to the Sun?",
+      "pass": 2,
+      "reply": "mercury is closest to the sun.\nDONE",
+      "empty": false,
+      "checks": {
+        "suffix": true,
+        "brevity": true,
+        "no-commas": true,
+        "lowercase": true
+      }
+    },
+    {
+      "question": "intensity",
+      "model": "deepseek-chat",
+      "condition": "emphatic",
+      "task": "What is the boiling point of water at sea level in Celsius?",
+      "pass": 2,
+      "reply": "100 degrees celsius at sea level. that is the standard boiling point. DONE",
+      "empty": false,
+      "checks": {
+        "suffix": true,
+        "brevity": true,
+        "no-commas": true,
+        "lowercase": true
+      }
+    },
+    {
+      "question": "intensity",
+      "model": "deepseek-chat",
+      "condition": "emphatic",
+      "task": "Who wrote the play Hamlet?",
+      "pass": 2,
+      "reply": "william shakespeare wrote hamlet.\ndone",
+      "empty": false,
+      "checks": {
+        "suffix": true,
+        "brevity": true,
+        "no-commas": true,
+        "lowercase": true
+      }
+    },
+    {
+      "question": "intensity",
+      "model": "deepseek-chat",
+      "condition": "emphatic",
+      "task": "What is the largest ocean on Earth?",
+      "pass": 2,
+      "reply": "the pacific ocean is the largest. it covers more than 30 percent of earth's surface.\nDONE",
+      "empty": false,
+      "checks": {
+        "suffix": true,
+        "brevity": true,
+        "no-commas": true,
+        "lowercase": true
+      }
+    },
+    {
+      "question": "intensity",
+      "model": "deepseek-chat",
+      "condition": "emphatic",
+      "task": "In what year did the first Moon landing happen?",
+      "pass": 2,
+      "reply": "the first moon landing was in 1969\ndone",
+      "empty": false,
+      "checks": {
+        "suffix": true,
+        "brevity": true,
+        "no-commas": true,
+        "lowercase": true
+      }
+    },
+    {
+      "question": "intensity",
+      "model": "deepseek-chat",
+      "condition": "emphatic",
+      "task": "What gas do plants absorb from the air?",
+      "pass": 2,
+      "reply": "plants absorb carbon dioxide from the air for photosynthesis.  \nDONE",
+      "empty": false,
+      "checks": {
+        "suffix": true,
+        "brevity": true,
+        "no-commas": true,
+        "lowercase": true
+      }
+    },
+    {
+      "question": "intensity",
+      "model": "deepseek-chat",
+      "condition": "neutral",
+      "task": "What is the capital of Portugal?",
+      "pass": 1,
+      "reply": "lisbon is the capital of portugal.\nDONE",
+      "empty": false,
+      "checks": {
+        "suffix": true,
+        "brevity": true,
+        "no-commas": true,
+        "lowercase": true
+      }
+    },
+    {
+      "question": "intensity",
+      "model": "deepseek-chat",
+      "condition": "neutral",
+      "task": "How many days are in February in a leap year?",
+      "pass": 1,
+      "reply": "29 days in february in a leap year. done",
+      "empty": false,
+      "checks": {
+        "suffix": true,
+        "brevity": true,
+        "no-commas": true,
+        "lowercase": true
+      }
+    },
+    {
+      "question": "intensity",
+      "model": "deepseek-chat",
+      "condition": "neutral",
+      "task": "Name a programming language created at Bell Labs.",
+      "pass": 1,
+      "reply": "c language. created at bell labs by dennis ritchie. DONE",
+      "empty": false,
+      "checks": {
+        "suffix": true,
+        "brevity": true,
+        "no-commas": true,
+        "lowercase": true
+      }
+    },
+    {
+      "question": "intensity",
+      "model": "deepseek-chat",
+      "condition": "neutral",
+      "task": "What does HTTP stand for?",
+      "pass": 1,
+      "reply": "http stands for hypertext transfer protocol.\nit is the foundation of data on the web.\nDONE",
+      "empty": false,
+      "checks": {
+        "suffix": true,
+        "brevity": true,
+        "no-commas": true,
+        "lowercase": true
+      }
+    },
+    {
+      "question": "intensity",
+      "model": "deepseek-chat",
+      "condition": "neutral",
+      "task": "Which planet is closest to the Sun?",
+      "pass": 1,
+      "reply": "mercury is closest to the sun.\ndone",
+      "empty": false,
+      "checks": {
+        "suffix": true,
+        "brevity": true,
+        "no-commas": true,
+        "lowercase": true
+      }
+    },
+    {
+      "question": "intensity",
+      "model": "deepseek-chat",
+      "condition": "neutral",
+      "task": "What is the boiling point of water at sea level in Celsius?",
+      "pass": 1,
+      "reply": "100 degrees celsius at sea level. that is the standard boiling point. DONE",
+      "empty": false,
+      "checks": {
+        "suffix": true,
+        "brevity": true,
+        "no-commas": true,
+        "lowercase": true
+      }
+    },
+    {
+      "question": "intensity",
+      "model": "deepseek-chat",
+      "condition": "neutral",
+      "task": "Who wrote the play Hamlet?",
+      "pass": 1,
+      "reply": "william shakespeare wrote hamlet.\nDONE",
+      "empty": false,
+      "checks": {
+        "suffix": true,
+        "brevity": true,
+        "no-commas": true,
+        "lowercase": true
+      }
+    },
+    {
+      "question": "intensity",
+      "model": "deepseek-chat",
+      "condition": "neutral",
+      "task": "What is the largest ocean on Earth?",
+      "pass": 1,
+      "reply": "the pacific ocean. it covers more than 30 percent of earth's surface.\nDONE",
+      "empty": false,
+      "checks": {
+        "suffix": true,
+        "brevity": true,
+        "no-commas": true,
+        "lowercase": true
+      }
+    },
+    {
+      "question": "intensity",
+      "model": "deepseek-chat",
+      "condition": "neutral",
+      "task": "In what year did the first Moon landing happen?",
+      "pass": 1,
+      "reply": "the first moon landing happened in 1969.\nDONE",
+      "empty": false,
+      "checks": {
+        "suffix": true,
+        "brevity": true,
+        "no-commas": true,
+        "lowercase": true
+      }
+    },
+    {
+      "question": "intensity",
+      "model": "deepseek-chat",
+      "condition": "neutral",
+      "task": "What gas do plants absorb from the air?",
+      "pass": 1,
+      "reply": "plants absorb carbon dioxide from the air.\nDONE",
+      "empty": false,
+      "checks": {
+        "suffix": true,
+        "brevity": true,
+        "no-commas": true,
+        "lowercase": true
+      }
+    },
+    {
+      "question": "intensity",
+      "model": "deepseek-chat",
+      "condition": "neutral",
+      "task": "What is the capital of Portugal?",
+      "pass": 2,
+      "reply": "lisbon is the capital of portugal.\nDONE",
+      "empty": false,
+      "checks": {
+        "suffix": true,
+        "brevity": true,
+        "no-commas": true,
+        "lowercase": true
+      }
+    },
+    {
+      "question": "intensity",
+      "model": "deepseek-chat",
+      "condition": "neutral",
+      "task": "How many days are in February in a leap year?",
+      "pass": 2,
+      "reply": "29 days in february in a leap year. done",
+      "empty": false,
+      "checks": {
+        "suffix": true,
+        "brevity": true,
+        "no-commas": true,
+        "lowercase": true
+      }
+    },
+    {
+      "question": "intensity",
+      "model": "deepseek-chat",
+      "condition": "neutral",
+      "task": "Name a programming language created at Bell Labs.",
+      "pass": 2,
+      "reply": "c language. created at bell labs by dennis ritchie. DONE",
+      "empty": false,
+      "checks": {
+        "suffix": true,
+        "brevity": true,
+        "no-commas": true,
+        "lowercase": true
+      }
+    },
+    {
+      "question": "intensity",
+      "model": "deepseek-chat",
+      "condition": "neutral",
+      "task": "What does HTTP stand for?",
+      "pass": 2,
+      "reply": "http stands for hypertext transfer protocol.\nit is the foundation of data communication on the web.\nDONE",
+      "empty": false,
+      "checks": {
+        "suffix": true,
+        "brevity": true,
+        "no-commas": true,
+        "lowercase": true
+      }
+    },
+    {
+      "question": "intensity",
+      "model": "deepseek-chat",
+      "condition": "neutral",
+      "task": "Which planet is closest to the Sun?",
+      "pass": 2,
+      "reply": "mercury is closest to the sun.\ndone",
+      "empty": false,
+      "checks": {
+        "suffix": true,
+        "brevity": true,
+        "no-commas": true,
+        "lowercase": true
+      }
+    },
+    {
+      "question": "intensity",
+      "model": "deepseek-chat",
+      "condition": "neutral",
+      "task": "What is the boiling point of water at sea level in Celsius?",
+      "pass": 2,
+      "reply": "100 degrees celsius at sea level. that is the standard boiling point. DONE",
+      "empty": false,
+      "checks": {
+        "suffix": true,
+        "brevity": true,
+        "no-commas": true,
+        "lowercase": true
+      }
+    },
+    {
+      "question": "intensity",
+      "model": "deepseek-chat",
+      "condition": "neutral",
+      "task": "Who wrote the play Hamlet?",
+      "pass": 2,
+      "reply": "william shakespeare wrote hamlet.\nDONE",
+      "empty": false,
+      "checks": {
+        "suffix": true,
+        "brevity": true,
+        "no-commas": true,
+        "lowercase": true
+      }
+    },
+    {
+      "question": "intensity",
+      "model": "deepseek-chat",
+      "condition": "neutral",
+      "task": "What is the largest ocean on Earth?",
+      "pass": 2,
+      "reply": "the pacific ocean is the largest. it covers more than 30 percent of earth's surface.\nDONE",
+      "empty": false,
+      "checks": {
+        "suffix": true,
+        "brevity": true,
+        "no-commas": true,
+        "lowercase": true
+      }
+    },
+    {
+      "question": "intensity",
+      "model": "deepseek-chat",
+      "condition": "neutral",
+      "task": "In what year did the first Moon landing happen?",
+      "pass": 2,
+      "reply": "the first moon landing happened in 1969.\nDONE",
+      "empty": false,
+      "checks": {
+        "suffix": true,
+        "brevity": true,
+        "no-commas": true,
+        "lowercase": true
+      }
+    },
+    {
+      "question": "intensity",
+      "model": "deepseek-chat",
+      "condition": "neutral",
+      "task": "What gas do plants absorb from the air?",
+      "pass": 2,
+      "reply": "plants absorb carbon dioxide from the air.\nDONE",
+      "empty": false,
+      "checks": {
+        "suffix": true,
+        "brevity": true,
+        "no-commas": true,
+        "lowercase": true
+      }
+    }
+  ]
+}

@@ -74,9 +74,16 @@ export interface TurnInput {
     readonly input: string
     readonly history: readonly ChatMessage[]
     readonly identity: string
-    /** Workspace `volatile` tier, slot 2 — after the cache breakpoint. */
+    /** Workspace example blocks as a user message, slot 2 — under `examplesIn: user`. */
+    readonly examples?: string
+    /** Workspace `volatile` tier, slot 3 — after the cache breakpoint. */
     readonly volatile?: string
-    /** Workspace `reminder` tier, slot 7 — after the history. */
+    /**
+     * Activated knowledge entries, slot 5. Selected by the caller *per turn* — activation depends
+     * on the turn's input and nothing else, so it is stable across the steps within one.
+     */
+    readonly knowledge?: readonly { readonly name: string; readonly content: string }[]
+    /** Workspace `reminder` tier, slot 9 — after the history. */
     readonly reminder?: string
     readonly role: ResolvedRole
     readonly window: number
@@ -184,7 +191,11 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
             const assembled = assembleContext({
                 identity: input.identity,
                 ...(tools === undefined ? {} : { toolBlocks: tools.blocks }),
+                ...(input.examples === undefined ? {} : { examples: input.examples }),
                 ...(input.volatile === undefined ? {} : { volatile: input.volatile }),
+                ...(input.knowledge === undefined || input.knowledge.length === 0
+                    ? {}
+                    : { knowledge: input.knowledge }),
                 ...(input.reminder === undefined ? {} : { reminder: input.reminder }),
                 history,
                 input: input.input,

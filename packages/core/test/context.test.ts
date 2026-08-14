@@ -162,3 +162,58 @@ describe("workspace tiers in the assembled prompt", () => {
         expect(slots.includes(SLOT.volatile)).toBe(false)
     })
 })
+
+describe("examples and knowledge slots", () => {
+    function assembleWithExtras() {
+        return assembleContext({
+            identity: "You are a test fixture.",
+            examples: "Example 1:\nuser: hi\nagent: hello",
+            volatile: "## Memory\nremembers things",
+            knowledge: [
+                { name: "deploys.md", content: "Use blue-green." },
+                { name: "oncall.md", content: "Page the secondary first." },
+            ],
+            history: [{ role: "user", content: "first" }],
+            input: "what now",
+            window: 8192,
+            reserveOutput: 1024,
+        })
+    }
+
+    test("examples travel as a user message between the catalogue and the volatile tier", () => {
+        const blocks = assembleWithExtras().blocks
+        const examples = blocks.find((b) => b.label === "workspace-examples")
+        expect(examples?.role).toBe("user")
+        expect(examples?.slot).toBe(SLOT.examples)
+        expect(examples?.pinned).toBe(true)
+        // Order in the message sequence: identity, examples, volatile — the byte-stable content
+        // stays contiguous ahead of the tier that mutates, or prefix caching loses it.
+        const labels = blocks.map((b) => b.label)
+        expect(labels.indexOf("workspace-examples")).toBeGreaterThan(labels.indexOf("identity"))
+        expect(labels.indexOf("workspace-volatile")).toBeGreaterThan(
+            labels.indexOf("workspace-examples"),
+        )
+    })
+
+    test("knowledge blocks are budgeted but not pinned — compaction may drop them", () => {
+        const blocks = assembleWithExtras().blocks
+        const knowledge = blocks.filter((b) => b.slot === SLOT.knowledge)
+        expect(knowledge.length).toBe(2)
+        for (const block of knowledge) {
+            expect(block.pinned).toBe(false)
+            expect(block.role).toBe("system")
+        }
+        // They sit after the volatile tier and before the history they inform.
+        const labels = blocks.map((b) => b.label)
+        expect(labels.indexOf("knowledge:deploys.md")).toBeGreaterThan(
+            labels.indexOf("workspace-volatile"),
+        )
+        expect(labels.indexOf("history")).toBeGreaterThan(labels.indexOf("knowledge:oncall.md"))
+    })
+
+    test("absent examples and knowledge assemble exactly as before", () => {
+        const labels = assemble().blocks.map((b) => b.label)
+        expect(labels.includes("workspace-examples")).toBe(false)
+        expect(labels.some((label) => label.startsWith("knowledge:"))).toBe(false)
+    })
+})

@@ -11,13 +11,28 @@
  */
 
 import type { ErrorDetail } from "../errors.ts"
-import { countRules } from "./rules.ts"
+import { countRules, rulesBlocksOnly } from "./rules.ts"
 
 export interface AuthoringInput {
     readonly name: string
     /** Stripped of frontmatter and comments, not yet rendered for a model. */
     readonly authored: string
     readonly tier: string
+    /** Which manifest field listed the file. The soul gate's checks key off this. */
+    readonly field?: string
+}
+
+/**
+ * The full soul document's *rule-shaped* checks run against its `<rules>` blocks only.
+ *
+ * Same reasoning as the load-time rule budget: a constitution explains at length by design, and it
+ * ships only to a model its author declared capable of deriving rules from explanation — so
+ * counting its prose as bare rules, or its explanatory "never"s as prohibitions, reports the file's
+ * premise as its defect. The prose checks that do apply to frontier models — placeholders, example
+ * diversity, bullet density — still read the whole file.
+ */
+function ruleText(file: AuthoringInput): string {
+    return file.field === "context.soul.file" ? rulesBlocksOnly(file.authored) : file.authored
 }
 
 const EXAMPLE_OPEN = /^[ \t]*<example(?:\s[^>]*)?>[ \t]*$/
@@ -183,7 +198,7 @@ function contentWords(text: string): Set<string> {
 
 function checkRationale(file: AuthoringInput): ErrorDetail[] {
     const found: ErrorDetail[] = []
-    for (const rule of countRules(file.authored)) {
+    for (const rule of countRules(ruleText(file))) {
         if (RATIONALE.test(rule.text)) continue
         found.push({
             code: "workspace_rule_no_rationale",
@@ -196,7 +211,7 @@ function checkRationale(file: AuthoringInput): ErrorDetail[] {
 }
 
 function checkFraming(file: AuthoringInput): ErrorDetail[] {
-    const matches = file.authored.match(PROHIBITION) ?? []
+    const matches = ruleText(file).match(PROHIBITION) ?? []
     if (matches.length <= PROHIBITION_LIMIT) return []
     return [
         {
