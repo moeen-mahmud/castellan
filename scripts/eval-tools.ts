@@ -30,9 +30,15 @@
  * Usage:
  *   bun scripts/eval-tools.ts                    # every configured model whose key is set
  *   bun scripts/eval-tools.ts --model qwen3.5:9b # one model
- *   bun scripts/eval-tools.ts --repeats 3        # median of N passes per fixture
+ *   bun scripts/eval-tools.ts --repeats 3        # median of N passes per fixture — see below
  *   bun scripts/eval-tools.ts --tasks route,abstain
  *   bun scripts/eval-tools.ts --out evals/tools  # where results are written
+ *
+ * `--repeats` caveat, measured 2026-08-14: a temperature-0 local endpoint can be fully
+ * deterministic — the qwen 3-pass run scored all 37 fixtures identically on every pass, both
+ * dialects — and then repeats add zero information. What repeats defend against is endpoint
+ * nondeterminism (hosted batching, server restarts); against a deterministic endpoint the only
+ * way to grow the sample is more fixtures. Do not average passes there and call it confidence.
  */
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs"

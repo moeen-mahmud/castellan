@@ -147,7 +147,9 @@ inbound (channel | API | schedule)
   *remove* emphatic phrasing because models overtrigger on it; a 7B model needs it. That lives in
   `capabilities.promptStyle`, which is **derived from the model id** rather than stored on a
   capability-registry row: `qwen3.5*` matches a 9B and a 72B, and those want opposite `intensity`
-  values. Size predicts the inversion and size is in the id.
+  values. Size predicts the inversion and size is in the id. The small-model half is measured:
+  the one emphatic framing line moves qwen3.5:9b's all-6-rules compliance +20pp and deepseek-chat
+  not at all; `examplesIn` saturated in both placements (`evals/prompt-style/`).
 
 Full detail: `docs/01-ARCHITECTURE.md`.
 
@@ -330,6 +332,18 @@ Never claim a performance property without a number in `evals/` and a script to 
 - **Both dialects must put the same guidance in front of the model.** `native`'s
   `function.description` carries `whenToUse` and `whenNotToUse`, not just the summary. Trimming it to
   the summary makes `evals/tools` measure the guidance and report it as a property of the dialect.
+- **A temperature-0 local endpoint can be fully deterministic, and then `--repeats` measures
+  nothing.** Both 2026-08-14 qwen runs returned byte-identical replies on every pass — 37 fixtures
+  × 3 passes with zero variation in `eval-tools`, the same in `eval-prompt-style` — so repeats
+  cannot grow a sample there; only more *tasks* can, which is why `RULE_TASKS` went from ten to
+  twenty. The flip side: fixture outcomes still differ *across* sessions and configurations, so a
+  margin is only comparable at the same reasoning setting and server state. Never average passes
+  from a deterministic endpoint and call the result more confident.
+- **A saturated A/B probe still licenses one conclusion — "no difference at this difficulty" — and
+  nothing more.** `eval prompt-style`'s examples question saturated at 100/100 in both arms; that
+  rules out a placement *cost* on well-authored examples and does not confirm either vendor's
+  claim. The escape is harder probes (`--rules 6` took intensity off the ceiling), not bigger
+  samples of an easy one.
 - **A placeholder in a prompt example is an instruction to a small model.** The NLT preamble said
   "exactly like this" and showed `field: value`; qwen3.5:9b wrote `field: title` / `value: <the value>`
   and NLT scored 27% against native's 92% — its reasoning about which tool and which arguments was

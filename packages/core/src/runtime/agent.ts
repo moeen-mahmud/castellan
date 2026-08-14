@@ -22,7 +22,7 @@ import type { AgentManifest } from "../manifest/schema.ts"
 import type { PromptStyle } from "../model/prompt-style.ts"
 import type { ChatMessage } from "../model/provider.ts"
 
-import { type ResolvedRoles, resolveRoles, type ResolveRolesOptions } from "../model/roles.ts"
+import { type ResolvedRoles, type ResolveRolesOptions, resolveRoles } from "../model/roles.ts"
 
 import type { SessionSummary, Store, TurnRecord } from "../store/store.ts"
 import { passThroughFilter, type StreamFilter } from "../tools/dialect/dialect.ts"

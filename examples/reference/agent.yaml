@@ -126,7 +126,7 @@ context:
     static: 2000
     volatile: 5500
     reminder: 500
-    total: 6000                # hard cap. Over budget fails the load naming the file.
+    total: 8000                # hard cap. Over budget fails the load naming the file.
   # Imperative count across static + reminder, against what the target affords. The runtime
   # computes the allowance rather than trusting a table — the arithmetic is unintuitive and
   # authors consistently overestimate it.

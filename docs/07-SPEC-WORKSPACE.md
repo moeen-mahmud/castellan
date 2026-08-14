@@ -264,6 +264,13 @@ You MUST use this tool when…" becomes "Use this tool when…" — because fron
 overtrigger on it, and prompts tuned for older models cause over-verification and
 over-exploration. A 7B model has the inverse failure mode.
 
+The small-model half is now measured rather than assumed (`evals/prompt-style/`, 2026-08-14):
+under six simultaneous verifiable rules, the one generated framing line moves qwen3.5:9b's
+all-rules compliance from 60% to 80% — the entire effect on a single rule, whose failure rate
+exactly doubles without the line — while deepseek-chat scores 100% under either framing. The
+frontier half (overtriggering) is not observable by a compliance probe and stays on the published
+guidance.
+
 It varies **one generated line** in front of an author-marked `<rules>` block, and touches nothing
 inside it:
 
@@ -305,9 +312,13 @@ examples in user messages. The mechanism is built — under `examplesIn: user`, 
 tags intact, prose byte-identical, fence-aware) and travel as a user message in slot 2, *before*
 the volatile tier, because they are byte-stable and prefix caching is contiguous. Their tokens
 still count against the file that authored them — moving examples must not make a file look
-cheaper. The *default* per model class is settled by `evals/prompt-style/`, not by picking a
-vendor. (Phase 3's eval compared *dialects* and says nothing about this.) `skillsIn` is carried
-but consumed nowhere until skills exist in Phase 5.
+cheaper. The defaults were put to measurement in `evals/prompt-style/` and the probe **saturated**:
+100% adoption of a demonstrated-but-never-stated format from either placement, on both a 9B and a
+frontier model, across 240 observations with no empties. So each vendor's default stands, with the
+measured floor that neither placement costs anything on a well-authored example set — three to
+five clear, delimited examples, which is exactly what the authoring rules require. (Phase 3's eval
+compared *dialects* and says nothing about this.) `skillsIn` is carried but consumed nowhere until
+skills exist in Phase 5.
 
 ---
 

@@ -199,7 +199,9 @@ delimiters, having trained Claude on them; cross-model work finds a 22–37% tok
 structured formats with no reliable accuracy gain. Authors write one file and the runtime renders it
 per model. Phase 3 measured what getting this wrong costs from the other direction — see decision
 4.19, where a single placeholder read as metasyntax by large models and as instruction by a 9B model
-moved a benchmark 65 points. Full rationale in `07-SPEC-WORKSPACE.md`.
+moved a benchmark 65 points. The `intensity` default for small models is itself measured: the one
+emphatic framing line moves qwen3.5:9b's all-6-rules compliance +20pp with no effect on
+deepseek-chat (`evals/prompt-style/`). Full rationale in `07-SPEC-WORKSPACE.md`.
 
 `thinking` says what the loop must *do* with reasoning, and the non-`none` cases disagree:
 

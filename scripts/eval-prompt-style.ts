@@ -180,6 +180,9 @@ async function main(): Promise<number> {
 
     const taskCount = Math.max(1, Math.min(RULE_TASKS.length, Number(arg("tasks") ?? 10)))
     const tasks = RULE_TASKS.slice(0, taskCount)
+    // Repeats defend against endpoint nondeterminism, nothing else. Measured 2026-08-14: the local
+    // qwen endpoint at temperature 0 returns byte-identical replies on every pass, so against it
+    // repeats add zero information and `--tasks` is the sample size.
     const repeats = Math.max(1, Number(arg("repeats") ?? 2))
     // The escape from a saturated intensity probe: more simultaneous rules push the all-followed
     // rate off the ceiling, which is where a framing difference could show at all.
