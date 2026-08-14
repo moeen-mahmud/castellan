@@ -163,6 +163,20 @@ tools:
     # Slots held for mutating tools so a large read surface cannot starve the writes.
     reserveWrite: 6
 
+  # ── The system provider: shell access ──
+  # `@castellan/tools-system`, registered by the `castellan` binary. Nothing is implied — selecting
+  # the provider AND pinning the tool are both required, the same way tools.local is opt-in.
+  #
+  # `exec` takes command, workdir, timeoutMs, pty and background. It takes no `env` argument on
+  # purpose: a per-call environment map is invisible to the policy rules, which match the command
+  # string, so `PATH=/tmp/evil` beside `git status` would pass a rule that never saw it. Written
+  # inline it is part of the command and the rule does not match. The ambient environment IS
+  # inherited, including this agent's .env — a pinned `exec` can read every secret the agent can.
+  #
+  # provider: system
+  # pinned:
+  #   - exec
+
   # ── A remote provider ──
   # Registered by the embedder — nothing installs at runtime. The `castellan` binary registers
   # `composio` already. Run `castellan tools ./agent.yaml --warm` once before starting: resolution
@@ -203,11 +217,41 @@ tools:
   #   # deliberately sandboxed network — it is the SSRF boundary.
   #   allowPrivateHosts: false
   #
+  # ── Which calls run, which ask, and which are refused ──
+  # A second layer under pinning, for tools too broad to authorise wholesale — `exec` above all.
+  # Evaluation is deny → allow, first match, and specificity never reorders it, so a deny rule
+  # carries no exceptions. A rule naming a primary content field — exec(command:rm *) — is refused
+  # at load: a compound command defeats it, and a rule that can be defeated reads as protection.
+  #
+  # A handful of commands are refused below every one of these settings and cannot be re-enabled:
+  # `rm -rf /` and `rm -rf ~`, --no-preserve-root, fork bombs, mkfs, dd to a block device.
+  policy:
+    # allow | ask | deny — what happens to a call no rule mentions. `allow` because pinning is the
+    # primary authorisation here: this agent has exactly the tools listed above. `ask` on an
+    # unattended run means onNoApprover answers it, and a scheduled agent would do nothing at all.
+    mode: allow
+    allow: []
+    deny: []
+    # What `ask` means with nobody to ask — a schedule, a pipe, a channel with no approver.
+    onNoApprover: deny
+
   # What to do when untrusted output is in the turn and the model asks for a mutating tool.
   # `refuse` is the default: the call is blocked and the model is told to ask the person instead.
-  # `confirm` needs the approval middleware and arrives with Phase 9.
-  # untrusted:
-  #   onMutate: refuse             # refuse | confirm | allow
+  # `confirm` asks when someone is reachable and refuses when nobody is.
+  untrusted:
+    onMutate: refuse             # refuse | confirm | allow
+
+  # A tainted mutating call needs EXPLICIT authorisation — a policy.allow rule you wrote, or a live
+  # approval you gave. `mode: allow` is the absence of a rule, not one, so it does not satisfy this.
+  #
+  # The consequence worth knowing before you pin `exec`: its own output is untrusted (curl is the
+  # internet), so its first call taints the turn and its second is refused. That is the gate working,
+  # and the load says so by name rather than letting you find out mid-turn. The fix is one line —
+  #
+  #   policy:
+  #     allow: ["exec"]              # or narrower: "exec(git *)", "exec(npm test:*)"
+  #
+  # — or `onMutate: confirm` to be asked each time.
 
 # ── limits ────────────────────────────────────────────────────────────────────────────────
 limits:

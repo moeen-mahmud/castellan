@@ -298,6 +298,27 @@ export function unknownToolAtRuntime(slug: string, known: readonly string[]): To
     })
 }
 
+/**
+ * A pinned tool that this configuration allows exactly once per turn.
+ *
+ * A tool that both changes things and returns text from outside the conversation taints the turn with
+ * its own first call — after which the write gate requires the explicit authorisation nobody wrote.
+ * The gate is behaving correctly; the configuration is what makes the second call fail, and only its
+ * author can decide whether that is what they meant.
+ *
+ * A warning rather than a failure, because "run one command, then report back" is a legitimate shape
+ * for an agent and nothing here can tell it apart from an oversight.
+ */
+export function toolGatedAfterFirstUse(slugs: readonly string[]): ErrorDetail {
+    const list = slugs.join(", ")
+    return {
+        code: "tool_gated_after_first_use",
+        message: `Only usable once per turn as configured: ${list}. ${slugs.length === 1 ? "It changes things and its output is untrusted, so its own first call blocks its second." : "Each changes things and returns untrusted output, so each one's first call blocks its second."}`,
+        hint: `A tainted turn needs an explicit authorisation before it may change anything, and a blanket tools.policy.mode is the absence of one. Add a rule naming the tool — tools.policy.allow: ["${slugs[0] ?? "exec"}"] for the whole tool, or something narrower like "${slugs[0] ?? "exec"}(git *)" — or set tools.untrusted.onMutate to "confirm" to be asked each time. Leaving it as it is means the agent runs one and reports back, which is a reasonable thing to want and is why this does not fail the load.`,
+        field: "tools.policy.allow",
+    }
+}
+
 export function toolBudgetExceeded(requested: number, max: number): ConfigError {
     return new ConfigError({
         code: "tool_budget_exceeded",

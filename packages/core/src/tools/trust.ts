@@ -11,10 +11,15 @@
  * 1. **Delimiting**, which is advisory. A model can be talked past a fence by content inside it.
  * 2. **The write gate**, which is not. It sits at the tool call, where prose cannot reach.
  *
- * Delimiting is the *only* transformation applied (decision 4.27). Rewriting untrusted text to
- * strip instruction-like phrasing does not work — the phrasings are unbounded and the rewrite
- * corrupts legitimate content — and shipping an unreliable filter is worse than an honest boundary,
- * because it invites the belief that the problem is handled.
+ * Delimiting is the only transformation applied to what the text *says* (decision 4.27). Rewriting
+ * untrusted text to strip instruction-like phrasing does not work — the phrasings are unbounded and
+ * the rewrite corrupts legitimate content — and shipping an unreliable filter is worse than an honest
+ * boundary, because it invites the belief that the problem is handled.
+ *
+ * Terminal control sequences are the one exception, and they are not a counter-example: `stripControl`
+ * removes bytes that carry no textual meaning, uniformly, without reading a word. See `sanitise.ts`
+ * for why an escape sequence inside a shell command is an attack on the approval prompt rather than a
+ * rendering nit.
  *
  * ## Why both dialects call in here
  *
@@ -41,6 +46,7 @@
  */
 
 import type { ErrorDetail } from "../errors.ts"
+import { stripControl } from "./sanitise.ts"
 import type { ToolResult } from "./types.ts"
 
 /** Where a tool's output came from. */
@@ -92,8 +98,15 @@ export function wrapUntrusted(slug: string, body: string): string {
  * dialects call this, so the `(no output)` placeholder lives here too rather than in two copies.
  */
 export function renderTrusted(result: ToolResult): string {
-    const body = result.output.trim() === "" ? "(no output)" : result.output.trimEnd()
-    if (result.trust !== "untrusted") return body
+    const raw = result.output.trim() === "" ? "(no output)" : result.output.trimEnd()
+    if (result.trust !== "untrusted") return raw
+
+    // Terminal control sequences are removed before anything else happens to the text. This is not
+    // the rewrite 4.27 forbids — see `sanitise.ts` — and it happens here rather than only in the
+    // tool that produced them, because the guarantee has to hold for every untrusted source there
+    // will ever be, not only for the ones that came to mind.
+    const body = stripControl(raw)
+
     // A short observation is wrapped too when it is untrusted; the exemption below is only for
     // content too small to hide an instruction in.
     if (body.length < MIN_WRAP_CHARS) return body

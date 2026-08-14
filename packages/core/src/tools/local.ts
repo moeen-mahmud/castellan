@@ -194,6 +194,7 @@ export function toolContext(overrides: Partial<ToolContext> = {}): ToolContext {
         turnId: overrides.turnId ?? "t_none",
         dir: overrides.dir ?? process.cwd(),
         signal: overrides.signal ?? new AbortController().signal,
+        deadlineMs: overrides.deadlineMs ?? 120_000,
         now: overrides.now ?? (() => new Date()),
         ...(overrides.writeTarget === undefined ? {} : { writeTarget: overrides.writeTarget }),
     }

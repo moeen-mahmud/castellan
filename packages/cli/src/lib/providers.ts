@@ -15,9 +15,14 @@
 
 import type { ToolProviderFactory } from "@castellan/core"
 import { composioFromConfig } from "@castellan/tools-composio"
+import { systemFromConfig } from "@castellan/tools-system"
 
 export const TOOL_PROVIDERS: Readonly<Record<string, ToolProviderFactory>> = {
     composio: composioFromConfig,
+    // Registered, not implied. Naming `system` here means the binary *can* supply shell access; a
+    // manifest still has to select the provider and pin `exec` before an agent has any. Availability
+    // and grant are separate on purpose — the same separation that keeps `tools.local` opt-in.
+    system: systemFromConfig,
 }
 
 /** For an error that has to say what *is* available. */

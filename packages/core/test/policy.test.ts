@@ -10,6 +10,7 @@ import {
     authorize,
     DEFAULT_POLICY,
     decidePolicy,
+    onceOnlyTools,
     type PolicyConfig,
     parsePolicy,
     resolveWithoutApprover,
@@ -338,5 +339,61 @@ describe("authorize — the gate and the policy together", () => {
         expect(decision.effect).toBe("deny")
         // Not the trust gate — the user's own standing rule, which is refused differently.
         expect(decision.gated).toBe(undefined)
+    })
+})
+
+describe("onceOnlyTools — the configuration that allows a shell exactly one call", () => {
+    const shell = { slug: "exec", mutating: true, trust: "untrusted" }
+    const reader = { slug: "web_fetch", mutating: false, trust: "untrusted" }
+    const local = { slug: "memory_write", mutating: true, trust: "trusted" }
+
+    test("a mutating untrusted tool with no rule naming it is once-only", () => {
+        // Its own first call taints the turn; the second then needs the explicit authorisation
+        // nobody wrote. Correct under A5, and indistinguishable from a broken runtime at the moment
+        // it happens — which is why it is said at load instead.
+        expect(
+            onceOnlyTools({ tools: [shell], policy: DEFAULT_POLICY, onMutate: "refuse" }),
+        ).toEqual(["exec"])
+    })
+
+    test("a bare allow rule naming it clears the warning", () => {
+        const policy = { ...DEFAULT_POLICY, allow: ["exec"] }
+        expect(onceOnlyTools({ tools: [shell], policy, onMutate: "refuse" })).toEqual([])
+    })
+
+    test("a narrow rule counts as cover, because narrowing is the configuration working", () => {
+        // `exec(git *)` leaves everything outside it gated on purpose. Warning about that would be
+        // warning about the feature.
+        const policy = { ...DEFAULT_POLICY, allow: ["exec(git *)"] }
+        expect(onceOnlyTools({ tools: [shell], policy, onMutate: "refuse" })).toEqual([])
+    })
+
+    test("onMutate: allow removes the gate entirely, so there is nothing to say", () => {
+        expect(
+            onceOnlyTools({ tools: [shell], policy: DEFAULT_POLICY, onMutate: "allow" }),
+        ).toEqual([])
+    })
+
+    test("a read-only untrusted tool is not once-only — it taints, it is not gated", () => {
+        expect(
+            onceOnlyTools({ tools: [reader], policy: DEFAULT_POLICY, onMutate: "refuse" }),
+        ).toEqual([])
+    })
+
+    test("a trusted mutating tool is not once-only either", () => {
+        expect(
+            onceOnlyTools({ tools: [local], policy: DEFAULT_POLICY, onMutate: "refuse" }),
+        ).toEqual([])
+    })
+})
+
+describe("a deny rule is not cover", () => {
+    test("naming the tool in deny leaves it once-only, because deny authorises nothing", () => {
+        // The configuration most likely to need the warning is the one written by someone who
+        // thought about the shell hard enough to restrict it — counting a deny rule as cover
+        // silenced it for exactly them.
+        const policy = { ...DEFAULT_POLICY, deny: ["exec(rm *)"] }
+        const tools = [{ slug: "exec", mutating: true, trust: "untrusted" }]
+        expect(onceOnlyTools({ tools, policy, onMutate: "refuse" })).toEqual(["exec"])
     })
 })

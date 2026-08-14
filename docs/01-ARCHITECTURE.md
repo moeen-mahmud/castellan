@@ -5,6 +5,12 @@
 A runtime layer that turns a stateless chat-completions endpoint into an agent that lives
 in messaging channels, uses tools, remembers, and runs on a schedule.
 
+**It acts on the machine it runs on.** A harness peer to OpenClaw, Hermes Agent and Claude Code runs
+shell commands, reads and writes files, and does what it is asked; channels are one surface it can be
+reached through, not the limit of what it does. Said positively because the sentence above was once
+read as a scope fence — "lives in messaging channels" taken to mean *only* there — and an omission
+that misleads a careful reader is a defect in the document, not in the reader.
+
 The formal scope fence — an agent harness is a runtime layer with four necessary and
 sufficient elements:
 
@@ -45,6 +51,8 @@ castellan/
 │   ├── channel-telegram/        @castellan/channel-telegram
 │   ├── channel-whatsapp/        @castellan/channel-whatsapp   (Baileys)
 │   ├── tools-composio/          @castellan/tools-composio
+│   ├── tools-system/            @castellan/tools-system       shell + files
+│   ├── tools-web/               @castellan/tools-web          search + fetch
 │   ├── tools-mcp/               @castellan/tools-mcp
 │   └── compat-openclaw/         @castellan/compat-openclaw
 ├── examples/
@@ -104,6 +112,8 @@ packages/core/src/
 ├── tools/
 │   ├── registry.ts          # pinned manifest, slug validation, budget
 │   ├── trust.ts             # untrusted-observation boundary + write gate
+│   ├── policy.ts            # deny → allow rules, hardline floor, authorize()
+│   ├── sanitise.ts          # terminal escapes out, before model or terminal
 │   ├── dialect/
 │   │   ├── dialect.ts       # ToolDialect interface
 │   │   ├── nlt.ts           # default

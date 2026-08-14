@@ -144,6 +144,14 @@ export interface ToolsView {
     readonly tools: readonly {
         readonly slug: string
         readonly mutating: boolean
+        /**
+         * Whether this tool's output may carry text a stranger wrote.
+         *
+         * Shown because it is not cosmetic: an untrusted tool taints the turn, and after it has run
+         * a mutating call needs an explicit rule or a live approval. "Why did my second `exec` get
+         * blocked?" is answered by this column and by nothing else on this surface.
+         */
+        readonly trust: string
         readonly summary: string
     }[]
 }
@@ -161,6 +169,8 @@ export interface AgentToolsSource {
         specs(): readonly {
             readonly slug: string
             readonly mutating: boolean
+            /** Optional here because it is optional on `ToolSpec`; the registry settles it. */
+            readonly trust?: string
             readonly summary: string
         }[]
     }
@@ -175,6 +185,10 @@ export function toolsView(agent: AgentToolsSource): ToolsView {
         tools: agent.tools.specs().map((spec) => ({
             slug: spec.slug,
             mutating: spec.mutating,
+            // Already normalised by the registry, so the fallback is unreachable for anything that
+            // came through one — but `ToolSpec.trust` is optional in the type, and a view that
+            // silently printed nothing would be the wrong way to find that out.
+            trust: spec.trust ?? "trusted",
             summary: spec.summary,
         })),
     }
@@ -195,7 +209,9 @@ export function toolsReport(view: ToolsView): string {
     const pad = view.tools.reduce((longest, tool) => Math.max(longest, tool.slug.length), 0)
     const rows = view.tools.map(
         (tool) =>
-            `  ${tool.slug.padEnd(pad)}  ${tool.mutating ? "write" : "read "}  ${tool.summary}`,
+            `  ${tool.slug.padEnd(pad)}  ${tool.mutating ? "write" : "read "}  ${
+                tool.trust === "untrusted" ? "untrusted" : "trusted  "
+            }  ${tool.summary}`,
     )
     return [
         // "dialect nlt" led the line once and read as a third tool — and asked about it, the model

@@ -95,6 +95,19 @@ export interface ToolContext {
     readonly dir: string
     /** The turn's signal. A handler that ignores it will be abandoned, not killed. */
     readonly signal: AbortSignal
+    /**
+     * How long the harness will wait for this call before abandoning it, in milliseconds.
+     *
+     * Handed to the tool rather than kept private because *abandoned* is the operative word: nothing
+     * in the executor can kill a handler, so a tool holding an operating-system resource — a child
+     * process above all — has to finish its own cleanup before the outer timeout fires, or it leaks
+     * one per call with nothing reporting it.
+     *
+     * It also decides whether a tool's own gentler behaviour is reachable at all. `exec` backgrounds
+     * a long command instead of killing it, which it can only do if it times out first; without this
+     * number its default and `limits.toolTimeoutMs` are both 120 s and which of them wins is a race.
+     */
+    readonly deadlineMs: number
     readonly now: () => Date
     /**
      * Where a durable note goes, when a workspace declares somewhere for it.

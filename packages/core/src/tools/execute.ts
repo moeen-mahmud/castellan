@@ -36,6 +36,7 @@ import type { EventContext } from "../events/types.ts"
 import { coerceArgs } from "./coerce.ts"
 import { authorize, type PolicyConfig } from "./policy.ts"
 import type { ToolRegistry } from "./registry.ts"
+import { stripControl } from "./sanitise.ts"
 import { gatedResult, type OnMutate, refusedResult } from "./trust.ts"
 import type { FieldError, Tool, ToolContext, ToolIntent, ToolResult } from "./types.ts"
 
@@ -77,7 +78,18 @@ export interface ExecuteInput {
 export interface ApprovalRequest {
     readonly slug: string
     readonly callId: string
-    /** The command or path a rule would match — what the person actually needs to read. */
+    /**
+     * The command or path a rule would match — what the person actually needs to read.
+     *
+     * **Escape sequences are stripped before it gets here**, in core rather than in whichever front
+     * end draws the prompt. `git status\x1b[2K\x1b[1G && rm -rf ~` displays on a real terminal as
+     * `git status`: the escape erases the line and moves the cursor home, so everything after it
+     * overwrites what a person already read. A prompt that can be made to show a different command
+     * than the one about to run is worse than no prompt, because it is believed.
+     *
+     * Stripping is done once, here, because "the front end will handle it" is how one of them ends
+     * up not handling it — and the one that doesn't is the one being read at the moment it matters.
+     */
     readonly match?: string
     readonly mutating: boolean
     /** Why it is being asked rather than allowed outright. */
@@ -220,7 +232,7 @@ async function decideAndRun(
         const granted = await input
             .approve({
                 ...call,
-                ...(match === undefined ? {} : { match }),
+                ...(match === undefined ? {} : { match: stripControl(match) }),
                 mutating: spec.mutating,
                 reason: decision.reason,
             })
@@ -378,7 +390,9 @@ async function runOne(entry: PlannedCall, input: ExecuteInput): Promise<ToolResu
 
     try {
         const output = await Promise.race([
-            Promise.resolve(tool.handler(args, { ...input.context, signal })),
+            Promise.resolve(
+                tool.handler(args, { ...input.context, signal, deadlineMs: input.timeoutMs }),
+            ),
             new Promise<never>((_, reject) => {
                 signal.addEventListener(
                     "abort",

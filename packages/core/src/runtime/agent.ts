@@ -13,7 +13,7 @@
  */
 
 import { isAbsolute, resolve } from "node:path"
-import type { ErrorDetail } from "../errors.ts"
+import { type ErrorDetail, toolGatedAfterFirstUse } from "../errors.ts"
 import type { EventBus } from "../events/bus.ts"
 import { newTurnId } from "../loop/ids.ts"
 import { runTurn, type ToolRuntime, type TurnResult } from "../loop/turn.ts"
@@ -28,6 +28,7 @@ import type { SessionSummary, Store, TurnRecord } from "../store/store.ts"
 import { passThroughFilter, type StreamFilter } from "../tools/dialect/dialect.ts"
 import { nativeDialect, nativeWireTokens } from "../tools/dialect/native.ts"
 import { nltDialect } from "../tools/dialect/nlt.ts"
+import { onceOnlyTools } from "../tools/policy.ts"
 import { ToolRegistry } from "../tools/registry.ts"
 import { activateKnowledge, type KnowledgeBase, loadKnowledge } from "../workspace/knowledge.ts"
 import {
@@ -170,6 +171,18 @@ export class Agent {
                 // attached — absent for a schedule or a pipe, which is exactly when
                 // `onNoApprover` matters.
                 policy: this.manifest.tools.policy,
+            }
+
+            // Said at load, where it can be fixed. Without it, an agent pinning `exec` runs one
+            // command per turn and has the second refused — correct behaviour under A5, and
+            // indistinguishable from a broken runtime at the moment it happens.
+            const onceOnly = onceOnlyTools({
+                tools: specs,
+                policy: this.manifest.tools.policy,
+                onMutate: this.manifest.tools.untrusted.onMutate,
+            })
+            if (onceOnly.length > 0) {
+                this.warnings = [...this.warnings, toolGatedAfterFirstUse(onceOnly)]
             }
         }
     }

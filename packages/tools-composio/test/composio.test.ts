@@ -426,6 +426,7 @@ const CONTEXT = {
     turnId: "t1",
     dir: "/tmp",
     signal: new AbortController().signal,
+    deadlineMs: 120_000,
     now: () => new Date(0),
 }
 

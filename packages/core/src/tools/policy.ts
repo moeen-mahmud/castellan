@@ -435,3 +435,46 @@ export function authorize(input: AuthorizeInput): Authorization {
     }
     return decision
 }
+
+/**
+ * Tools that this configuration allows exactly once per turn — reported at load, not discovered
+ * mid-turn.
+ *
+ * A tool that is both `mutating` and `untrusted` taints the turn with its own first call, and every
+ * later call to it then needs the explicit authorisation `authorize` demands. `exec` is the whole
+ * class: its output is untrusted because `curl` is the internet, and it changes things because that
+ * is what a shell is for. The gate is right to require a rule — but with none written, the second
+ * `exec` of a turn is refused and the first is not, which reads as a bug in the runtime rather than
+ * as the configuration it is.
+ *
+ * So it is said at load, where it can be fixed, rather than at the moment a half-finished turn stops.
+ * A warning and not a failure: an agent that runs one command per turn and reports back is a
+ * perfectly reasonable thing to want, and this cannot tell that apart from an oversight.
+ *
+ * Only bare-name rules count as cover. A narrow `exec(git *)` deliberately leaves everything outside
+ * it gated, which is the configuration working as intended and not something to warn about — so the
+ * check asks whether *some* rule could authorise a second call at all, not whether every call is
+ * covered.
+ */
+export function onceOnlyTools(input: {
+    readonly tools: readonly {
+        readonly slug: string
+        readonly mutating: boolean
+        readonly trust?: string
+    }[]
+    readonly policy: PolicyConfig
+    readonly onMutate: OnMutate
+}): readonly string[] {
+    if (input.onMutate === "allow") return []
+    // `allow` only. A `deny` rule naming the tool authorises nothing — `authorize` requires a rule
+    // that *permits*, and a deny rule that fails to match leaves the decision ruleless and therefore
+    // gated. Counting one as cover would have silenced this warning for the configuration most likely
+    // to need it: someone who thought about the shell hard enough to restrict it.
+    const named = new Set(parsePolicy(input.policy).allow.map((rule) => rule.slug.toLowerCase()))
+    return input.tools
+        .filter(
+            (tool) =>
+                tool.mutating && tool.trust === "untrusted" && !named.has(tool.slug.toLowerCase()),
+        )
+        .map((tool) => tool.slug)
+}

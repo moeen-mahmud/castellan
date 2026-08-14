@@ -360,6 +360,9 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
                                   ? {}
                                   : { writeTarget: tools.writeTarget }),
                               signal: link.signal,
+                              // Overwritten per call by `runOne`, which is the only place that knows
+                              // the deadline actually in force. Seeded here so the shape is complete.
+                              deadlineMs: input.limits.toolTimeoutMs,
                               now: tools.now ?? (() => new Date()),
                           },
                           bus: input.bus,

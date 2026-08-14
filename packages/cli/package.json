@@ -35,6 +35,7 @@
     "dependencies": {
         "@castellan/core": "workspace:*",
         "@castellan/tools-composio": "workspace:*",
+        "@castellan/tools-system": "workspace:*",
         "ink": "7.1.1",
         "react": "19.2.8"
     },

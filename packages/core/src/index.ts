@@ -244,6 +244,7 @@ export {
     DEFAULT_POLICY,
     decidePolicy,
     NEVER_STRIPPED,
+    onceOnlyTools,
     type ParsedPolicy,
     type PolicyConfig,
     type PolicyDecision,
@@ -262,6 +263,7 @@ export {
     type ToolBudget,
     ToolRegistry,
 } from "./tools/registry.ts"
+export { hasControl, stripControl } from "./tools/sanitise.ts"
 export {
     GATE_CODE,
     gatedResult,

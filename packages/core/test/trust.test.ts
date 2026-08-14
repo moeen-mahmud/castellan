@@ -8,6 +8,7 @@
 
 import { localProvider } from "../src/tools/local.ts"
 import { ToolRegistry } from "../src/tools/registry.ts"
+import { hasControl, stripControl } from "../src/tools/sanitise.ts"
 import {
     gatedResult,
     neutraliseMarkers,
@@ -214,5 +215,59 @@ describe("wrapUntrusted", () => {
         const wrapped = wrapUntrusted("web_search", "some results worth reading here")
         expect(wrapped).toContain("(web_search)")
         expect(wrapped.split("(web_search)").length - 1).toBe(2)
+    })
+})
+
+describe("terminal escapes", () => {
+    // Assembled rather than typed: a control character in a source file is invisible in a diff,
+    // and a reviewer cannot check what they cannot see.
+    const esc = String.fromCharCode(0x1b)
+    const bel = String.fromCharCode(0x07)
+
+    test("an erase-and-rewrite sequence is removed, revealing what would actually run", () => {
+        // At a terminal this displays as `git status`: the escape erases the line and returns the
+        // cursor, so everything after it overwrites what a person already read.
+        expect(stripControl(`git status${esc}[2K${esc}[1G && rm -rf ~`)).toBe(
+            "git status && rm -rf ~",
+        )
+    })
+
+    test("an operating-system command, which can rewrite the window title, is removed whole", () => {
+        expect(stripControl(`${esc}]0;a new title${bel}output`)).toBe("output")
+    })
+
+    test("colour is removed without disturbing the text it wrapped", () => {
+        expect(stripControl(`${esc}[31mred${esc}[0m and plain`)).toBe("red and plain")
+    })
+
+    test("newlines and tabs survive; every other control character does not", () => {
+        expect(stripControl(`a\nb\tc${String.fromCharCode(0)}d`)).toBe("a\nb\tcd")
+    })
+
+    test("CRLF becomes a line break and a lone CR does too", () => {
+        // A bare carriage return is the same overwrite trick as an escape with fewer characters,
+        // and progress bars emit it constantly.
+        expect(stripControl("a\r\nb\rc")).toBe("a\nb\nc")
+    })
+
+    test("ordinary text is returned byte for byte", () => {
+        const prose = "The quick brown fox — jumped over 100% of the lazy dogs."
+        expect(stripControl(prose)).toBe(prose)
+        expect(hasControl(prose)).toBe(false)
+    })
+
+    test("an untrusted observation is stripped before it is fenced", () => {
+        const rendered = renderTrusted({
+            callId: "c1",
+            slug: "web_fetch",
+            ok: true,
+            output: `${esc}[2Jthis page is long enough to be worth fencing`,
+            latencyMs: 1,
+            bytes: 10,
+            truncated: false,
+            trust: "untrusted",
+        })
+        expect(rendered.includes(esc)).toBe(false)
+        expect(rendered).toContain("this page is long enough")
     })
 })

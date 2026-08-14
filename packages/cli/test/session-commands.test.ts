@@ -108,8 +108,13 @@ describe("/tools", () => {
         dialect: "nlt",
         catalogueTokens: 412,
         tools: [
-            { slug: "now", mutating: false, summary: "the current date and time" },
-            { slug: "memory_write", mutating: true, summary: "append a note" },
+            {
+                slug: "now",
+                mutating: false,
+                trust: "trusted",
+                summary: "the current date and time",
+            },
+            { slug: "memory_write", mutating: true, trust: "trusted", summary: "append a note" },
         ],
     }
 
@@ -152,7 +157,17 @@ describe("/tools", () => {
         expect(view).toEqual({
             dialect: "native",
             catalogueTokens: 0,
-            tools: [{ slug: "now", mutating: false, summary: "the current date and time" }],
+            tools: [
+                {
+                    slug: "now",
+                    mutating: false,
+                    // Absent on the spec, settled here. The registry normalises it for anything it
+                    // resolved, so this fallback only fires for a spec built by hand — and printing
+                    // an empty column would be the wrong way to discover that.
+                    trust: "trusted",
+                    summary: "the current date and time",
+                },
+            ],
         })
     })
 })
@@ -206,5 +221,24 @@ describe("documented bindings and real bindings are the same set", () => {
             "historyPrev",
         )
         expect(sessionHelpText()).toContain("↑ / ↓")
+    })
+})
+
+describe("/tools shows trust", () => {
+    test("an untrusted tool is labelled, because it is what blocks a later write", () => {
+        const report = toolsReport({
+            dialect: "nlt",
+            catalogueTokens: 855,
+            tools: [
+                { slug: "now", mutating: false, trust: "trusted", summary: "the time" },
+                { slug: "exec", mutating: true, trust: "untrusted", summary: "a shell command" },
+            ],
+        })
+        // "Why was my second exec blocked?" is answered by this column and nothing else here.
+        expect(report).toContain("untrusted")
+        expect(report).toContain("trusted")
+        // The header counts tools and names the protocol as a protocol — `dialect nlt` leading the
+        // line once read as a third tool.
+        expect(report).toContain("2 tools · call format nlt")
     })
 })
