@@ -19,7 +19,7 @@ VelaOps is its first consumer, not its owner.
 | `04-SPEC-WIRE.md` | HTTP/SSE surface and the lifecycle event schema. |
 | `05-PLAN.md` | Sixteen phases, each with acceptance criteria. The build order. |
 | `06-VELAOPS-INTEGRATION.md` | The compat adapter, migration strategy, and what must never leak into core. |
-| `07-SPEC-WORKSPACE.md` | The tiered agent workspace — `AGENT.md`, `POLICY.md`, `USER.md`, `MEMORY.md`, `REMINDER.md`, budgets, and per-model rendering. Supersedes `context.files` in doc 02, which survives as a deprecated alias. |
+| `07-SPEC-WORKSPACE.md` | The tiered agent workspace — the `SOUL.md` identity pair, `AGENTS.md`, `POLICY.md`, `USER.md`, `MEMORY.md`, `REMINDER.md`, budgets, and per-model rendering. Supersedes `context.files` in doc 02, which survives as a deprecated alias. |
 
 `CLAUDE.md` lives at the repo root, not here. It is the standing brief for coding agents.
 
@@ -49,7 +49,12 @@ Phase 3.5 is in, all of it: the workspace tiers, frontmatter and comment strippi
 total budgets, the rule guard, `context.files` as a deprecated alias, `promptStyle` rendering,
 `examplesIn` placement, `SOUL.md` gating with `soul distill`, `knowledge/`, the `workspace`
 command, `eval rules`, and `evals/prompt-style/` with committed numbers behind the `examplesIn`
-and `intensity` defaults. Still design-only: everything from Phase 3.6 on.
+and `intensity` defaults. Phase 3.7 is in: `init` scaffolds a validated starter agent from the
+workspace templates. Phase 3.8 is in: agents live in the `~/.castellan` sandbox and run by bare
+name, bare `run` opens a picker, `init` is an Ink wizard generating the SOUL.md identity pair, the
+AGENTS.md operations file, and a reference-style manifest, and the chat/wizard/picker surfaces share one TUI kit
+(`cli/src/lib/theme.ts` + `components/`). Still design-only: Phase 3.6 and everything from
+Phase 4 on.
 
 When code and these documents disagree, **the code wins** and the doc is stale — fix it in
 the same PR. A planning doc that quietly drifts from the implementation is worse than no

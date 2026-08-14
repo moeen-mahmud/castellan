@@ -20,11 +20,13 @@
 
 import { HarnessError, VERSION } from "@castellan/core"
 import { agentsCommand } from "#agents"
+import { initCommand } from "#init"
 import { parse } from "#lib/args"
 import { EXIT_FAILURE, EXIT_OK } from "#lib/const"
 import { readEnv } from "#lib/env"
 import { finish, installGuards } from "#lib/exit"
 import { helpText } from "#lib/help"
+import { resolveAgentRef } from "#lib/sandbox"
 import { runCommand } from "#run"
 import { sessionsCommand } from "#sessions"
 import { soulCommand } from "#soul"
@@ -69,16 +71,45 @@ async function dispatch(argv: readonly string[]): Promise<number> {
     }
 
     const { command, positionals, flags } = result.parsed
-    // Guaranteed by the parser: every command declares a required first argument.
+    // Present when the command's first argument is required; `init` and `run` legitimately take
+    // none. Each case knows which it is.
     const manifestPath = positionals[0] as string
+    // Every manifest-taking command accepts a sandbox agent name too — one resolver, applied
+    // here at the dispatch layer, so `sessions milo` works the moment `run milo` does. The
+    // resolution throws with the candidate list and a nearest-match hint.
+    const resolved = (): string => resolveAgentRef(manifestPath)
 
     switch (command.name) {
+        case "init": {
+            const dir = positionals[0]
+            const user = flags.str("user")
+            const name = flags.str("name")
+            const purpose = flags.str("purpose")
+            const preset = flags.str("preset")
+            const model = flags.str("model")
+            const baseUrl = flags.str("base-url")
+            const apiKeyEnv = flags.str("api-key-env")
+            return await initCommand({
+                ...(dir === undefined ? {} : { dir }),
+                ...(user === undefined ? {} : { user }),
+                ...(name === undefined ? {} : { name }),
+                ...(purpose === undefined ? {} : { purpose }),
+                ...(preset === undefined ? {} : { preset }),
+                ...(model === undefined ? {} : { model }),
+                ...(baseUrl === undefined ? {} : { baseUrl }),
+                ...(apiKeyEnv === undefined ? {} : { apiKeyEnv }),
+                yes: flags.bool("yes"),
+                plain: flags.bool("plain"),
+            })
+        }
+
         case "run": {
             const session = flags.str("session")
             const input = flags.str("input")
             const store = flags.str("store")
             return await runCommand({
-                manifestPath,
+                // Bare `run` hands the sandbox the decision; a given ref resolves path-or-name.
+                ...(positionals[0] === undefined ? {} : { manifestPath: resolved() }),
                 ...(session === undefined ? {} : { sessionKey: session }),
                 ...(input === undefined ? {} : { once: input }),
                 ...(store === undefined ? {} : { store }),
@@ -94,7 +125,7 @@ async function dispatch(argv: readonly string[]): Promise<number> {
             const store = flags.str("store")
             const limit = flags.num("limit")
             return await sessionsCommand({
-                manifestPath,
+                manifestPath: resolved(),
                 ...(session === undefined ? {} : { sessionKey: session }),
                 ...(store === undefined ? {} : { store }),
                 ...(limit === undefined ? {} : { limit }),
@@ -105,11 +136,11 @@ async function dispatch(argv: readonly string[]): Promise<number> {
         }
 
         case "validate":
-            return validateCommand({ manifestPath, json: flags.bool("json") })
+            return validateCommand({ manifestPath: resolved(), json: flags.bool("json") })
 
         case "workspace":
             return workspaceCommand({
-                manifestPath,
+                manifestPath: resolved(),
                 json: flags.bool("json"),
                 strict: flags.bool("strict"),
             })
@@ -125,11 +156,14 @@ async function dispatch(argv: readonly string[]): Promise<number> {
         }
 
         case "agents":
-            return await agentsCommand({ manifestPaths: positionals, json: flags.bool("json") })
+            return await agentsCommand({
+                manifestPaths: positionals.map((ref) => resolveAgentRef(ref)),
+                json: flags.bool("json"),
+            })
 
         case "tools":
             return await toolsCommand({
-                manifestPath,
+                manifestPath: resolved(),
                 warm: flags.bool("warm"),
                 json: flags.bool("json"),
             })

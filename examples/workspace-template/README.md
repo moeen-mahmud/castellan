@@ -3,10 +3,10 @@
 The files an agent carries with it. Copy this directory, fill in the `{{PLACEHOLDERS}}`, point
 `agent.yaml` at it.
 
-> **Not loadable yet.** The runtime reads the flat `context.files` list; the tiered workspace
-> arrives in Phase 3.5. These files are the authored form the loader will consume, kept here so
-> the spec has something concrete attached to it. `agent.workspace.yaml` is a fragment to paste
-> into an `agent.yaml`, not a manifest of its own.
+> The tiered loader (Phase 3.5) reads these directly. `castellan init` scaffolds a new agent from
+> this exact set — this directory is the human-edited source of truth, and a CLI test fails if the
+> embedded copies drift from it. `agent.workspace.yaml` is a fragment to paste into an
+> `agent.yaml`, not a manifest of its own.
 
 `docs/07-SPEC-WORKSPACE.md` is the binding reference. What follows is the short version.
 
@@ -17,17 +17,15 @@ here is a word the model reads a thousand times. Files earn their place or they 
 
 | Tier | Files | Slot | Cached | Agent may edit | Budget |
 | --- | --- | --- | --- | --- | --- |
-| 0 — static | `AGENT.md`, `POLICY.md` | 0 | yes, before breakpoint A | no | 700 |
-| 1 — volatile | `USER.md`, `MEMORY.md` | 2 | no | yes, via tools | 500 |
-| 2 — reminder | `REMINDER.md` | 7 | no | no | 60 |
-| 3 — on demand | `knowledge/`, `skills/` | — | n/a | no | not pinned |
+| 0 — static | `SOUL.md` (or `SOUL.compact.md`), `AGENTS.md`, `POLICY.md` | 0 | yes, before breakpoint A | no | 2,000 |
+| 1 — volatile | `USER.md`, `MEMORY.md` | 3 | no | yes, via tools | 3,500 |
+| 2 — reminder | `REMINDER.md` | 9 | no | no | 500 |
+| 3 — on demand | `knowledge/`, `skills/` | 5 / 4 | n/a | no | not pinned |
 
-Hard total for tiers 0–2 is **1,300 tokens**. Over budget fails the load and names the file. It
-does not truncate — an agent running on half its instructions with no error anywhere is worse than
-one that refuses to start.
-
-`USER.md`, `MEMORY.md` and `REMINDER.md` are not in this directory yet; they arrive with the
-loader that reads them, in Phase 3.5.
+Hard total for tiers 0–2 is **6,000 tokens** by default. Over budget fails the load and names the
+file. It does not truncate — an agent running on half its instructions with no error anywhere is
+worse than one that refuses to start. The budgets are a ceiling, not a target: what a window
+*fits* and what a model still *follows* are different numbers, and only the second one matters.
 
 ## Why tier controls cache position
 
@@ -62,8 +60,8 @@ deploys.
 
 Compliance with n simultaneous rules falls roughly as the per-rule success rate to the power of n.
 At 90% per rule: two rules is 81%, four is 66%, ten is 35%. Count every imperative across
-`AGENT.md`, `POLICY.md` and `REMINDER.md` together — the model does not know they came from
-different files. Over budget, the fix is to **delete rules or move them into code**, never to
+the identity file, `AGENTS.md`, `POLICY.md` and `REMINDER.md` together — the model does not
+know they came from different files. Over budget, the fix is to **delete rules or move them into code**, never to
 reformat them.
 
 Measure your model's rate rather than assuming 90%; small models run lower. `castellan eval rules`
@@ -80,7 +78,7 @@ Deleting these is the point of the design, not an oversight.
 | `PLATFORM_STATE.md` | a `get_status` tool — volatile state in a cached prefix destroys the cache and is stale on read |
 | `KNOWLEDGE.md` | `knowledge/` — facts needed *sometimes* should not cost tokens *always* |
 | Long procedures | `skills/` — ~50 tokens pinned for the description, body loads on relevance |
-| `IDENTITY.md` | folded into `AGENT.md` — split, they contradict each other |
+| `IDENTITY.md` | folded into the soul — two identity documents contradict each other |
 | Safety-critical guardrails | **code**, at the tool boundary |
 
 That last row is the one people get wrong. Prose guardrails are advisory and can be talked around.

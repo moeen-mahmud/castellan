@@ -21,11 +21,25 @@ export interface EnvFacts {
     readonly dumbTerminal: boolean
     readonly ci: boolean
     readonly debug: boolean
+    /** Sandbox root override (`<ENVPREFIX>HOME`). Tests point it at a tmpdir, never real HOME. */
+    readonly sandboxHome: string | undefined
 }
 
 // ─── transcript ──────────────────────────────────────────────────────────────────────────
 
-export type TranscriptRole = "user" | "assistant" | "reasoning" | "note" | "error" | "tool"
+export type TranscriptRole =
+    | "user"
+    | "assistant"
+    | "reasoning"
+    | "note"
+    | "error"
+    | "tool"
+    /**
+     * The opening banner, exactly one and always first. Its own role because the rich renderer
+     * boxes it — and it must live inside `<Static>`: a sibling above the transcript would sit in
+     * Ink's dynamic region, which draws *below* Static output and redraws every frame.
+     */
+    | "banner"
 
 /**
  * A finished line of conversation.

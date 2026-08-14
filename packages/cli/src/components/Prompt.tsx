@@ -1,29 +1,27 @@
 /**
- * The input line.
+ * The input line, in a rounded box — accent-bordered when ready, muted while a turn runs.
  *
  * Ink has no text field — it delivers keystrokes and nothing else — so the cursor is drawn rather
- * than positioned: the character under it is inverted. That is also why the buffer is split on code
- * points and not string indices, which `editor.ts` explains at length: a cursor counted in UTF-16
- * units lands inside an emoji's surrogate pair and renders half a character.
+ * than positioned; `LineCursor` owns that rendering (code-point split, inverse under-cursor
+ * character) for this component and the wizard's fields alike. The border exists only where Ink
+ * renders: the plain path never mounts this, so plain parity is untouched by definition.
  */
 
-import { Text } from "ink"
+import { Box, Text } from "ink"
+import { LineCursor } from "#components/LineCursor"
 import { PROMPT } from "#lib/const"
 import type { PromptProps } from "#lib/schema"
+import { BORDER_STYLE, THEME } from "#lib/theme"
 
 export function Prompt({ editor, busy }: PromptProps) {
-    const chars = [...editor.value]
-    const before = chars.slice(0, editor.cursor).join("")
-    const under = chars[editor.cursor] ?? " "
-    const after = chars.slice(editor.cursor + 1).join("")
-
     return (
-        <Text>
-            <Text color={busy ? "gray" : "cyan"}>{PROMPT}</Text>
-            {before}
-            {/* Inverting a trailing space is how the cursor stays visible at end of line. */}
-            <Text inverse>{under}</Text>
-            {after}
-        </Text>
+        <Box
+            borderStyle={BORDER_STYLE}
+            borderColor={busy ? THEME.border : THEME.borderActive}
+            paddingX={1}
+        >
+            <Text color={busy ? THEME.muted : THEME.accent}>{PROMPT}</Text>
+            <LineCursor editor={editor} />
+        </Box>
     )
 }

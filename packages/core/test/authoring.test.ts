@@ -134,9 +134,9 @@ describe("framing and structure", () => {
 
 describe("the shipped example files", () => {
     test.each([
-        ["examples/minimal/AGENT.md"],
-        ["examples/reference/AGENT.md"],
-        ["examples/telegram-assistant/workspace/AGENT.md"],
+        ["examples/minimal/SOUL.md"],
+        ["examples/reference/AGENTS.md"],
+        ["examples/telegram-assistant/workspace/SOUL.md"],
         ["examples/telegram-assistant/workspace/POLICY.md"],
     ] as [string][])("%s produces no findings", (path) => {
         // An example that trips the project's own checks teaches the wrong thing, and is the first

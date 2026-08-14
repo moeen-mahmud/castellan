@@ -57,6 +57,7 @@ export {
     mergeEnv,
     parseDotEnv,
 } from "./manifest/env.ts"
+export { type ManifestHeader, readManifestHeader } from "./manifest/header.ts"
 export {
     defineAgent,
     type LoadedManifest,

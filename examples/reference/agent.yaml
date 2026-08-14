@@ -98,11 +98,12 @@ context:
   # Tier 0 — slot 0, before cache breakpoint A, read-only. Byte-stable across turns, or prompt
   # caching stops working with no error anywhere.
   #
-  # This example takes its identity from `soul` below, so AGENT.md is NOT listed: the soul (or its
-  # distilled compact file) IS the identity, and listing both would ship two identity documents to
-  # a frontier model — the same two-files-that-contradict failure the workspace template records
-  # for the old IDENTITY.md/SOUL.md split. With no soul, `static: [AGENT.md]` is the normal shape.
-  static: []
+  # This example takes its identity from `soul` below — the selected file (full or compact)
+  # loads first in this tier automatically, and listing a second identity document would ship
+  # two contradicting ones. AGENTS.md is not identity: it is operations — what Milo does and
+  # how, per decision 11.19 — which is why the two coexist.
+  static:
+    - AGENTS.md
 
   # Tier 1 — slot 3, AFTER the breakpoint, so a memory write leaves the cached prefix untouched.
   # `memory_write` lands in the first file here whose frontmatter allows it.

@@ -7,7 +7,7 @@ budget: 600
 <!--
 POLICY.md — the few standing boundaries worth prompt tokens.
 
-TIER 0. Sent every turn, cached, read-only. Budget: 200 tokens.
+TIER 0. Sent every turn, cached, read-only. Budget: 600 tokens.
 
 READ THIS BEFORE WRITING ANYTHING HERE.
 
@@ -38,9 +38,10 @@ happened, stop and write a wrapToolCall middleware instead.
 STATE THE REASON alongside each boundary. A boundary with a rationale generalises to
 situations you didn't enumerate; a bare prohibition only covers what it names.
 
-STYLE: match the target output, same as AGENT.md. Prose for chat agents.
+STYLE: match the target output, same as the identity file. Prose for chat agents.
 
-BUDGET: two or three items. They count against the same rule budget as AGENT.md and
+BUDGET: two or three items. They count against the same rule budget as the identity
+file, AGENTS.md, and
 REMINDER.md. Many agents need none — delete the file and the loader skips it.
 -->
 

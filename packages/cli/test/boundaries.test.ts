@@ -72,12 +72,38 @@ describe("the rich renderer stays lazy", () => {
         expect(run?.text).toContain('import("ink")')
         expect(staticImportsOf(run?.text ?? "", "ink")).toBe(false)
     })
+
+    test("init.ts loads the renderer dynamically too", () => {
+        // The wizard is the second Ink surface; the same laziness contract applies — a
+        // flag-driven `init --yes` must never pay for a renderer it does not mount.
+        const init = FILES.find((file) => file.path === "init.ts")
+        expect(init?.text).toContain('import("ink")')
+        expect(staticImportsOf(init?.text ?? "", "ink")).toBe(false)
+    })
+
+    test("the entry point reaches no screen root statically", () => {
+        const entry = FILES.find((file) => file.path === "index.ts")?.text ?? ""
+        for (const root of ["#components/App", "#components/WizardApp", "#components/Picker"]) {
+            expect(staticImportsOf(entry, root)).toBe(false)
+        }
+    })
 })
 
 describe("the pure modules stay pure", () => {
     // These four are the ones worth unit-testing, and each would become untestable the moment it
     // reached for a terminal, a clock, or a renderer.
-    const PURE = ["transcript.ts", "keymap.ts", "editor.ts", "lib/wrap.ts", "lib/args.ts"]
+    const PURE = [
+        "transcript.ts",
+        "keymap.ts",
+        "editor.ts",
+        "lib/wrap.ts",
+        "lib/args.ts",
+        "lib/init-flow.ts",
+        "lib/templates.ts",
+        "lib/theme.ts",
+        "lib/select.ts",
+        "lib/wizard.ts",
+    ]
 
     test("they import no renderer and no node built-ins", () => {
         for (const name of PURE) {

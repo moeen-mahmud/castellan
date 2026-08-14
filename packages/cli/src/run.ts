@@ -13,19 +13,23 @@
  * the streaming writes, because both were verified against a real endpoint and a real SIGINT.
  */
 
+import { existsSync } from "node:fs"
 import { createInterface, type Interface } from "node:readline"
 import {
     Agent,
     type AnyEvent,
     BRAND,
     defaultStorePath,
+    HarnessError,
     Runtime as RuntimeClass,
     VERSION,
 } from "@castellan/core"
+import { initInteractive } from "#init"
 import { EXIT_FAILURE, EXIT_OK, PROMPT } from "#lib/const"
 import { flushOutput, markTerminalDirty, onExit } from "#lib/exit"
 import { resolveModeFromProcess } from "#lib/output"
 import { TOOL_PROVIDERS } from "#lib/providers"
+import { listAgents, storePath } from "#lib/sandbox"
 import type { RunOptions } from "#lib/schema"
 import {
     resolveSessionCommand,
@@ -69,19 +73,37 @@ async function bannerLines(
 
 export async function runCommand(options: RunOptions): Promise<number> {
     const oneShot = options.once !== undefined
-    const { mode } = resolveModeFromProcess({
+    const decision = resolveModeFromProcess({
         json: false,
         plain: options.plain === true,
         oneShot,
     })
+    const { mode } = decision
+
+    // No agent named: the sandbox decides. One agent auto-runs; several open the picker at a
+    // terminal and list plainly everywhere else; none goes straight to the wizard (rich) or an
+    // error naming `init` (plain) — an empty sandbox with no guidance is a dead end.
+    if (options.manifestPath === undefined) {
+        const picked = await pickFromSandbox(mode, decision.because, options)
+        if (typeof picked === "number") return picked
+        return runCommand({ ...options, manifestPath: picked })
+    }
 
     // The CLI opts into persistence explicitly — core defaults to memory so that embedding the
-    // library never writes to someone's working directory uninvited.
+    // library never writes to someone's working directory uninvited. The default store lives at
+    // the sandbox root: one store for every agent, wherever `run` is invoked from — a cwd-relative
+    // default gave the same agent a different session history in every directory.
+    const legacy = defaultStorePath()
+    if (options.store === undefined && options.ephemeral !== true && existsSync(legacy)) {
+        process.stdout.write(
+            `note: a session store exists at ${legacy} from an earlier version — pass --store ${legacy} to keep using it; the default is now ${storePath()}\n`,
+        )
+    }
     const runtime = await RuntimeClass.create({
         agents: [options.manifestPath],
         emitChunks: true,
         toolProviders: TOOL_PROVIDERS,
-        store: options.ephemeral === true ? ":memory:" : (options.store ?? defaultStorePath()),
+        store: options.ephemeral === true ? ":memory:" : (options.store ?? storePath()),
     })
     onExit(() => runtime.stop("cli-exit"))
 
@@ -98,6 +120,102 @@ export async function runCommand(options: RunOptions): Promise<number> {
     return mode === "rich"
         ? await runRich({ ...options, agent, runtime, sessionKey, banner, quiet })
         : await runPlain({ ...options, agent, runtime, sessionKey, banner, quiet })
+}
+
+/**
+ * Bare `run`: resolve the sandbox into either a manifest path to run or an exit code.
+ *
+ * The picker is the third Ink surface, mounted the same lazy way; picking unmounts it before the
+ * chat mounts, so the two screens stack naturally in scrollback. "Create a new agent" chains
+ * through `initInteractive` — one wizard entry point — and straight into the chat with the result.
+ */
+async function pickFromSandbox(
+    mode: string,
+    because: string,
+    options: RunOptions,
+): Promise<string | number> {
+    const agents = listAgents()
+
+    if (agents.length === 0) {
+        if (mode === "rich") {
+            // First run, empty sandbox: the wizard IS the answer to "run what?".
+            const created = await initInteractive({ plain: options.plain === true })
+            if (created.kind === "aborted") {
+                process.stdout.write("nothing to run\n")
+                return EXIT_OK
+            }
+            if (created.kind === "failed") return created.code
+            return created.manifestPath
+        }
+        throw new HarnessError({
+            code: "cli_sandbox_empty",
+            message: "No agent named, and the sandbox is empty.",
+            hint: `Create one with \`${BRAND.slug} init\`, or pass a path to an agent.yaml.`,
+        })
+    }
+
+    if (agents.length === 1 && agents[0] !== undefined) {
+        // The overwhelmingly common case costs zero keystrokes; saying so keeps it explicable.
+        process.stdout.write(`running ${agents[0].ref} — the only agent in the sandbox\n`)
+        return agents[0].manifestPath
+    }
+
+    if (mode !== "rich") {
+        // Scriptable contexts get the list and a non-zero exit: nothing ran.
+        for (const agent of agents) {
+            process.stdout.write(
+                `${agent.ref}\t${agent.problem ?? agent.modelId ?? "?"}\t${agent.dir}\n`,
+            )
+        }
+        process.stderr.write(
+            `pass an agent name or a manifest path — the picker needs a terminal (${because})\n`,
+        )
+        return EXIT_FAILURE
+    }
+
+    const [{ render }, { createElement }, { Picker }] = await Promise.all([
+        import("ink"),
+        import("react"),
+        import("#components/Picker"),
+    ])
+    let result: { kind: "run"; manifestPath: string } | { kind: "create" } | { kind: "quit" } = {
+        kind: "quit",
+    }
+    // eslint-free narrowing escape: the callback assignment below is invisible to control-flow
+    // analysis, so the read after waitUntilExit goes through a widened alias.
+    markTerminalDirty()
+    const instance = render(
+        createElement(Picker, {
+            title: `${BRAND.name} ${VERSION}`,
+            agents,
+            onDone: (picked) => {
+                result = picked
+            },
+        }),
+        { exitOnCtrlC: false },
+    )
+    onExit(() => instance.unmount())
+    await instance.waitUntilExit()
+    instance.unmount()
+
+    const picked = result as
+        | { kind: "run"; manifestPath: string }
+        | { kind: "create" }
+        | { kind: "quit" }
+    if (picked.kind === "quit") {
+        process.stdout.write("nothing run\n")
+        return EXIT_OK
+    }
+    if (picked.kind === "create") {
+        const created = await initInteractive({ plain: options.plain === true })
+        if (created.kind === "aborted") {
+            process.stdout.write("nothing to run\n")
+            return EXIT_OK
+        }
+        if (created.kind === "failed") return created.code
+        return created.manifestPath
+    }
+    return picked.manifestPath
 }
 
 interface Wired extends RunOptions {

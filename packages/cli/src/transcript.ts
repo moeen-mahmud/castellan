@@ -205,12 +205,16 @@ export function formatStats(stats: TurnStats): string {
     return `${stats.promptTokens} prompt · ${stats.outputTokens} output · ${stats.durationMs} ms`
 }
 
-/** Opening notes — version, session, store, any turn a previous process left unfinished. */
+/**
+ * Opening banner — version, session, store, any turn a previous process left unfinished.
+ *
+ * One `banner` item rather than N notes, so the rich renderer can box it as a unit. The plain
+ * path never calls this — it writes the lines directly — so plain output is unchanged by the
+ * boxing.
+ */
 export function seed(notes: readonly string[]): TranscriptState {
-    return notes.reduce<TranscriptState>(
-        (state, text) => reduce(state, { kind: "note", text }),
-        EMPTY_TRANSCRIPT,
-    )
+    if (notes.length === 0) return EMPTY_TRANSCRIPT
+    return append(EMPTY_TRANSCRIPT, "banner", notes.join("\n"))
 }
 
 /** The most recent completed turn's cost, for the status bar. */

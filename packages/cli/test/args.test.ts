@@ -175,9 +175,15 @@ describe("numbers", () => {
 
 describe("positional arguments", () => {
     test("a missing manifest names the usage line", () => {
-        const error = refusal(["run"])
+        // `sessions` carries this assertion now: run's manifest became optional (bare `run`
+        // opens the sandbox picker), so it can no longer demonstrate a missing required arg.
+        const error = refusal(["sessions"])
         expect(codes(error)).toEqual(["cli_missing_argument"])
-        expect(error.hint).toContain("run <manifest>")
+        expect(error.hint).toContain("sessions <manifest>")
+    })
+
+    test("bare run parses — the sandbox decides what it means", () => {
+        expect(command(["run"]).positionals).toEqual([])
     })
 
     test("a second manifest is refused where only one is taken", () => {

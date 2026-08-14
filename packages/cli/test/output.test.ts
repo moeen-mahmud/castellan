@@ -3,7 +3,13 @@ import { resolveMode } from "#lib/output"
 import type { ModeInputs } from "#lib/schema"
 import type { EnvFacts } from "#lib/types"
 
-const QUIET_ENV: EnvFacts = { noColor: false, dumbTerminal: false, ci: false, debug: false }
+const QUIET_ENV: EnvFacts = {
+    noColor: false,
+    dumbTerminal: false,
+    ci: false,
+    debug: false,
+    sandboxHome: undefined,
+}
 
 /** A terminal with nothing unusual in the environment. */
 const tty: ModeInputs = {

@@ -1,0 +1,324 @@
+/**
+ * `init [dir]` — one command from installed binary to an agent that answers.
+ *
+ * Interactive at a terminal, flag-driven everywhere else, and the same flow either way: the
+ * questions live in `lib/init-flow.ts` as pure data, this file just asks them. Non-interactive
+ * runs (`--yes`, a pipe, CI) take each question's default and refuse — naming the missing flags —
+ * when a question has none, because inventing an agent name is not a default, it is a guess.
+ *
+ * Nothing is written over an existing file, there is no `--force`, and the wizard never asks for
+ * the API key itself: typing a secret into a prompt invites shoulder-surfing, and passing one as
+ * a flag writes it into shell history. The generated `.env` carries an empty `KEY=` line and the
+ * next-steps block says to fill it.
+ *
+ * Before exiting 0 the generated directory is validated with the *real* loader — the same
+ * sequence `validate` runs — so a template bug is this command's failure, never the user's first.
+ */
+
+import { existsSync, mkdirSync, writeFileSync } from "node:fs"
+import { basename, dirname, join, resolve } from "node:path"
+import {
+    BRAND,
+    HarnessError,
+    loadManifest,
+    resolveCapabilities,
+    resolveWorkspace,
+    ruleBudgetFailure,
+    VERSION,
+} from "@castellan/core"
+import { EXIT_FAILURE, EXIT_OK } from "#lib/const"
+import { markTerminalDirty, onExit } from "#lib/exit"
+import {
+    type InitAnswers,
+    type InitStep,
+    nextQuestion,
+    planFiles,
+    type QuestionDefaults,
+    validateAnswer,
+} from "#lib/init-flow"
+import { resolveModeFromProcess } from "#lib/output"
+import { PROVIDER_IDS } from "#lib/providers"
+import { agentsDir } from "#lib/sandbox"
+import type { InitOptions } from "#lib/schema"
+
+/** Which flag supplies each step, for the refusal that names what is missing. */
+const FLAG_FOR: Record<InitStep, string> = {
+    user: "--user",
+    name: "--name",
+    purpose: "--purpose",
+    preset: "--preset",
+    model: "--model",
+    baseUrl: "--base-url",
+    apiKeyEnv: "--api-key-env",
+    dir: "<dir>",
+}
+
+export type InitResult =
+    | { readonly kind: "ok"; readonly manifestPath: string }
+    | { readonly kind: "aborted" }
+    | { readonly kind: "failed"; readonly code: number }
+
+export async function initCommand(options: InitOptions): Promise<number> {
+    const result = await runInit(options)
+    if (result.kind === "aborted") {
+        process.stdout.write("nothing written\n")
+        return EXIT_OK
+    }
+    return result.kind === "failed" ? result.code : EXIT_OK
+}
+
+/**
+ * The same flow, returning the created manifest's path — the picker's "create a new agent" chains
+ * straight into `run` through this, so there is exactly one wizard entry point.
+ */
+export async function initInteractive(options: InitOptions): Promise<InitResult> {
+    return runInit(options)
+}
+
+async function runInit(options: InitOptions): Promise<InitResult> {
+    const partial = fromFlags(options)
+
+    // Interactive only when `run` would have rendered rich: both streams are terminals and
+    // nothing (CI, NO_COLOR, --plain, a dumb TERM) asked for scriptable behaviour. `--yes` opts
+    // out even at a terminal.
+    const decision = resolveModeFromProcess({
+        json: false,
+        plain: options.plain === true,
+        oneShot: false,
+    })
+    const interactive = decision.mode === "rich" && options.yes !== true
+
+    // The dir question defaults into the home sandbox, computed here because the flow module is
+    // pure and may not touch the filesystem or environment. An explicit [dir] still overrides.
+    const defaults = { agentDirBase: agentsDir() }
+
+    if (interactive) {
+        // The Ink wizard, lazily — the renderer must never be paid for by a flag-driven run.
+        // Its confirm screen replaces the readline summary too: undefined means the person
+        // backed out, and nothing is written.
+        const collected = await runWizard(partial, defaults)
+        if (collected === undefined) return { kind: "aborted" }
+        Object.assign(partial, collected)
+    } else {
+        fillDefaults(
+            partial,
+            options.yes === true ? "--yes was passed" : decision.because,
+            defaults,
+        )
+    }
+
+    const answers = complete(partial)
+    const targetDir = resolve(process.cwd(), answers.dir)
+    const files = planFiles(answers)
+
+    // Per-target checks rather than "directory not empty": a fresh `git init`'d directory must
+    // work, and the refusal names every collision at once rather than one per run.
+    const collisions = files
+        .map((file) => join(targetDir, file.relPath))
+        .filter((path) => existsSync(path))
+    if (collisions.length > 0) {
+        throw new HarnessError({
+            code: "cli_init_target_exists",
+            message: `${collisions.length} of the files init would write already exist: ${collisions.join(", ")}`,
+            hint: "Nothing is overwritten and there is no --force — replacing a personalised workspace is exactly the loss this command exists to prevent. Point init at a fresh directory, or delete the files first if they really are disposable.",
+        })
+    }
+
+    for (const file of files) {
+        const path = join(targetDir, file.relPath)
+        mkdirSync(dirname(path), { recursive: true })
+        writeFileSync(path, file.contents, "utf8")
+    }
+
+    // The real loader, on the real output. The one concession: when the named key var is not in
+    // the environment yet — the normal case, the next-steps block is about to say "set it" — it
+    // is stubbed so `validateApiKeyEnv` passes while every structural check (schema, budgets,
+    // tiers, rule guard, rendering) runs for real. When the var is already exported, no stub:
+    // a full honest validate.
+    let distilled = false
+    try {
+        const keyVar = answers.apiKeyEnv
+        const needsStub =
+            keyVar !== undefined &&
+            (process.env[keyVar] === undefined || process.env[keyVar] === "")
+        const loaded = loadManifest(join(targetDir, "agent.yaml"), {
+            knownProviders: PROVIDER_IDS,
+            ...(needsStub ? { env: { ...process.env, [keyVar]: "(pending)" } } : {}),
+        })
+        const capabilities = resolveCapabilities(
+            loaded.manifest.model.main.id,
+            loaded.manifest.model.main.capabilities,
+        )
+        const { workspace, warnings } = resolveWorkspace(loaded, capabilities.promptStyle)
+        const ruleFailure = ruleBudgetFailure(workspace, loaded.manifest.context.rules)
+        if (ruleFailure !== undefined && loaded.manifest.context.rules.onExceed === "fail") {
+            throw ruleFailure
+        }
+        // The gate's own verdict, read from its own warning rather than re-derived: on 3 of the
+        // 4 concrete presets the compact file is what actually ships, and a done screen that did
+        // not say so would leave the person editing a SOUL.md their model never reads first.
+        distilled = warnings.some((warning) => warning.code === "soul_distilled")
+    } catch (error) {
+        // The files stay on disk — they are inspectable evidence — but the exit is a failure and
+        // the loader's own report is printed verbatim. A generated agent that cannot load is this
+        // command's bug, and hiding it behind exit 0 would be rule 8's exact shape.
+        if (error instanceof HarnessError) {
+            process.stderr.write(
+                `init wrote ${files.length} files to ${targetDir}, but the result does not load:\n${error.format()}\n`,
+            )
+            return { kind: "failed", code: EXIT_FAILURE }
+        }
+        throw error
+    }
+
+    process.stdout.write(nextSteps(answers, files.length, targetDir, distilled))
+    return { kind: "ok", manifestPath: join(targetDir, "agent.yaml") }
+}
+
+/** Flag values pass the same per-step validation the wizard applies — a bad flag fails by name. */
+function fromFlags(options: InitOptions): Partial<Record<InitStep, string>> {
+    const given: Partial<Record<InitStep, string>> = {}
+    const pairs: readonly [InitStep, string | undefined][] = [
+        ["user", options.user],
+        ["name", options.name],
+        ["purpose", options.purpose],
+        ["preset", options.preset],
+        ["model", options.model],
+        ["baseUrl", options.baseUrl],
+        ["apiKeyEnv", options.apiKeyEnv],
+        ["dir", options.dir],
+    ]
+    for (const [step, raw] of pairs) {
+        if (raw === undefined) continue
+        const checked = validateAnswer(step, raw)
+        if (!checked.ok) {
+            throw new HarnessError({
+                code: "cli_init_flag_invalid",
+                message: `${FLAG_FOR[step]} is ${JSON.stringify(raw)}, which ${checked.reason}`,
+                hint: "The flags take the same values the interactive questions do; run the command at a terminal without flags to be walked through them.",
+            })
+        }
+        given[step] = checked.value
+    }
+    return given
+}
+
+/**
+ * The Ink wizard, mounted lazily — the renderer must never be paid for by a flag-driven run.
+ *
+ * Same shape as run.ts's rich path: literal `import("ink")`, `markTerminalDirty()` before the
+ * render, `exitOnCtrlC: false` (the wizard owns ^C as abort), `onExit` unmount. The component
+ * calls `onDone` with the collected answers (or undefined on abort) and exits itself; the value
+ * is read after `waitUntilExit`.
+ */
+async function runWizard(
+    partial: Partial<Record<InitStep, string>>,
+    defaults: QuestionDefaults,
+): Promise<Partial<Record<InitStep, string>> | undefined> {
+    const [{ render }, { createElement }, { WizardApp }] = await Promise.all([
+        import("ink"),
+        import("react"),
+        import("#components/WizardApp"),
+    ])
+
+    let collected: Partial<Record<InitStep, string>> | undefined
+    markTerminalDirty()
+    const instance = render(
+        createElement(WizardApp, {
+            title: `${BRAND.name} ${VERSION}`,
+            given: partial,
+            defaults,
+            onDone: (answers) => {
+                collected = answers
+            },
+        }),
+        { exitOnCtrlC: false },
+    )
+    onExit(() => instance.unmount())
+    await instance.waitUntilExit()
+    instance.unmount()
+    return collected
+}
+
+/**
+ * Non-interactive: every unanswered question takes its default, and a question with no default is
+ * a refusal, not a guess. All gaps report at once — with `--preset custom` that is the endpoint
+ * flags too, not just the names — and the refusal says *why* the questions could not be asked,
+ * which is the mode decision's `because` string doing its first useful work.
+ */
+function fillDefaults(
+    partial: Partial<Record<InitStep, string>>,
+    because: string,
+    defaults: QuestionDefaults,
+): void {
+    const missing: InitStep[] = []
+    for (;;) {
+        const question = nextQuestion(partial, defaults)
+        if (question === undefined) break
+        if (question.fallback === "") {
+            missing.push(question.step)
+            // Placeholder purely to advance the walk; discarded by the throw below.
+            partial[question.step] = "(missing)"
+            continue
+        }
+        const checked = validateAnswer(question.step, question.fallback)
+        if (checked.ok) partial[question.step] = checked.value
+    }
+    if (missing.length > 0) {
+        const flags = missing.map((step) => FLAG_FOR[step]).join(", ")
+        throw new HarnessError({
+            code: "cli_init_missing_answers",
+            message: `Not interactive (${because}), and ${missing.join(", ")} ${missing.length === 1 ? "has" : "have"} no default.`,
+            hint: `Pass ${flags} — an agent's name is not something to guess — or run the command at a terminal to be asked. Everything with a sensible default (purpose, preset, endpoint, directory) already took it.`,
+        })
+    }
+}
+
+function complete(partial: Partial<Record<InitStep, string>>): InitAnswers {
+    // apiKeyEnv legitimately stays undefined for a keyless endpoint; everything else is present
+    // once nextQuestion returns undefined.
+    const answers = partial as Record<Exclude<InitStep, "apiKeyEnv">, string> & {
+        apiKeyEnv?: string
+    }
+    return {
+        user: answers.user,
+        name: answers.name,
+        purpose: answers.purpose,
+        preset: answers.preset as InitAnswers["preset"],
+        model: answers.model,
+        baseUrl: answers.baseUrl,
+        ...(answers.apiKeyEnv === undefined ? {} : { apiKeyEnv: answers.apiKeyEnv }),
+        dir: answers.dir,
+    }
+}
+
+function nextSteps(
+    answers: InitAnswers,
+    count: number,
+    targetDir: string,
+    distilled: boolean,
+): string {
+    // An agent inside the sandbox runs by bare name from anywhere; anything else by path.
+    const inSandbox = dirname(targetDir) === agentsDir()
+    const runRef = inSandbox ? basename(targetDir) : join(targetDir, "agent.yaml")
+    const manifest = join(targetDir, "agent.yaml")
+
+    const steps: string[] = []
+    if (answers.apiKeyEnv !== undefined) {
+        steps.push(`Add your key: edit ${join(targetDir, ".env")} and set ${answers.apiKeyEnv}=`)
+    }
+    steps.push(`${BRAND.slug} run ${runRef}`)
+    steps.push(
+        `Make workspace/SOUL.md yours, then re-derive SOUL.compact.md to match — ` +
+            `\`${BRAND.slug} workspace ${manifest}\` shows exactly what still reads as a template.`,
+    )
+
+    const soulNote = distilled
+        ? `\nthis model ships SOUL.compact.md — the full SOUL.md needs a 200k+ window on a\nfrontier-class model, and activates automatically if you upgrade.\n`
+        : ""
+
+    return (
+        `wrote ${count} files to ${targetDir} — validated ok\n${soulNote}\n` +
+        steps.map((step, index) => `  ${index + 1}. ${step}\n`).join("")
+    )
+}

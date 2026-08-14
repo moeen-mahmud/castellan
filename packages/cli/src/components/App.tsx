@@ -122,6 +122,9 @@ export function App({ agent, bus, sessionKey, model, initial, showReasoning, qui
             {state.live === undefined ? null : (
                 <Live live={state.live} showReasoning={showReasoning} columns={columns} />
             )}
+            <Prompt editor={editor} busy={busy} />
+            {/* The status line is the footer, under the input — where every reference CLI puts
+                it, and where the eye rests between keystrokes. */}
             <StatusBar
                 status={state.status}
                 model={model}
@@ -130,7 +133,6 @@ export function App({ agent, bus, sessionKey, model, initial, showReasoning, qui
                 last={last}
                 quiet={quiet}
             />
-            <Prompt editor={editor} busy={busy} />
         </Box>
     )
 }

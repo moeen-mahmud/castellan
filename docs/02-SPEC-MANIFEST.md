@@ -44,7 +44,7 @@ context:
   observationMaxTokens: 2000
   workspace: ./workspace
   static:
-    - AGENT.md
+    - AGENTS.md
     - POLICY.md
   volatile:
     - USER.md
@@ -248,7 +248,7 @@ the provider caches nothing: DeepSeek caches context automatically server-side a
 | `reminder` | none | Tier 2, slot 9. Injected after the conversation history, before the current input. |
 | `budgets` | `{static: 2000, volatile: 3500, reminder: 500, total: 6000}` | Hard caps, measured on the *stripped* text. Over budget **fails the load naming the file** — never silent truncation. A ceiling, not a target: everything inside it is paid every turn. |
 | `rules` | `{perRuleSuccess: 0.90, reliabilityTarget: 0.80, onExceed: fail}` | Imperative-count guard across static + reminder. At 0.90 a 0.80 target permits two rules, not four. The count is a heuristic and reports every line it counted; `onExceed: warn` is the escape. The file named by `soul.file` counts only its `<rules>` blocks — see `07-SPEC-WORKSPACE.md`. |
-| `soul` | none | Capability-gated long-form identity: `file`, `requires` (`contextWindow` comparator, `class: frontier \| small` derived from the model id by size), `onUnmet: distill \| omit \| fail`, and `distilled` (required by `distill`). The selected file loads first in the static tier and **replaces** `AGENT.md` — listing both ships two identities. |
+| `soul` | none | Capability-gated long-form identity: `file`, `requires` (`contextWindow` comparator, `class: frontier \| small` derived from the model id by size), `onUnmet: distill \| omit \| fail`, and `distilled` (required by `distill`). The selected file loads first in the static tier as the identity document — listing a second identity file ships two identities. Operations (`AGENTS.md`) coexist with it. |
 | `compactionNotice` | true | Runtime-generated line telling the model context compacts automatically, so it does not wrap up work early on budget grounds. **Phase 7** — refused at load until then. |
 
 Per-file frontmatter (`tier`, `editable`, `budget`, `eviction`) is stripped before injection, along

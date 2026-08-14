@@ -6,6 +6,7 @@
  * so the interesting logic — `resolveMode` especially — is a pure function of its inputs.
  */
 
+import { BRAND } from "@castellan/core"
 import type { EnvFacts } from "#lib/types"
 
 /**
@@ -24,5 +25,9 @@ export function readEnv(env: Readonly<Record<string, string | undefined>> = proc
         // strip interactivity from a terminal that has it.
         ci: isSet(env.CI) && env.CI !== "false",
         debug: isSet(env.DEBUG),
+        // The sandbox root override, `<ENVPREFIX>HOME`. Brand-derived so a rename moves it.
+        sandboxHome: isSet(env[`${BRAND.envPrefix}HOME`])
+            ? env[`${BRAND.envPrefix}HOME`]
+            : undefined,
     }
 }

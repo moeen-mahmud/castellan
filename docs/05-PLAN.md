@@ -1,6 +1,6 @@
 # 05 — Implementation Plan
 
-Sixteen phases, dependency-ordered — thirteen numbered, plus 2.5, 3.5 and 3.6 inserted rather than
+Eighteen phases, dependency-ordered — thirteen numbered, plus 2.5, 3.5, 3.6, 3.7 and 3.8 inserted rather than
 renumbered, because the later numbers are named across the source and the other docs. Every phase
 ends at a **running state** — nothing is half-wired across a boundary.
 
@@ -261,6 +261,9 @@ Phase 3 or later. Any change to `packages/core`.
   how it ended up the one command whose flags the usage text never documented.
 - **CLI tests are Bun-only.** Node's type-stripper cannot handle JSX, and Phase 2's dual-runtime
   criterion is about the store adapter. `bun run test:node` still runs core's 229 under Node.
+- **The "themes" non-goal was reversed by decision 11.14 when Phase 3.8's TUI kit landed** — in
+  the narrowest sense: one internal token module, `lib/theme.ts`, replacing per-component literal
+  colour names. Still no config file, no user themes.
 
 ---
 
@@ -658,10 +661,11 @@ budgets and the alias form the first half and are independently useful; renderin
   Both had `README.md` and `IDENTITY.md` in their `static` tier — several hundred tokens of
   human-facing documentation in the system prompt on every turn, stating rules of its own.
   `examples/minimal` counted 6 rules against a budget of 2 (expected all-rules compliance 0.53);
-  `examples/reference` counted 8 (0.43). Both now list `AGENT.md` alone: 554 tokens, **1 rule of 2**,
-  compliance 0.90, `onExceed` back at the shipped default `fail`. Dropping `IDENTITY.md` also
-  settles what `07-SPEC-WORKSPACE.md` already said — it is folded into `AGENT.md`, and split, the
-  two contradict each other.
+  `examples/reference` counted 8 (0.43). Both were cut to a single identity file: 554 tokens,
+  **1 rule of 2**, compliance 0.90, `onExceed` back at the shipped default `fail`. Dropping
+  `IDENTITY.md` also settles what `07-SPEC-WORKSPACE.md` already said — it is folded into the
+  identity document, and split, the two contradict each other. *(That file was `AGENT.md` then;
+  decision 11.19 later renamed identity to the soul pair and repurposed `AGENTS.md` as operations.)*
 - **`memory_write` takes no `file` argument.** The runtime resolves one write target from the
   workspace. Choosing a file would be a second decision on every save, which is the two-hop shape
   small models fail.
@@ -753,7 +757,9 @@ budgets and the alias form the first half and are independently useful; renderin
   declared — via `requires` — capable of that derivation. The *distilled* file gets no exemption:
   it ships to small models, where the budget is the point. The same split applies to the
   rule-shaped authoring checks (`rule_no_rationale`, `negative_framing`).
-- **A soul replaces `AGENT.md` rather than joining it.** The reference example first carried both,
+- **A soul replaces `AGENT.md` rather than joining it** *(revised by decision 11.19: what a soul
+  replaces is the identity document; `AGENTS.md` as rewritten is operations, and coexists)*. The
+  reference example first carried both,
   which ships two identity documents to a frontier model — the same two-files-that-contradict
   failure the template records for the old `IDENTITY.md`/`SOUL.md` split, recreated through the new
   mechanism. The reference now demonstrates replacement, and the spec says so in bold.
@@ -877,6 +883,141 @@ instruction-like phrasing does not work and pretending otherwise is worse than t
 
 **Sequencing note.** Part A stands alone and is the half that matters while Gmail-style provider tools
 are live. Parts B and C can follow in a second session.
+
+---
+
+## Phase 3.7 — Onboarding
+
+**Goal.** One command from installed binary to an agent that answers: `init` asks for the user's
+name, the agent's name, a purpose line and a model endpoint, writes a complete starter agent, and
+validates it with the real loader before exiting 0.
+
+Inserted rather than renumbered, like 2.5, 3.5 and 3.6. It depends only on Phase 3.5's loader and
+templates — nothing on channels — and before it the only onboarding path was "copy
+`examples/workspace-template/`, fill the placeholders by hand".
+
+**Deliverables** — built 2026-08-14:
+
+- [x] `cli/src/lib/init-flow.ts` — the question flow as pure data (steps, per-answer validation
+  with the loader's own base-URL rules applied at the question, presets, the file plan). In the
+  boundaries test's PURE list, so a renderer swap stays cheap.
+- [x] `cli/src/lib/templates.ts` — the five workspace templates embedded as constants, because the
+  installed binary ships only `dist/` and cannot read `examples/`. The examples directory stays
+  the human-edited source of truth; `test/templates.test.ts` asserts byte-equality, so drift is a
+  red CI run naming the file.
+- [x] `cli/src/init.ts` — interactive readline wizard at a TTY (summary + one `[Y/n]` before
+  writing), flag-driven everywhere else, per-target overwrite refusal with no `--force`, and the
+  in-process validate. When the named key var is not yet set it is stubbed as `(pending)` so the
+  structural checks run for real — the generated `.env` deliberately leaves the key empty.
+- [x] `examples/workspace-template/{USER,MEMORY,REMINDER}.md` — the three standard files the
+  template set was missing, authored in the same guidance-comment style.
+- [x] The first optional positional (`init [dir]`) and the first consumer of the mode decision's
+  `because` string, printed when a non-interactive run refuses.
+
+**Acceptance**
+
+- [x] `init --user … --name … --preset deepseek --yes <dir>` exits 0; the generated directory
+  passes `validate` and `run`-loads unchanged — verified live
+- [x] The generated `AGENT.md` is runnable but keeps `{{INPUT_n}}`/`{{REPLY_n}}`, and `workspace`
+  reports exactly one finding: the placeholders — the nag until a person writes real examples
+- [x] `--preset ollama` omits `apiKeyEnv` from the manifest entirely (never an empty string) and
+  omits the key line from `.env`; the result loads with no stub
+- [x] Re-running into the same directory refuses, naming every collision
+- [x] Non-interactive without `--user`/`--name` refuses, naming the flags and why it could not ask
+- [x] The wizard never asks for, and no flag accepts, the API key's value
+
+**Non-goals.** An Ink wizard (the flow is pure so a renderer swap stays cheap; a numbered menu is
+equivalent for a run-once command) — **reversed by decision 11.13 in Phase 3.8**, exactly through
+the renderer swap this non-goal priced in; the sub-clauses below stayed binding. `--force`
+(replacing a personalised workspace is the loss `soul distill` already refuses). Asking for secret
+values (shoulder-surfing at a prompt, shell history via a flag). Channel or schedule
+configuration — those arrive with their phases.
+
+### Deviations from the plan as written
+
+- **The repo-root `.env` contaminated the first integration test.** Bun auto-loads it, the real
+  environment wins over the generated agent's own `.env`, and the test aimed at Ollama loaded
+  DeepSeek — the exact leak `CLAUDE.md` already records, caught by its own test this time. Tests
+  inject a clean `env`; the command's own validate deliberately keeps the real layering, because
+  validating what `run` would actually do is the point.
+
+---
+
+## Phase 3.8 — Home sandbox, TUI kit, and run-by-name
+
+**Goal.** Agents live in `~/<stateDir>/agents/`, every manifest command takes a bare agent name,
+bare `run` opens a picker (or auto-runs the only agent, or walks straight into the wizard on an
+empty sandbox), and the CLI's three interactive surfaces — chat, init wizard, run picker — share
+one visual language built on a reusable component kit.
+
+Inserted rather than renumbered, like 2.5–3.7. Two recorded non-goals are reversed on the record
+(decisions 11.13 and 11.14): the flow stayed pure precisely so the Ink wizard would be a renderer
+swap, and the theme is one internal token set, not a theming system.
+
+**Deliverables** — built 2026-08-14:
+
+- [x] `core manifest/header.ts` — `readManifestHeader`: id/name/model with no env expansion and
+  no validation, so a listing never requires credentials (decision 11.17)
+- [x] `cli/lib/sandbox.ts` — `sandboxRoot` (`<ENVPREFIX>HOME` override, else `~/<stateDir>`),
+  `listAgents` (broken entries listed with their problem; duplicate ids marked), `resolveAgentRef`
+  (filesystem beats name; shadowing prints a note; unknown names get candidates + nearest)
+- [x] Default session store → `~/<stateDir>/store.db`, with a one-line legacy hint when a
+  cwd-relative store exists (decision 11.15)
+- [x] `init` generates the **soul pair** wired through `context.soul` for identity and
+  **`AGENTS.md`** for operations (decisions 11.18–11.19; the old identity-flavoured `AGENT.md`
+  template is gone — what a soul replaces is the *identity* document, and the rewritten
+  `AGENTS.md` is not one); templates joined `examples/workspace-template/` (drift-tested, still
+  seven files); the generated agent.yaml is reference-style — everything configured active,
+  everything later commented with its phase, `tools.local: [now, memory_write]` live from a table
+  pinned to core's `LOCAL_TOOL_SLUGS`
+- [x] `init` defaults into the sandbox; next steps say `run <name>`; the done screen reads the
+  gate's own `soul_distilled` warning and names the identity file the model actually ships
+- [x] TUI kit: `lib/theme.ts` tokens (PURE), Banner / SelectList / TextField / LineCursor /
+  WizardFrame / SummaryCard / Spinner, all controlled and input-free
+- [x] Ink init wizard: `lib/wizard.ts` log-reducer over `nextQuestion` (esc-back pops the answer
+  log, so re-answering the preset re-derives downstream defaults; flag answers never poppable;
+  honest step totals across the keyless skip), `WizardApp` with one `useInput` over
+  `keyToWizardIntent`; confirm = summary card + yes/no; ^C anywhere = "nothing written", exit 0
+- [x] Run picker: bare `run` → empty sandbox = wizard (rich) / refusal naming `init` (plain);
+  one agent = auto-run with a printed line; several = Ink picker (rich) / plain list + non-zero
+  (piped), printing the mode decision's `because` for the first time
+- [x] Chat restyle: the banner is a boxed `banner` role inside `<Static>` (a dynamic-region
+  sibling would draw below history and redraw every frame), bordered input, status bar as footer
+- [x] Name resolution for `run`/`sessions`/`validate`/`workspace`/`tools`/`agents`, one resolver
+  at the dispatch layer
+
+**Acceptance**
+
+- [x] `CASTELLAN_HOME=<tmp> init --user … --name Milo --preset deepseek --yes` writes 10 files to
+  `<tmp>/agents/milo`, validates, and prints `run milo` — verified live
+- [x] `run milo`, `validate milo`, `workspace milo` resolve from any cwd; unknown names list
+  candidates with a nearest-match hint — verified live
+- [x] Bare piped `run`: two agents list + exit non-zero; empty sandbox refuses naming `init`;
+  one agent auto-runs straight into the model call — verified live end-to-end (a stub key
+  reached the endpoint's 401, which is the whole chain working)
+- [x] The generated qwen/deepseek agent ships SOUL.compact.md and the done screen says so;
+  a 393k-window frontier id ships SOUL.md — asserted through `resolveWorkspace`
+- [x] The rule budget holds on both gate paths (counted 1 ≤ 2), pinned by test
+- [x] Plain paths byte-identical throughout — untouched by construction, the plain-parity tests
+  keep passing
+- [ ] Interactive pass at a real TTY (wizard esc-back, picker, create-new→chat) — needs a human
+  terminal; everything beneath it is reducer-tested
+
+**Non-goals.** User-configurable themes (11.14 is one token set). Mouse support. A `--force`.
+Asking for secret values. Detection-first onboarding (scanning for keys/local servers, verifying
+with a real completion — OpenClaw's pattern, worth a phase of its own if ever).
+
+### Deviations from the plan as written
+
+- **A cwd entry shadowing a sandbox name prints a note.** The filesystem-wins rule is right (git's
+  pathspec precedent, free escape both ways), but the first live test ran the *wrong* milo
+  silently — a `./milo` from an earlier experiment beat the sandbox agent with nothing said.
+  One stderr line naming both is the honest middle.
+- **`tools.web` refuses as an unknown schema key, not a phase-named refusal.** The generated
+  manifest's commented Phase 3.6 block is real config, but its schema does not exist yet, so
+  uncommenting it early reports "Unrecognized key" rather than "arrives in Phase 3.6" — equally
+  loud, less specific. The uncomment test pins `phases:` instead, which is schema-complete and
+  phase-refused. When 3.6 lands its schema, the refusal upgrades for free.
 
 ---
 

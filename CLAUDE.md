@@ -133,11 +133,14 @@ inbound (channel | API | schedule)
   volatile after it, reminder past the history. Frontmatter and HTML comments are stripped before
   injection. `context.files` survives as a deprecated alias that warns. All of Phase 3.5 is built:
   tiers, `promptStyle`, `examplesIn` placement, `SOUL.md` gating, and `knowledge/`.
-- **A soul replaces `AGENT.md`, gated on the model.** `context.soul.requires` decides whether the
-  full document ships or the hand-edited compact file does (`onUnmet: distill`), and `soul distill`
-  only scaffolds — headings and `<rules>` survive verbatim, prose becomes placeholders a person
-  fills, because a summariser drops exactly the parts that produce voice. Listing a soul *and*
-  `AGENT.md` ships two identities; don't.
+- **Identity and operations are different files.** The soul answers *who* — gated on the model:
+  `context.soul.requires` decides whether the full document ships or the hand-edited compact file
+  does (`onUnmet: distill`), and `soul distill` only scaffolds — headings and `<rules>` survive
+  verbatim, prose becomes placeholders a person fills, because a summariser drops exactly the
+  parts that produce voice. `AGENTS.md` answers *what and how* — responsibilities, workflow, the
+  memory procedure, team routing (an HTML comment until delegation ships) — ungated, written
+  declaratively so the rule counter sees zero obligations. They coexist; what must never be
+  listed is a second *identity* document.
 - **Knowledge is Tier 3: keyword-gated, budgeted, never pinned.** Entries activate when the turn's
   input mentions a frontmatter keyword, at most `maxActive` per turn under `knowledge.budget`, in
   their own slot that compaction may drop. The selector is a ranking-only seam Phase 6 can attach a
@@ -332,6 +335,26 @@ Never claim a performance property without a number in `evals/` and a script to 
 - **Both dialects must put the same guidance in front of the model.** `native`'s
   `function.description` carries `whenToUse` and `whenNotToUse`, not just the summary. Trimming it to
   the summary makes `evals/tools` measure the guidance and report it as a property of the dialect.
+- **Sandbox paths come from `cli/src/lib/sandbox.ts` and nowhere else.** `~/<BRAND.stateDir>` with
+  a `<ENVPREFIX>HOME` override — tests point that at a tmpdir and never touch real HOME. Discovery
+  uses `readManifestHeader`, never `loadManifest`: loading checks that key env vars are set, so a
+  picker built on it fails exactly when it is needed most. Ref resolution is filesystem-first
+  (git's pathspec rule); a bare name shadowed by a cwd entry prints a note instead of silently
+  running the wrong agent — which happened in the first live test.
+- **The chat banner lives INSIDE `<Static>` as a `banner` role item.** A sibling rendered above
+  the transcript sits in Ink's dynamic region, which draws *below* Static output and redraws
+  every frame. The plain path writes banner lines directly and never calls `seed`, which is what
+  keeps plain output byte-identical.
+- **New CLI surfaces use the TUI kit and the pure-reducer grain.** Tokens/glyphs in
+  `lib/theme.ts` (a literal colour name in a component is a review failure), components in
+  `components/` are controlled and never call `useInput` — one `useInput` per screen root over a
+  pure keymap (`keymap.ts`) and reducer (`lib/wizard.ts`, `lib/select.ts`). Screen roots mount
+  via literal `import("ink")` only; boundaries tests enforce all of it.
+- **The workspace templates exist twice, and the examples directory is the source.** `init`
+  scaffolds from constants embedded in `cli/src/lib/templates.ts` because an installed binary has
+  no `examples/` to read; `examples/workspace-template/` is the human-edited original, and
+  `cli/test/templates.test.ts` fails on any byte difference. Editing either copy alone is a red
+  CI run, not a silent divergence — update both, examples first.
 - **A temperature-0 local endpoint can be fully deterministic, and then `--repeats` measures
   nothing.** Both 2026-08-14 qwen runs returned byte-identical replies on every pass — 37 fixtures
   × 3 passes with zero variation in `eval-tools`, the same in `eval-prompt-style` — so repeats

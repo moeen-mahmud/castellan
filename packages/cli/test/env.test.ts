@@ -46,5 +46,11 @@ test("DEBUG is read here rather than deep in an error path", () => {
 test("the real environment is readable without arguments", () => {
     // Only assertion that touches process.env: the shape, not the values, which vary by machine.
     const facts = readEnv()
-    expect(Object.keys(facts).sort()).toEqual(["ci", "debug", "dumbTerminal", "noColor"])
+    expect(Object.keys(facts).sort()).toEqual([
+        "ci",
+        "debug",
+        "dumbTerminal",
+        "noColor",
+        "sandboxHome",
+    ])
 })

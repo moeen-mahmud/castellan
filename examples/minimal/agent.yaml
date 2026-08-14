@@ -22,8 +22,10 @@ context:
 
   # Tier 0 — pinned in slot 0, before cache breakpoint A, read-only to the agent.
   # Order matters: earlier instructions are favoured under moderate instruction density.
+  # The identity file is listed directly — the `context.soul` capability gate is optional
+  # machinery, and the smallest working shape skips it.
   static:
-    - AGENT.md
+    - SOUL.md
   # Held back from the window for the reply. Generous because a reasoning model bills its
   # thinking to this same budget: too small and the answer comes back empty with
   # finish_reason=length, which the runtime reports as a failure rather than a blank reply.

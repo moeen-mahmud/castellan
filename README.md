@@ -49,6 +49,19 @@ The ones that would otherwise look like mistakes:
 
 Full rationale for every decision, including the negative ones, is in `docs/00-DECISIONS.md`.
 
+## Quickstart
+
+```bash
+castellan init          # an interactive wizard: your name, the agent's name, an endpoint
+castellan run milo      # agents live in ~/.castellan/agents — run them by name, from anywhere
+castellan run           # or just this: picks from your agents, or walks you through creating one
+```
+
+`init` writes a complete starter agent — a reference-style manifest, a SOUL.md identity pair, an
+AGENTS.md operations file, the tiered workspace, `.env` — and validates it with the real loader before exiting. It never asks
+for your API key; set it in the generated `.env`. Every question has a flag
+(`init --user Ada --name Scout --preset ollama --yes`) for scripted use.
+
 ## Development
 
 ```bash

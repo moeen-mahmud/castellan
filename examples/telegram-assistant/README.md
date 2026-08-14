@@ -5,12 +5,12 @@ in, so the authoring rules have something concrete to point at.
 
 > **Incomplete by design, for now.** There is no `agent.yaml` here yet: this example needs the
 > tiered workspace (Phase 3.5) and the Telegram channel (Phase 4). What exists is
-> `workspace/AGENT.md` and `workspace/POLICY.md`. Running anything in this directory is not
+> `workspace/SOUL.md` and `workspace/POLICY.md`. Running anything in this directory is not
 > possible and is not meant to be — use `examples/minimal/` for that.
 
 ## What it demonstrates
 
-`workspace/AGENT.md` is prose, not bullets, because this agent lives in a Telegram window where
+`workspace/SOUL.md` is prose, not bullets, because this agent lives in a Telegram window where
 headers and lists render badly — and because a file written in lists produces an agent that answers
 in lists regardless of what the file says about formatting.
 
@@ -39,6 +39,6 @@ confabulation and gives the model somewhere to go other than inventing a number.
 ## What is deliberately absent
 
 No `TOOLS.md` — the runtime renders the catalogue, and a prose copy drifts from it. No
-`IDENTITY.md` separate from `AGENT.md` — split, the two contradict each other. No hard security
+`IDENTITY.md` separate from the identity file — split, the two contradict each other. No hard security
 rules: "never email anyone outside the company" belongs in a recipient allowlist at the tool
 boundary, where it is true, rather than in prose, where it is a suggestion.

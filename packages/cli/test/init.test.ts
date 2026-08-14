@@ -1,0 +1,218 @@
+/**
+ * The init command end to end: write, refuse, validate.
+ *
+ * The first command-level filesystem test in this package, because this command's entire claim is
+ * the files it writes — a unit test of the plan says nothing about whether the generated
+ * directory actually loads. Every assertion here goes through the real loader.
+ */
+
+import { describe, expect, test } from "bun:test"
+import { existsSync, mkdtempSync, readFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import {
+    BRAND,
+    checkAuthoring,
+    HarnessError,
+    loadManifest,
+    resolveWorkspace,
+} from "@castellan/core"
+import { initCommand } from "#init"
+import { EXIT_OK } from "#lib/const"
+
+function scratch(): string {
+    return join(mkdtempSync(join(tmpdir(), "init-test-")), "agent")
+}
+
+const FLAGS = {
+    user: "Moeen",
+    name: "Milo",
+    purpose: "keeps my week on track",
+    preset: "deepseek",
+    yes: true,
+} as const
+
+// A clean injected env, NOT `process.env`: Bun auto-loads the repo root's .env, whose MODEL_*
+// values would override the generated agent's own .env through the real-env-wins layering — the
+// documented way a test aimed at one endpoint quietly hits another. The key is stubbed the same
+// way init's own validate step stubs it, because the generated .env leaves it empty on purpose.
+const STUB_ENV = { MODEL_API_KEY: "(pending)" }
+
+describe("initCommand", () => {
+    test("writes a starter agent the real loader accepts", async () => {
+        const dir = scratch()
+        expect(await initCommand({ ...FLAGS, dir })).toBe(EXIT_OK)
+
+        // Independent of the command's own validate: load it again from here.
+        const loaded = loadManifest(join(dir, "agent.yaml"), { env: STUB_ENV })
+        expect(loaded.manifest.id).toBe("milo")
+        expect(loaded.manifest.model.main.id).toBe("deepseek-chat")
+
+        const { workspace, warnings } = resolveWorkspace(loaded, {
+            delimiters: "markdown",
+            intensity: "neutral",
+            examplesIn: "system",
+            skillsIn: "system",
+        })
+        // deepseek-chat's 65k window fails the soul gate's >=200000, so the DISTILLED file is
+        // the identity that actually loads — the gate working, reported by its own warning.
+        expect(warnings.map((warning) => warning.code)).toContain("soul_distilled")
+        expect(workspace.files.map((file) => file.name)).toEqual([
+            "SOUL.compact.md",
+            "AGENTS.md",
+            "POLICY.md",
+            "USER.md",
+            "MEMORY.md",
+            "REMINDER.md",
+        ])
+        expect(workspace.static).toContain("I'm Milo.")
+
+        // The nag contract: only the dialogue-example placeholders survive, and the authoring
+        // check reports exactly them, on the identity file that shipped.
+        const findings = checkAuthoring(
+            workspace.files.map((file) => ({
+                name: file.name,
+                authored: file.authored,
+                tier: file.tier,
+                field: file.field,
+            })),
+        )
+        const placeholderFindings = findings.filter(
+            (finding) => finding.code === "workspace_unfilled_placeholder",
+        )
+        expect(placeholderFindings.map((finding) => finding.field)).toEqual(["SOUL.compact.md"])
+        expect(placeholderFindings[0]?.message).toContain("{{INPUT_1}}")
+    })
+
+    test("a big-window frontier model ships the full SOUL.md, identity leading", async () => {
+        const dir = scratch()
+        await initCommand({
+            ...FLAGS,
+            preset: "custom",
+            // Unsized id → frontier class; the registry resolves this one's window to 393216,
+            // so both halves of `requires` hold and the long document is the identity.
+            model: "deepseek-v4-pro",
+            baseUrl: "https://api.deepseek.com/v1",
+            dir,
+        })
+        const loaded = loadManifest(join(dir, "agent.yaml"), {
+            env: { ...STUB_ENV, MODEL_ID: "deepseek-v4-pro" },
+        })
+        const { workspace, warnings } = resolveWorkspace(loaded, {
+            delimiters: "markdown",
+            intensity: "neutral",
+            examplesIn: "system",
+            skillsIn: "system",
+        })
+        expect(workspace.files[0]?.name).toBe("SOUL.md")
+        expect(warnings.map((warning) => warning.code).includes("soul_distilled")).toBe(false)
+    })
+
+    test("refuses to touch existing files, naming them", async () => {
+        const dir = scratch()
+        await initCommand({ ...FLAGS, dir })
+        let error: HarnessError | undefined
+        try {
+            await initCommand({ ...FLAGS, dir })
+        } catch (thrown) {
+            if (thrown instanceof HarnessError) error = thrown
+        }
+        expect(error?.code).toBe("cli_init_target_exists")
+        expect(error?.message).toContain("agent.yaml")
+    })
+
+    test("ollama generates a keyless manifest that loads without any stub", async () => {
+        const dir = scratch()
+        expect(await initCommand({ ...FLAGS, preset: "ollama", dir })).toBe(EXIT_OK)
+
+        const yaml = readFileSync(join(dir, "agent.yaml"), "utf8")
+        // No ACTIVE key line; the commented provider examples legitimately mention the field.
+        expect(yaml.includes("\n    apiKeyEnv:")).toBe(false)
+
+        const loaded = loadManifest(join(dir, "agent.yaml"), { env: {} })
+        expect(loaded.manifest.model.main.baseUrl).toBe("http://localhost:11434/v1")
+        expect(readFileSync(join(dir, ".env"), "utf8").includes("MODEL_API_KEY")).toBe(false)
+    })
+
+    test("non-interactive without names refuses and lists the flags", async () => {
+        const dir = scratch()
+        let error: HarnessError | undefined
+        try {
+            await initCommand({ yes: true, dir })
+        } catch (thrown) {
+            if (thrown instanceof HarnessError) error = thrown
+        }
+        expect(error?.code).toBe("cli_init_missing_answers")
+        expect(error?.hint).toContain("--user")
+        expect(error?.hint).toContain("--name")
+        expect(existsSync(join(dir, "agent.yaml"))).toBe(false)
+    })
+
+    test("custom preset without an endpoint refuses with the endpoint flags", async () => {
+        const dir = scratch()
+        let error: HarnessError | undefined
+        try {
+            await initCommand({ ...FLAGS, preset: "custom", dir })
+        } catch (thrown) {
+            if (thrown instanceof HarnessError) error = thrown
+        }
+        expect(error?.code).toBe("cli_init_missing_answers")
+        expect(error?.hint).toContain("--model")
+        expect(error?.hint).toContain("--base-url")
+    })
+
+    test("a bad flag value fails by name with the question's own reason", async () => {
+        let error: HarnessError | undefined
+        try {
+            await initCommand({ ...FLAGS, baseUrl: "https://x.example/v1/chat/completions" })
+        } catch (thrown) {
+            if (thrown instanceof HarnessError) error = thrown
+        }
+        expect(error?.code).toBe("cli_init_flag_invalid")
+        expect(error?.message).toContain("--base-url")
+    })
+
+    test("--yes without a dir lands in the home sandbox, and next steps say run <name>", async () => {
+        const home = mkdtempSync(join(tmpdir(), "init-sandbox-"))
+        const homeVar = `${BRAND.envPrefix}HOME`
+        const previous = process.env[homeVar]
+        process.env[homeVar] = home
+        try {
+            expect(await initCommand({ ...FLAGS })).toBe(EXIT_OK)
+            const manifest = join(home, "agents", "milo", "agent.yaml")
+            expect(existsSync(manifest)).toBe(true)
+            const loaded = loadManifest(manifest, { env: STUB_ENV })
+            expect(loaded.manifest.id).toBe("milo")
+        } finally {
+            if (previous === undefined) delete process.env[homeVar]
+            else process.env[homeVar] = previous
+        }
+    })
+
+    test("the commented blocks are real config: uncommenting phases is refused naming Phase 7", async () => {
+        const dir = scratch()
+        await initCommand({ ...FLAGS, dir })
+        const path = join(dir, "agent.yaml")
+        const yaml = readFileSync(path, "utf8")
+            .replace("# phases:", "phases:")
+            .replace(
+                '#   triage: { entry: true, allow: ["now"] }',
+                '  triage: { entry: true, allow: ["now"] }',
+            )
+            .replace('#   act:    { allow: ["*"] }', '  act:    { allow: ["*"] }')
+        const { writeFileSync } = await import("node:fs")
+        writeFileSync(path, yaml, "utf8")
+
+        let error: HarnessError | undefined
+        try {
+            loadManifest(path, { env: STUB_ENV })
+        } catch (thrown) {
+            if (thrown instanceof HarnessError) error = thrown
+        }
+        // Refused, not ignored — the generated comments promise exactly this behaviour. (The
+        // schema-less blocks like tools.web refuse as unknown keys instead, which is equally
+        // loud; this one carries the phase name.)
+        expect(error).toBeDefined()
+        expect(JSON.stringify(error?.details ?? []) + error?.message).toContain("Phase 7")
+    })
+})

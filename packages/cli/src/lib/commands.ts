@@ -28,7 +28,7 @@ export const GLOBAL_FLAGS: readonly FlagSpec[] = [
 const MANIFEST: ArgSpec = {
     name: "manifest",
     required: true,
-    help: "path to an agent.yaml",
+    help: "path to an agent.yaml, or the name of a sandbox agent",
 }
 
 const STORE: FlagSpec = {
@@ -36,7 +36,7 @@ const STORE: FlagSpec = {
     kind: "string",
     placeholder: "path",
     help: "session database",
-    defaultHelp: `${BRAND.stateDir}/store.db`,
+    defaultHelp: `~/${BRAND.stateDir}/store.db`,
 }
 
 const SESSION: FlagSpec = {
@@ -50,9 +50,60 @@ const JSON_FLAG: FlagSpec = { name: "json", kind: "boolean", help: "machine-read
 
 export const COMMANDS: readonly CommandSpec[] = [
     {
+        // Interactive at a terminal; every question also has a flag so scripts and CI can run it.
+        // It never asks for the API key itself — a prompt invites shoulder-surfing and a flag
+        // writes the secret into shell history — so the generated .env has an empty line to fill.
+        name: "init",
+        summary: "create a new agent: manifest, workspace, and env files",
+        args: [
+            {
+                name: "dir",
+                required: false,
+                help: "target directory (default: ./<agent-name-slug>)",
+            },
+        ],
+        flags: [
+            { name: "user", kind: "string", placeholder: "name", help: "your name" },
+            { name: "name", kind: "string", placeholder: "name", help: "the agent's name" },
+            {
+                name: "purpose",
+                kind: "string",
+                placeholder: "text",
+                help: "one line: what the agent is for",
+            },
+            {
+                name: "preset",
+                kind: "string",
+                placeholder: "id",
+                help: "model endpoint: openai | anthropic | deepseek | ollama | custom",
+                defaultHelp: "openai",
+            },
+            { name: "model", kind: "string", placeholder: "id", help: "model id" },
+            { name: "base-url", kind: "string", placeholder: "url", help: "endpoint base URL" },
+            {
+                name: "api-key-env",
+                kind: "string",
+                placeholder: "VAR",
+                help: "env var that will hold the key; omitted for ollama",
+                defaultHelp: "MODEL_API_KEY",
+            },
+            {
+                name: "yes",
+                kind: "boolean",
+                help: "take every default; never ask, even at a terminal",
+            },
+        ],
+    },
+    {
         name: "run",
-        summary: "start an interactive session against the manifest's model",
-        args: [MANIFEST],
+        summary: "start an interactive session — bare `run` picks from the sandbox",
+        args: [
+            {
+                ...MANIFEST,
+                required: false,
+                help: "path or sandbox agent name (omit to pick from the sandbox)",
+            },
+        ],
         flags: [
             { ...SESSION, defaultHelp: "local:default" },
             {

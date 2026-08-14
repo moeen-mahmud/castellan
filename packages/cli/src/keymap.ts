@@ -96,3 +96,101 @@ function printableOnly(text: string): string {
         })
         .join("")
 }
+
+// ─── screen keymaps ──────────────────────────────────────────────────────────────────────
+//
+// The wizard and picker differ from the chat input in what Esc means — a *context*, not a new
+// module, which is why they live here beside `keyToIntent` rather than in per-screen files: one
+// keyboard home, closed by the same drift tests.
+
+import type { SelectMove } from "#lib/select"
+
+export type ListIntent =
+    | { readonly kind: "move"; readonly move: SelectMove }
+    | { readonly kind: "choose" }
+    | { readonly kind: "back" }
+    | { readonly kind: "exit" }
+    | { readonly kind: "none" }
+
+/**
+ * List navigation: arrows or j/k, g/G for ends, enter chooses, esc backs out, ^C/^D leave.
+ *
+ * A digit jumps the cursor — visibly and reversibly — and deliberately does not choose: a stray
+ * number must never launch an agent.
+ */
+export function keyToListIntent(input: string, key: KeyState): ListIntent {
+    if (key.ctrl) {
+        return input.toLowerCase() === "c" || input.toLowerCase() === "d"
+            ? { kind: "exit" }
+            : { kind: "none" }
+    }
+    if (key.return) return { kind: "choose" }
+    if (key.escape) return { kind: "back" }
+    if (key.upArrow) return { kind: "move", move: { kind: "up" } }
+    if (key.downArrow) return { kind: "move", move: { kind: "down" } }
+
+    switch (input) {
+        case "k":
+            return { kind: "move", move: { kind: "up" } }
+        case "j":
+            return { kind: "move", move: { kind: "down" } }
+        case "g":
+            return { kind: "move", move: { kind: "first" } }
+        case "G":
+            return { kind: "move", move: { kind: "last" } }
+        default:
+            break
+    }
+    if (/^[1-9]$/.test(input)) {
+        return { kind: "move", move: { kind: "jump", index: Number(input) - 1 } }
+    }
+    return { kind: "none" }
+}
+
+export type WizardKeyIntent =
+    | { readonly kind: "back" }
+    | { readonly kind: "abort" }
+    | { readonly kind: "commit" }
+    | { readonly kind: "list"; readonly intent: ListIntent }
+    | { readonly kind: "edit"; readonly intent: Intent }
+
+/**
+ * The wizard's chrome keys are checked before delegation — Esc means "back a question" here,
+ * which is exactly why chat's `keyToIntent` (which claims Esc as none) is not reused raw.
+ *
+ * Text steps then get the full chat editor treatment (^A/^E, ^W, code-point cursor); select steps
+ * get the list navigation. A pasted blob collapses to its first line — a wizard answer is one
+ * line — and history chords mean nothing inside a question.
+ */
+export function keyToWizardIntent(
+    input: string,
+    key: KeyState,
+    context: { readonly select: boolean; readonly empty: boolean },
+): WizardKeyIntent {
+    if (key.ctrl && input.toLowerCase() === "c") return { kind: "abort" }
+    if (key.escape) return { kind: "back" }
+    if (key.return) return { kind: "commit" }
+
+    if (context.select) {
+        return { kind: "list", intent: keyToListIntent(input, key) }
+    }
+
+    const intent = keyToIntent(input, key, { busy: false, empty: context.empty })
+    switch (intent.kind) {
+        case "submit":
+            return { kind: "commit" }
+        case "exit":
+            // ^D on an empty question line reads as "get me out", same as ^C.
+            return { kind: "abort" }
+        case "historyPrev":
+        case "historyNext":
+            return { kind: "edit", intent: { kind: "none" } }
+        case "paste":
+            return {
+                kind: "edit",
+                intent: { kind: "insert", text: intent.lines[0] ?? "" },
+            }
+        default:
+            return { kind: "edit", intent }
+    }
+}

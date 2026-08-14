@@ -110,7 +110,8 @@ export interface TerminalHandles {
  * impossible to call from a test.
  */
 export interface RunOptions {
-    readonly manifestPath: string
+    /** Absent = bare `run`: the sandbox decides (picker, auto-run, or the wizard). */
+    readonly manifestPath?: string
     readonly sessionKey?: string
     /** Run a single turn with this input and exit. Non-interactive, and always plain. */
     readonly once?: string
@@ -137,6 +138,20 @@ export interface SessionsOptions {
 export interface ValidateOptions {
     readonly manifestPath: string
     readonly json?: boolean
+}
+
+export interface InitOptions {
+    readonly dir?: string
+    readonly user?: string
+    readonly name?: string
+    readonly purpose?: string
+    readonly preset?: string
+    readonly model?: string
+    readonly baseUrl?: string
+    readonly apiKeyEnv?: string
+    /** Take every default; never ask, even at a terminal. */
+    readonly yes?: boolean
+    readonly plain?: boolean
 }
 
 export interface AgentsOptions {

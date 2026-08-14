@@ -9,6 +9,7 @@
 
 import { Text } from "ink"
 import type { StatusBarProps } from "#lib/schema"
+import { GLYPH, STATUS_COLOR } from "#lib/theme"
 import type { TurnStatus } from "#lib/types"
 import { formatStats } from "#transcript"
 
@@ -20,14 +21,6 @@ const LABEL: Record<TurnStatus, string> = {
     cancelling: "cancelling",
 }
 
-const COLOUR: Record<TurnStatus, string> = {
-    idle: "green",
-    thinking: "yellow",
-    streaming: "cyan",
-    working: "blue",
-    cancelling: "magenta",
-}
-
 function seconds(ms: number): string {
     return `${(ms / 1000).toFixed(1)}s`
 }
@@ -35,7 +28,10 @@ function seconds(ms: number): string {
 export function StatusBar({ status, model, sessionKey, elapsedMs, last, quiet }: StatusBarProps) {
     return (
         <Text dimColor>
-            <Text color={COLOUR[status]}>● {LABEL[status]}</Text>
+            <Text color={STATUS_COLOR[status]}>
+                {GLYPH.dot}
+                {LABEL[status]}
+            </Text>
             {status === "idle" ? "" : ` ${seconds(elapsedMs)}`}
             {` · ${model} · ${sessionKey}`}
             {last === undefined || quiet ? "" : ` · last ${formatStats(last)}`}

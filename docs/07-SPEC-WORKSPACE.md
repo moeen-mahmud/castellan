@@ -58,7 +58,7 @@ Tier 3 content (`knowledge/`, `skills/`) is not pinned and has no share of this 
 **Static first.** Prompt caching requires a byte-stable prefix. A file that changes ahead
 of the breakpoint invalidates the cached prefix on every write, raising cost with no error
 to explain it. Additionally, earlier instructions are favoured under moderate instruction
-density, so the highest-priority rules belong at the top of `AGENT.md`.
+density, so the highest-priority rules belong at the top of the identity file.
 
 **Volatile after the breakpoint.** This is the concrete reason `MEMORY.md` is not Tier 0.
 Every `memory_write` changes it, and a changing file ahead of the breakpoint means the cache
@@ -110,7 +110,9 @@ succeeded, landing somewhere the agent's own context never reads, is worse than 
 
 | File | Tier | Editable | Budget | Purpose |
 | --- | --- | --- | --- | --- |
-| `AGENT.md` | static | none | 1,400 | Identity, voice, rules, examples |
+| `SOUL.md` | static | none | 1,400 | Long-form identity — *who the agent is*; ships only past the `context.soul` gate |
+| `AGENTS.md` | static | none | 800 | Operations — *what it does and how*: responsibilities, workflow, memory procedure; the team section stays an HTML comment until delegation ships |
+| `SOUL.compact.md` | static | none | 800 | The hand-derived kernel `onUnmet: distill` ships to small models |
 | `POLICY.md` | static | none | 600 | Soft boundaries and uncertainty behaviour |
 | `USER.md` | volatile | append | 1,500 | User model |
 | `MEMORY.md` | volatile | replace | 2,000 | Working memory, capped, evicting |
@@ -118,17 +120,26 @@ succeeded, landing somewhere the agent's own context never reads, is worse than 
 
 A file with no `budget:` in its frontmatter takes its tier's budget. There is no per-filename
 default in the loader — the figures above are what the templates declare, not magic the runtime
-knows about `AGENT.md`.
+knows about any filename. `examples/workspace-template/` carries all seven, and they are the same
+bytes `init` scaffolds from: the CLI embeds them (an installed binary has no `examples/` to
+read) and a test fails on any drift between the two copies.
 
 All are optional. A missing file is skipped; a file listed in the manifest but absent from
 disk fails the load.
+
+`SOUL.md` and `AGENTS.md` answer different questions — *who the agent is* versus *what it does
+and how* — the split the wider ecosystem converged on. Kept separate, a tone change never
+touches a procedure and a workflow change never risks the voice; mixed, both files get harder
+to maintain. `AGENTS.md` ships ungated to every model and is written declaratively ("I check X
+before Y", never "Check X before Y") so the rule counter sees zero obligations in it.
 
 ### Deliberate omissions
 
 `TOOLS.md` (duplicates the rendered tool catalogue and drifts from it), `HEARTBEAT.md`
 (schedules are a queryable resource), `PLATFORM.md` / `PLATFORM_STATE.md` (volatile state
 in a cached prefix destroys the cache and is stale on read), `IDENTITY.md` (folded into
-`AGENT.md`; splitting it from personality produces two files that contradict each other).
+the identity document; splitting it from personality produces two files that contradict each
+other).
 
 Safety-critical guardrails are also absent by design. Prose guardrails are advisory and can
 be talked around; anything with real consequences belongs in code at the tool boundary —
@@ -163,9 +174,11 @@ context:
 Size predicts whether a model can carry a constitution, and size is in the id.
 
 Whichever file the gate selects loads as an ordinary static ref, *first* in the tier: identity
-leads. **The soul replaces `AGENT.md`; a manifest must not list both.** Two identity documents in
-one prefix is the same two-files-that-contradict failure recorded under Deliberate omissions for
-the old `IDENTITY.md` split. `omit` ships nothing and warns; `distill` ships the compact file and
+leads. **The soul owns identity; a manifest must not list a second identity document in
+`static`.** Operations (`AGENTS.md`) and boundaries (`POLICY.md`) coexist with a soul — who and
+what are different files — but two *identity* documents in one prefix is the same
+two-files-that-contradict failure recorded under Deliberate omissions for the old `IDENTITY.md`
+split. `omit` ships nothing and warns; `distill` ships the compact file and
 warns, so nobody wonders which identity the agent is running on; `fail` refuses the load naming
 every unmet requirement — and `validate` applies the same gate with the same model, so it is heard
 before production.
@@ -396,7 +409,7 @@ tokens and buys no reliable compliance.
 ## Authoring rules the validator enforces
 
 1. **Style matches target output.** Files for chat-channel agents must be prose; the
-   validator warns on bullet density above a threshold in `AGENT.md` when every bound
+   validator warns on bullet density above a threshold in the identity file when every bound
    channel has `markdown: none | basic`. Models imitate form as readily as content, so a
    bulleted file produces a bulleted agent regardless of what the file says. A line reading
    "keep formatting light" inside a bulleted file is fighting itself, and the file wins.
