@@ -184,7 +184,13 @@ export class ToolRegistry {
             warnings.push({
                 code: "tool_trust_overridden",
                 message: `Declared trusted by their provider rather than defaulting to untrusted: ${trustOverrides.join(", ")}.`,
-                hint: "A provider tool defaults to untrusted because a provider cannot know what its upstream API returns. Trusted output skips the data delimiter and does not gate a later mutating call, so this is reported rather than taken quietly.",
+                // The hint used to assert *why* — "a provider cannot know what its upstream API
+                // returns" — which is true of a remote catalogue and plainly false of a local
+                // package whose write tools return a sentence the runtime composed. A warning that
+                // states a wrong reason at every boot is how a correct warning gets ignored, so this
+                // one states the consequence, which holds either way, and leaves the judgement to
+                // whoever knows what the tool actually returns.
+                hint: "Trusted output skips the data delimiter and does not gate a later mutating call. That is right for a tool whose output this runtime composed itself, and wrong for one that returns anything an upstream API or a file supplied — so it is reported rather than taken quietly.",
             })
         }
 

@@ -15,21 +15,47 @@
  *
  * ## Trust
  *
- * Every tool here returns `untrusted` output and says so explicitly rather than relying on the
- * registry's default for provider tools. A file on disk may have been downloaded five minutes ago;
- * `curl` through `exec` is the entire internet. Declaring it is also what makes the registry's
- * `tool_trust_overridden` warning meaningful — if this package left the field off, the one thing that
- * warning exists to catch would be indistinguishable from a package that simply forgot.
+ * Every tool declares its trust explicitly rather than relying on the registry's default for provider
+ * tools, and the two answers are not the same. Anything that returns bytes off the disk or the
+ * network is `untrusted`: a file may have been downloaded five minutes ago, a filename is
+ * attacker-controlled, and `curl` through `exec` is the entire internet. The three *writers* are
+ * `trusted`, because what they return is a sentence this runtime composed and never any of the
+ * content — marking them untrusted would mean a write tainted the turn and gated the next write,
+ * which is the once-per-turn trap arrived at by accident instead of by design.
+ *
+ * Declaring either way explicitly is also what keeps the registry's `tool_trust_overridden` warning
+ * meaningful: if this package left the field off, the thing that warning exists to catch would be
+ * indistinguishable from a package that simply forgot.
  */
 
-import type { Tool, ToolProvider, ToolProviderContext } from "@castellan/core"
+import {
+    ConfigError,
+    type Tool,
+    type ToolProvider,
+    type ToolProviderContext,
+} from "@castellan/core"
 import { execTool } from "./exec.ts"
+import { fileTools } from "./files.ts"
 import { SYSTEM_PROVIDER_ID } from "./paths.ts"
+import { searchTools } from "./search.ts"
 import { ShellSessions } from "./session.ts"
 
 export interface SystemProviderOptions {
     /** The manifest's environment layered over the ambient one. Values, not names. */
     readonly env: Readonly<Record<string, string | undefined>>
+    /**
+     * The agent's own directory. The protected set is anchored to it, so the manifest and the
+     * workspace files are identified by where they are rather than only by what they are called.
+     */
+    readonly dir: string
+    /**
+     * Extra protected patterns from `tools.providerConfig.protect`.
+     *
+     * Widening only. There is deliberately no setting that removes something from the protected set:
+     * the set contains the policy file, so a setting able to unprotect it would be a setting able to
+     * unprotect itself.
+     */
+    readonly protect?: readonly string[]
 }
 
 function normalise(slug: string): string {
@@ -48,7 +74,16 @@ export class SystemProvider implements ToolProvider {
     readonly #tools: readonly Tool[]
 
     constructor(options: SystemProviderOptions) {
-        this.#tools = [execTool({ sessions: this.#sessions, env: options.env })]
+        const shared = {
+            sessions: this.#sessions,
+            agentDir: options.dir,
+            ...(options.protect === undefined ? {} : { protect: options.protect }),
+        }
+        this.#tools = [
+            execTool({ sessions: this.#sessions, env: options.env }),
+            ...fileTools(shared),
+            ...searchTools(shared),
+        ]
     }
 
     /**
@@ -67,8 +102,42 @@ export class SystemProvider implements ToolProvider {
 }
 
 /** Slugs a manifest may pin from this provider. */
-export const SYSTEM_TOOL_SLUGS: readonly string[] = ["exec"]
+export const SYSTEM_TOOL_SLUGS: readonly string[] = [
+    "exec",
+    "file_read",
+    "file_write",
+    "file_edit",
+    "glob",
+    "grep",
+]
+
+/**
+ * The read-only subset, for a manifest that wants an agent which can look and not touch.
+ *
+ * Worth naming rather than leaving people to assemble: getting it wrong by one slug is the
+ * difference between an agent that can read a repository and one that can rewrite it.
+ */
+export const SYSTEM_READONLY_SLUGS: readonly string[] = ["file_read", "glob", "grep"]
+
+const CONFIG_KEYS = ["protect"] as const
 
 export function systemFromConfig(context: ToolProviderContext): SystemProvider {
-    return new SystemProvider({ env: context.env })
+    const unknown = Object.keys(context.config).filter(
+        (key) => !CONFIG_KEYS.includes(key as (typeof CONFIG_KEYS)[number]),
+    )
+    if (unknown.length > 0) {
+        throw new ConfigError({
+            code: "system_config_unknown",
+            message: `tools.providerConfig has ${unknown.length === 1 ? "a key" : "keys"} the system provider does not read: ${unknown.join(", ")}.`,
+            hint: `The only accepted key is ${CONFIG_KEYS.join(", ")}, a list of extra paths the file tools refuse to write. Refused rather than ignored, because a protection that looks applied and is not is worse than a rejected manifest.`,
+            field: "tools.providerConfig",
+        })
+    }
+
+    const protect = context.config.protect
+    return new SystemProvider({
+        env: context.env,
+        dir: context.dir,
+        ...(Array.isArray(protect) ? { protect: protect.map((entry) => String(entry)) } : {}),
+    })
 }

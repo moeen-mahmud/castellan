@@ -16,7 +16,6 @@ import { TextField } from "#components/TextField"
 import { WizardFrame } from "#components/WizardFrame"
 import { keyToWizardIntent } from "#keymap"
 import type { PartialAnswers, QuestionDefaults } from "#lib/init-flow"
-import { PRESETS } from "#lib/init-flow"
 import { GLYPH, THEME } from "#lib/theme"
 import {
     answeredRows,
@@ -25,6 +24,7 @@ import {
     isSelectStep,
     partialOf,
     reduceWizard,
+    selectOptions,
     startWizard,
     stepCounts,
     summaryRows,
@@ -121,9 +121,11 @@ export function WizardApp({ title, given, defaults, onDone }: WizardAppProps) {
                     >
                         {isSelectStep(state) ? (
                             <Box flexDirection="column">
-                                <Text>Model endpoint</Text>
+                                <Text>{currentQuestion(state)?.prompt ?? ""}</Text>
                                 <SelectList
-                                    items={PRESETS.map((preset) => ({ label: preset.label }))}
+                                    items={selectOptions(state).map((option) => ({
+                                        label: option.label,
+                                    }))}
                                     index={state.select.index}
                                     numbered
                                 />

@@ -33,6 +33,7 @@ export {
 } from "./output.ts"
 export { SYSTEM_PROVIDER_ID, spillDir } from "./paths.ts"
 export {
+    SYSTEM_READONLY_SLUGS,
     SYSTEM_TOOL_SLUGS,
     SystemProvider,
     type SystemProviderOptions,

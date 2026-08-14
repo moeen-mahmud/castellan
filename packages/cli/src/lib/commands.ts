@@ -88,6 +88,13 @@ export const COMMANDS: readonly CommandSpec[] = [
                 defaultHelp: "MODEL_API_KEY",
             },
             {
+                name: "system",
+                kind: "string",
+                placeholder: "level",
+                help: "what it may touch on this machine: none | read | full",
+                defaultHelp: "none",
+            },
+            {
                 name: "yes",
                 kind: "boolean",
                 help: "take every default; never ask, even at a terminal",

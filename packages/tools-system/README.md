@@ -1,12 +1,20 @@
 # @castellan/tools-system
 
-The agent acting on the machine it runs on. Shell execution, governed by `tools.policy` and the trust
-gate from the first line of code rather than from a later hardening pass.
+The agent acting on the machine it runs on: a shell, and a file family that exists so permissions can
+actually work. Governed by `tools.policy` and the trust gate from the first line of code rather than
+from a later hardening pass.
+
+`castellan init --system full` generates all of this. `--system read` generates the read-only half.
 
 ```yaml
 tools:
   provider: system
   pinned:
+    - file_read
+    - glob
+    - grep
+    - file_write
+    - file_edit
     - exec
   policy:
     deny:
@@ -17,8 +25,8 @@ tools:
       - "exec(npm test:*)"
 ```
 
-Nothing is implied. The binary registers this provider, but an agent has shell access only once its
-manifest selects the provider *and* pins the tool — availability and grant are separate, the same way
+Nothing is implied. The binary registers this provider, but an agent has access only once its manifest
+selects the provider *and* pins the tools — availability and grant are separate, the same way
 `tools.local` is opt-in.
 
 ## `exec`
@@ -41,6 +49,43 @@ rule that never saw the half that mattered. Written the ordinary way, `PATH=/tmp
 The ambient environment **is** passed through, including whatever the agent's `.env` supplied,
 because a shell that cannot see `GITHUB_TOKEN` cannot run `gh`. Stated plainly: a pinned `exec` can
 read every secret the agent itself can.
+
+## The file family
+
+`file_read`, `file_write`, `file_edit`, `glob`, `grep`. They exist so that permissions can work: a
+`file_write` call carries a `path` a rule can match exactly and the protected set can refuse, while
+`echo x > "$F"` carries the same target inside a string nothing can inspect. Their descriptions route
+the model away from the shell for that reason, and it is a security control rather than a style note.
+
+`glob` and `grep` stay **separate** rather than one `search_files(target:…)`. The unified form saves a
+catalogue slot and costs a decision — picking the mode *and then* the arguments is the two-hop shape
+small models fail, the same reasoning that keeps `tools.search` off.
+
+`file_edit` matches an exact unique string, never a line number. A line number is a fact about a file
+the model may last have seen several turns ago; a string carries its own proof. **Two matches is a
+failure**, because picking one would be a coin toss that reports success while editing the wrong line.
+Nothing is written on either failure path.
+
+Readers are `untrusted` and writers are `trusted`, and both halves are deliberate. A file may have been
+downloaded a minute ago and a filename is attacker-controlled, so reading taints the turn. The writers
+return a sentence this runtime composed and never echo content — marking them untrusted would mean a
+write gated the *next* write.
+
+### Protected paths
+
+Not writable, and **no `policy.allow` rule reaches past them**: `agent.yaml`, the workspace identity
+files (`SOUL.md`, `SOUL.compact.md`, `AGENTS.md`, `POLICY.md`, `REMINDER.md`), any dot-directory under
+the agent, and credential material anywhere on disk (`.ssh`, `.aws`, `.kube`, `.gnupg`, `.docker`,
+`.env*`, `.netrc`, `*.pem`, `*.key`).
+
+Elsewhere this protects config. Here the workspace files **are the agent** — `SOUL.md` is who it is,
+`POLICY.md` is what it will not do — and a rule authorising a write to them would be a rule authorising
+its own replacement. `USER.md` and `MEMORY.md` stay writable: they are the tier `memory_write` appends
+to. `tools.providerConfig.protect` adds patterns; nothing removes any.
+
+**It binds the file tools and not `exec`.** `echo x > SOUL.md` carries its target inside a shell string
+where no path check can see it. Pinning `exec` grants more than this protects, and saying so is cheaper
+than implying a boundary that is not there.
 
 ## Sessions: the directory carries, the environment does not
 

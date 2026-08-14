@@ -54,6 +54,7 @@ const FLAG_FOR: Record<InitStep, string> = {
     // No flag, on purpose: a key on the command line lands in shell history. With --yes the .env
     // is written with an empty value and the next steps say where to put it.
     apiKey: "(asked at the prompt only)",
+    system: "--system",
     dir: "<dir>",
 }
 
@@ -191,6 +192,7 @@ function fromFlags(options: InitOptions): Partial<Record<InitStep, string>> {
         ["model", options.model],
         ["baseUrl", options.baseUrl],
         ["apiKeyEnv", options.apiKeyEnv],
+        ["system", options.system],
         ["dir", options.dir],
     ]
     for (const [step, raw] of pairs) {
@@ -307,6 +309,7 @@ function complete(partial: Partial<Record<InitStep, string>>): InitAnswers {
         preset: answers.preset as InitAnswers["preset"],
         model: answers.model,
         baseUrl: answers.baseUrl,
+        system: answers.system,
         ...(keyVar === undefined ? {} : { apiKeyEnv: keyVar }),
         ...(answers.apiKey === undefined || answers.apiKey === ""
             ? {}

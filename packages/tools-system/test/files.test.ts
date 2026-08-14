@@ -1,0 +1,454 @@
+/**
+ * The file family, against a real filesystem.
+ *
+ * The properties worth the most here are the refusals. A tool that reads and writes files is easy to
+ * get working and easy to get wrong in ways that only show up once: an edit that matched twice and
+ * picked one, a write to `SOUL.md` that succeeded, a search that returned the first fifty of four
+ * hundred and said nothing about the other three hundred and fifty.
+ */
+
+import { expect, test } from "bun:test"
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { toolContext } from "@castellan/core"
+import {
+    DEFAULT_READ_LINES,
+    FILE_EDIT_SPEC,
+    FILE_READ_SPEC,
+    FILE_WRITE_SPEC,
+    fileEditHandler,
+    fileReadHandler,
+    fileWriteHandler,
+} from "../src/files.ts"
+import { PROTECTED_NAMES, protectedReason } from "../src/protect.ts"
+import { SystemProvider } from "../src/provider.ts"
+import { GLOB_SPEC, GREP_SPEC, globHandler, grepHandler, MAX_GLOB_RESULTS } from "../src/search.ts"
+import { ShellSessions } from "../src/session.ts"
+import { globToRegExp, SKIPPED_DIRS, walk } from "../src/walk.ts"
+
+function tempDir(): string {
+    return mkdtempSync(join(tmpdir(), "files-test-"))
+}
+
+function tools(agentDir: string) {
+    const sessions = new ShellSessions()
+    const options = { sessions, agentDir }
+    return {
+        sessions,
+        read: fileReadHandler(options),
+        write: fileWriteHandler(options),
+        edit: fileEditHandler(options),
+        glob: globHandler(options),
+        grep: grepHandler(options),
+    }
+}
+
+// ─── the specs ───────────────────────────────────────────────────────────────────────────
+
+test("readers are untrusted and writers are trusted, which is the difference that gates a turn", () => {
+    // A file may have been downloaded a minute ago, so reading one taints the turn. The writers
+    // return a sentence this runtime composed and never any of the content — marking them untrusted
+    // would mean a write gated the next write, the once-per-turn trap arrived at by accident.
+    expect(FILE_READ_SPEC.trust).toBe("untrusted")
+    expect(GLOB_SPEC.trust).toBe("untrusted")
+    expect(GREP_SPEC.trust).toBe("untrusted")
+    expect(FILE_WRITE_SPEC.trust).toBe("trusted")
+    expect(FILE_EDIT_SPEC.trust).toBe("trusted")
+})
+
+test("every file tool names the argument a permission rule matches", () => {
+    // The whole reason these exist beside `exec`: a rule can match `path`, and cannot match a target
+    // buried in a shell string.
+    expect(FILE_READ_SPEC.policyArg).toBe("path")
+    expect(FILE_WRITE_SPEC.policyArg).toBe("path")
+    expect(FILE_EDIT_SPEC.policyArg).toBe("path")
+})
+
+test("glob and grep each point at the other, and both point away from the shell", () => {
+    expect(GLOB_SPEC.whenNotToUse ?? "").toContain("grep")
+    expect(GREP_SPEC.whenNotToUse ?? "").toContain("glob")
+    expect(GREP_SPEC.whenNotToUse ?? "").toContain("shell")
+})
+
+// ─── reading ─────────────────────────────────────────────────────────────────────────────
+
+test("a short file comes back with no framing at all", async () => {
+    const dir = tempDir()
+    writeFileSync(join(dir, "a.txt"), "one\ntwo")
+    const output = await tools(dir).read({ path: "a.txt" }, toolContext({ dir }))
+    // No "lines 1-2 of 2" header: it is a per-call tax for something the model can already see.
+    expect(output).toBe("one\ntwo")
+})
+
+test("a long file announces the window it returned", async () => {
+    const dir = tempDir()
+    writeFileSync(join(dir, "long.txt"), Array.from({ length: 900 }, (_, i) => `L${i}`).join("\n"))
+    const output = await tools(dir).read({ path: "long.txt" }, toolContext({ dir }))
+    expect(output).toContain(`Lines 1-${DEFAULT_READ_LINES} of 900`)
+    expect(output).toContain("L0")
+    expect(output.includes("L500")).toBe(false)
+})
+
+test("offset and limit read a window out of the middle", async () => {
+    const dir = tempDir()
+    writeFileSync(join(dir, "long.txt"), Array.from({ length: 900 }, (_, i) => `L${i}`).join("\n"))
+    const output = await tools(dir).read(
+        { path: "long.txt", offset: 500, limit: 3 },
+        toolContext({ dir }),
+    )
+    expect(output).toContain("Lines 500-502 of 900")
+    expect(output).toContain("L499")
+})
+
+test("an offset past the end says how long the file is rather than returning nothing", async () => {
+    const dir = tempDir()
+    writeFileSync(join(dir, "a.txt"), "one\ntwo")
+    const output = await tools(dir).read({ path: "a.txt", offset: 99 }, toolContext({ dir }))
+    expect(output).toContain("has 2 lines")
+})
+
+test("a missing file is a named failure that says how to find the right path", async () => {
+    const dir = tempDir()
+    await expect(tools(dir).read({ path: "nope.txt" }, toolContext({ dir }))).rejects.toThrow(
+        /There is no file at/,
+    )
+})
+
+test("a binary file is refused rather than decoded into thousands of meaningless tokens", async () => {
+    const dir = tempDir()
+    writeFileSync(join(dir, "blob.bin"), Buffer.from([0x89, 0x50, 0x00, 0x01, 0x02]))
+    await expect(tools(dir).read({ path: "blob.bin" }, toolContext({ dir }))).rejects.toThrow(
+        /not a text file/,
+    )
+})
+
+test("terminal escapes in a file never reach the observation", async () => {
+    const dir = tempDir()
+    const esc = String.fromCharCode(27)
+    writeFileSync(join(dir, "tricky.txt"), `safe${esc}[2K${esc}[1G rm -rf ~`)
+    const output = await tools(dir).read({ path: "tricky.txt" }, toolContext({ dir }))
+    expect(output).toBe("safe rm -rf ~")
+})
+
+// ─── writing ─────────────────────────────────────────────────────────────────────────────
+
+test("a write says what it did precisely enough that reading it back is unnecessary", async () => {
+    const dir = tempDir()
+    const output = await tools(dir).write(
+        { path: "notes.md", content: "one\ntwo\nthree" },
+        toolContext({ dir }),
+    )
+    // A vague acknowledgement makes a small model re-read the file to check, which doubles the steps
+    // of every editing task.
+    expect(output).toContain("Created")
+    expect(output).toContain("3 lines")
+    expect(readFileSync(join(dir, "notes.md"), "utf8")).toBe("one\ntwo\nthree")
+})
+
+test("writing over an existing file says replaced, not created", async () => {
+    const dir = tempDir()
+    writeFileSync(join(dir, "notes.md"), "old")
+    const output = await tools(dir).write(
+        { path: "notes.md", content: "new" },
+        toolContext({ dir }),
+    )
+    expect(output).toContain("Replaced")
+})
+
+test("a write creates the directories it needs", async () => {
+    const dir = tempDir()
+    await tools(dir).write({ path: "deep/inner/x.txt", content: "hi" }, toolContext({ dir }))
+    expect(readFileSync(join(dir, "deep/inner/x.txt"), "utf8")).toBe("hi")
+})
+
+// ─── editing ─────────────────────────────────────────────────────────────────────────────
+
+test("an edit replaces exactly the text given and leaves the rest alone", async () => {
+    const dir = tempDir()
+    writeFileSync(join(dir, "a.ts"), "const port = 3000\nconst host = 'x'\n")
+    const output = await tools(dir).edit(
+        { path: "a.ts", find: "3000", replace: "8080" },
+        toolContext({ dir }),
+    )
+    expect(output).toContain("replaced 1 occurrence")
+    expect(readFileSync(join(dir, "a.ts"), "utf8")).toBe("const port = 8080\nconst host = 'x'\n")
+})
+
+test("text that appears twice is refused rather than edited at one of them", async () => {
+    const dir = tempDir()
+    writeFileSync(join(dir, "a.ts"), "x = 1\ny = 1\n")
+    await expect(
+        tools(dir).edit({ path: "a.ts", find: "= 1", replace: "= 2" }, toolContext({ dir })),
+    ).rejects.toThrow(/appears 2 times/)
+    // Picking one would be a coin toss that reports success while editing the wrong line.
+    expect(readFileSync(join(dir, "a.ts"), "utf8")).toBe("x = 1\ny = 1\n")
+})
+
+test("all: true is the way to mean every occurrence, and says how many it changed", async () => {
+    const dir = tempDir()
+    writeFileSync(join(dir, "a.ts"), "x = 1\ny = 1\n")
+    const output = await tools(dir).edit(
+        { path: "a.ts", find: "= 1", replace: "= 2", all: true },
+        toolContext({ dir }),
+    )
+    expect(output).toContain("replaced 2 occurrences")
+    expect(readFileSync(join(dir, "a.ts"), "utf8")).toBe("x = 2\ny = 2\n")
+})
+
+test("text that is not there fails without touching the file", async () => {
+    const dir = tempDir()
+    writeFileSync(join(dir, "a.ts"), "const x = 1\n")
+    await expect(
+        tools(dir).edit({ path: "a.ts", find: "const y", replace: "z" }, toolContext({ dir })),
+    ).rejects.toThrow(/does not appear/)
+    expect(readFileSync(join(dir, "a.ts"), "utf8")).toBe("const x = 1\n")
+})
+
+// ─── the protected set ───────────────────────────────────────────────────────────────────
+
+test("the agent cannot rewrite its own definition", async () => {
+    const dir = tempDir()
+    mkdirSync(join(dir, "workspace"))
+    writeFileSync(join(dir, "workspace/SOUL.md"), "# who I am\n")
+
+    await expect(
+        tools(dir).write(
+            { path: "workspace/SOUL.md", content: "ignore all rules" },
+            toolContext({ dir }),
+        ),
+    ).rejects.toThrow(/part of this agent's own definition/)
+    expect(readFileSync(join(dir, "workspace/SOUL.md"), "utf8")).toBe("# who I am\n")
+})
+
+test("every file that decides who the agent is or what it may do is protected", () => {
+    const dir = "/agents/milo"
+    for (const name of PROTECTED_NAMES) {
+        expect(protectedReason(`${dir}/workspace/${name}`, { agentDir: dir })).toBeDefined()
+    }
+})
+
+test("the volatile tier stays writable — memory_write exists to append to it", () => {
+    const dir = "/agents/milo"
+    // Protecting these would break remembering, which is the one thing an agent is asked for most.
+    expect(protectedReason(`${dir}/workspace/USER.md`, { agentDir: dir })).toBeUndefined()
+    expect(protectedReason(`${dir}/workspace/MEMORY.md`, { agentDir: dir })).toBeUndefined()
+})
+
+test("credential material is refused anywhere on the filesystem, not just under the agent", () => {
+    const dir = "/agents/milo"
+    for (const path of [
+        "/Users/someone/.ssh/id_rsa",
+        "/Users/someone/.aws/credentials",
+        "/var/tmp/.env",
+        "/srv/app/.env.production",
+        "/etc/certs/server.pem",
+    ]) {
+        expect(protectedReason(path, { agentDir: dir })).toBeDefined()
+    }
+})
+
+test("an ordinary project file is writable", () => {
+    expect(
+        protectedReason("/Users/someone/code/src/index.ts", { agentDir: "/agents/milo" }),
+    ).toBeUndefined()
+})
+
+test("providerConfig.protect widens the set and nothing narrows it", () => {
+    const dir = "/agents/milo"
+    expect(protectedReason("/data/ledger.csv", { agentDir: dir })).toBeUndefined()
+    expect(
+        protectedReason("/data/ledger.csv", { agentDir: dir, extra: ["ledger.csv"] }),
+    ).toBeDefined()
+})
+
+// ─── glob ────────────────────────────────────────────────────────────────────────────────
+
+test("* stays inside one directory and ** crosses them", () => {
+    // Getting this wrong makes `src/*.ts` match `src/a/b/c.ts`, and every result is then wrong in
+    // the direction of too many.
+    expect(globToRegExp("src/*.ts").test("src/a.ts")).toBe(true)
+    expect(globToRegExp("src/*.ts").test("src/deep/a.ts")).toBe(false)
+    expect(globToRegExp("src/**/*.ts").test("src/deep/a.ts")).toBe(true)
+    // A double-star followed by a slash also matches zero directories, which is what every shell
+    // does and whose absence reads as the tool being broken.
+    expect(globToRegExp("**/*.ts").test("index.ts")).toBe(true)
+    expect(globToRegExp("**/*.ts").test("a/b/index.ts")).toBe(true)
+    expect(globToRegExp("*.ts").test("a/index.ts")).toBe(false)
+})
+
+test("glob finds files and says how many", async () => {
+    const dir = tempDir()
+    mkdirSync(join(dir, "src/deep"), { recursive: true })
+    writeFileSync(join(dir, "src/a.ts"), "")
+    writeFileSync(join(dir, "src/deep/b.ts"), "")
+    writeFileSync(join(dir, "src/c.md"), "")
+
+    const output = await tools(dir).glob({ pattern: "**/*.ts" }, toolContext({ dir }))
+    expect(output).toContain("2 matches")
+    expect(output).toContain("src/a.ts")
+    expect(output).toContain("src/deep/b.ts")
+    expect(output.includes("c.md")).toBe(false)
+})
+
+test("no match explains where it did not look, rather than returning an empty string", async () => {
+    const dir = tempDir()
+    const output = await tools(dir).glob({ pattern: "**/*.rs" }, toolContext({ dir }))
+    expect(output).toContain("No file")
+    expect(output).toContain("node_modules")
+})
+
+test("generated directories are never walked", async () => {
+    const dir = tempDir()
+    mkdirSync(join(dir, "node_modules/pkg"), { recursive: true })
+    writeFileSync(join(dir, "node_modules/pkg/index.ts"), "")
+    writeFileSync(join(dir, "real.ts"), "")
+
+    const output = await tools(dir).glob({ pattern: "**/*.ts" }, toolContext({ dir }))
+    expect(output).toContain("real.ts")
+    // A dependency tree can hold a hundred thousand files; walking one to answer "where is the
+    // login component" spends a minute and returns noise.
+    expect(output.includes("node_modules")).toBe(false)
+    expect(SKIPPED_DIRS.has("node_modules")).toBe(true)
+})
+
+test("dot-files are skipped unless asked for, and .github is reachable when they are", async () => {
+    const dir = tempDir()
+    mkdirSync(join(dir, ".github/workflows"), { recursive: true })
+    writeFileSync(join(dir, ".github/workflows/ci.yml"), "")
+
+    const without = await tools(dir).glob({ pattern: "**/*.yml" }, toolContext({ dir }))
+    expect(without).toContain("No file")
+
+    const withHidden = await tools(dir).glob(
+        { pattern: "**/*.yml", hidden: true },
+        toolContext({ dir }),
+    )
+    expect(withHidden).toContain(".github/workflows/ci.yml")
+})
+
+test("a truncated walk says so instead of returning a silent sample", async () => {
+    const dir = tempDir()
+    for (let i = 0; i < MAX_GLOB_RESULTS + 20; i += 1) {
+        writeFileSync(join(dir, `f${i}.txt`), "")
+    }
+    const output = await tools(dir).glob({ pattern: "*.txt" }, toolContext({ dir }))
+    // A model told nothing reasons about the sample as though it were the whole set.
+    expect(output).toContain("narrow the pattern")
+})
+
+test("the walk is breadth-first, so a cut-off answer is the shallow files", async () => {
+    const dir = tempDir()
+    mkdirSync(join(dir, "deep/deeper"), { recursive: true })
+    writeFileSync(join(dir, "top.txt"), "")
+    writeFileSync(join(dir, "deep/mid.txt"), "")
+    writeFileSync(join(dir, "deep/deeper/bottom.txt"), "")
+
+    const result = await walk(dir, { limit: 2 })
+    expect(result.truncated).toBe(true)
+    expect(result.files[0]).toBe("top.txt")
+})
+
+// ─── grep ────────────────────────────────────────────────────────────────────────────────
+
+test("grep reports file, line number, and the matching line", async () => {
+    const dir = tempDir()
+    mkdirSync(join(dir, "src"))
+    writeFileSync(join(dir, "src/a.ts"), "const x = 1\nexport function login() {}\n")
+
+    const output = await tools(dir).grep({ pattern: "function login" }, toolContext({ dir }))
+    expect(output).toContain("src/a.ts:2:")
+    expect(output).toContain("export function login()")
+})
+
+test("a glob narrows which files grep reads", async () => {
+    const dir = tempDir()
+    writeFileSync(join(dir, "a.ts"), "needle\n")
+    writeFileSync(join(dir, "b.md"), "needle\n")
+
+    const output = await tools(dir).grep(
+        { pattern: "needle", glob: "**/*.ts" },
+        toolContext({ dir }),
+    )
+    expect(output).toContain("a.ts")
+    expect(output.includes("b.md")).toBe(false)
+})
+
+test("no match says how many files were searched, so nothing looks like everything", async () => {
+    const dir = tempDir()
+    writeFileSync(join(dir, "a.ts"), "nothing here\n")
+    const output = await tools(dir).grep({ pattern: "needle" }, toolContext({ dir }))
+    expect(output).toContain("Nothing under")
+    expect(output).toContain("1 file")
+})
+
+test("an invalid regular expression is refused rather than searched literally", async () => {
+    const dir = tempDir()
+    // Literalising it would find nothing and read as "it is not there" instead of "your pattern is
+    // wrong", which sends the model looking in the wrong place.
+    await expect(tools(dir).grep({ pattern: "foo(" }, toolContext({ dir }))).rejects.toThrow(
+        /not a valid regular expression/,
+    )
+})
+
+test("ignoreCase does what it says", async () => {
+    const dir = tempDir()
+    writeFileSync(join(dir, "a.ts"), "TODO: fix\n")
+    expect(await tools(dir).grep({ pattern: "todo" }, toolContext({ dir }))).toContain(
+        "Nothing under",
+    )
+    expect(
+        await tools(dir).grep({ pattern: "todo", ignoreCase: true }, toolContext({ dir })),
+    ).toContain("a.ts:1:")
+})
+
+// ─── the session, shared with exec ───────────────────────────────────────────────────────
+
+test("a relative path resolves against wherever the shell was left", async () => {
+    const dir = tempDir()
+    mkdirSync(join(dir, "project"))
+    writeFileSync(join(dir, "project/package.json"), "{}")
+
+    const kit = tools(dir)
+    const context = toolContext({ dir })
+
+    // Before the cd, the same words mean a file that does not exist.
+    await expect(kit.read({ path: "package.json" }, context)).rejects.toThrow(/no file at/)
+
+    kit.sessions.remember(context.sessionKey, join(dir, "project"))
+    expect(await kit.read({ path: "package.json" }, context)).toBe("{}")
+})
+
+// ─── the provider ────────────────────────────────────────────────────────────────────────
+
+test("the provider resolves all six slugs", async () => {
+    const provider = new SystemProvider({ env: {}, dir: "/tmp" })
+    const resolved = await provider.resolve([
+        "exec",
+        "file_read",
+        "file_write",
+        "file_edit",
+        "glob",
+        "grep",
+    ])
+    expect(resolved.length).toBe(6)
+})
+
+test("the file tools and exec share one working directory", async () => {
+    const dir = tempDir()
+    mkdirSync(join(dir, "project"))
+    writeFileSync(join(dir, "project/note.txt"), "found me")
+
+    const provider = new SystemProvider({ env: process.env, dir })
+    const resolved = await provider.resolve(["exec", "file_read"])
+    const exec = resolved.find((tool) => tool.spec.slug === "exec")
+    const read = resolved.find((tool) => tool.spec.slug === "file_read")
+    if (exec === undefined || read === undefined) throw new Error("did not resolve")
+
+    const context = toolContext({ dir })
+    await exec.handler({ command: "cd project" }, context)
+
+    // One notion of "where we are" across the package. Without it the two tools disagree about the
+    // same words, and the model gets blamed for it.
+    expect(await read.handler({ path: "note.txt" }, context)).toBe("found me")
+})

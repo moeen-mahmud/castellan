@@ -71,9 +71,23 @@ export function currentQuestion(state: WizardState): Question | undefined {
     return nextQuestion(partialOf(state), state.defaults)
 }
 
-/** Is the current question a select (the preset menu) rather than a text field? */
+/**
+ * Is the current question a fixed set of choices rather than a text field?
+ *
+ * Read off the question's own `options` rather than compared against a step name. The preset menu was
+ * the only select for three phases and "is this the preset step" ended up written into the reducer,
+ * the renderer and the cursor prefill — so adding a second one had to either repeat all three or
+ * generalise them. Generalising is what stops a third repeating them again.
+ */
 export function isSelectStep(state: WizardState): boolean {
-    return state.phase === "asking" && currentQuestion(state)?.step === "preset"
+    return state.phase === "asking" && currentQuestion(state)?.options !== undefined
+}
+
+/** The choices on screen, empty when the question is a text field. */
+export function selectOptions(
+    state: WizardState,
+): readonly { readonly value: string; readonly label: string }[] {
+    return currentQuestion(state)?.options ?? []
 }
 
 /** Whether the question on screen is one whose answer must never be rendered. */
@@ -119,21 +133,24 @@ function enterConfirm(state: WizardState): WizardState {
 }
 
 function freshFor(state: WizardState): Pick<WizardState, "editor" | "select" | "error"> {
+    const question = nextQuestion(partialOf(state), state.defaults)
+    const options = question?.options
     return {
         editor: EMPTY_EDITOR,
-        select: { index: presetIndexOf(state), count: PRESETS.length },
+        select: {
+            index: cursorFor(question),
+            count: options === undefined ? PRESETS.length : options.length,
+        },
         error: undefined,
     }
 }
 
-/** Prefill the preset cursor from the question's fallback ("1" → 0) or a popped answer. */
-function presetIndexOf(state: WizardState): number {
-    const question = nextQuestion(partialOf(state), state.defaults)
-    if (question?.step !== "preset") return 0
-    const fallbackIndex = Number(question.fallback) - 1
-    return Number.isInteger(fallbackIndex) && fallbackIndex >= 0 && fallbackIndex < PRESETS.length
-        ? fallbackIndex
-        : 0
+/** Prefill the cursor from the question's own fallback ("1" → 0). */
+function cursorFor(question: Question | undefined): number {
+    const options = question?.options
+    if (options === undefined) return 0
+    const index = Number(question?.fallback) - 1
+    return Number.isInteger(index) && index >= 0 && index < options.length ? index : 0
 }
 
 export function reduceWizard(state: WizardState, action: WizardAction): WizardState {
@@ -185,8 +202,8 @@ export function reduceWizard(state: WizardState, action: WizardAction): WizardSt
             if (question === undefined) return enterConfirm(state)
 
             const raw =
-                question.step === "preset"
-                    ? (PRESETS[state.select.index]?.id ?? "")
+                question.options !== undefined
+                    ? (question.options[state.select.index]?.value ?? "")
                     : state.editor.value.trim() === ""
                       ? question.fallback
                       : state.editor.value
@@ -251,6 +268,7 @@ export function answeredRows(
         baseUrl: "Base URL",
         apiKeyEnv: "Key env var",
         apiKey: "API key",
+        system: "System access",
         dir: "Directory",
     }
     return state.log.map((entry) => ({

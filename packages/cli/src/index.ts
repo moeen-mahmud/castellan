@@ -89,6 +89,7 @@ async function dispatch(argv: readonly string[]): Promise<number> {
             const model = flags.str("model")
             const baseUrl = flags.str("base-url")
             const apiKeyEnv = flags.str("api-key-env")
+            const system = flags.str("system")
             return await initCommand({
                 ...(dir === undefined ? {} : { dir }),
                 ...(user === undefined ? {} : { user }),
@@ -98,6 +99,7 @@ async function dispatch(argv: readonly string[]): Promise<number> {
                 ...(model === undefined ? {} : { model }),
                 ...(baseUrl === undefined ? {} : { baseUrl }),
                 ...(apiKeyEnv === undefined ? {} : { apiKeyEnv }),
+                ...(system === undefined ? {} : { system }),
                 yes: flags.bool("yes"),
                 plain: flags.bool("plain"),
             })

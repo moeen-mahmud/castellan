@@ -37,11 +37,16 @@ export interface ParsedOutput {
     /**
      * The output could not be read at all — present only where that is possible.
      *
-     * NLT never sets it: its parser is tolerant by construction and reports what was written, leaving
-     * every judgement to coercion. `native` can, because a truncated `arguments` document is not JSON
-     * and no amount of tolerance recovers it. It exists rather than being folded into "no arguments"
-     * because a tool with no required fields would then run, with no arguments, having been asked for
-     * something else entirely — a wrong action taken silently.
+     * `native` sets it when the `arguments` document is not JSON — a truncated one is unrecoverable by
+     * any amount of tolerance. It exists rather than being folded into "no arguments" because a tool
+     * with no required fields would then run, with no arguments, having been asked for something else
+     * entirely — a wrong action taken silently.
+     *
+     * NLT sets it in one case, and only when *nothing* parsed: the prose is markup from some other
+     * tool-calling protocol. A model that invents `<TOOL_CALL>` or its own vendor tokens has attempted
+     * a call, and with nothing here the markup becomes the reply — shown to the person as prose, no
+     * repair asked for, no event fired, the turn recorded as a clean answer. The parser stays tolerant
+     * of *readable* variations; this is for the ones no tolerance could enumerate.
      */
     readonly malformed?: readonly FieldError[]
 }

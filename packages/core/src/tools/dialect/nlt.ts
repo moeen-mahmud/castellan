@@ -26,7 +26,7 @@ import type { ContextBlock } from "../../context/blocks.ts"
 import { SLOT } from "../../context/blocks.ts"
 import { estimateMessageTokens } from "../../context/tokens.ts"
 import { renderTrusted } from "../trust.ts"
-import type { JsonSchemaNode, ToolIntent, ToolResult, ToolSpec } from "../types.ts"
+import type { FieldError, JsonSchemaNode, ToolIntent, ToolResult, ToolSpec } from "../types.ts"
 import type { ParsedOutput, StreamFilter, ToolDialect } from "./dialect.ts"
 
 /** Opens a multi-line value. */
@@ -34,16 +34,109 @@ const HEREDOC_OPEN = "<<<"
 /** Closes one, on a line of its own. A line merely *containing* it is content. */
 const HEREDOC_CLOSE = ">>>"
 
-const ACTION_LINE = /^\s*(?:[-*+]\s+|\d+[.)]\s+)?action\s*:\s*(.+?)\s*$/i
+// The optional angle brackets are measured, not defensive: `<ACTION: glob>` is one of the three
+// shapes deepseek-v4-pro produced. See ATTEMPTED_CALL below for the other two and for why tolerance
+// alone cannot be the whole answer.
+const ACTION_LINE = /^\s*(?:[-*+]\s+|\d+[.)]\s+)?<?\s*action\s*:\s*(.+?)\s*>?\s*$/i
 const KEY_LINE = /^\s*(?:[-*+]\s+|\d+[.)]\s+)?([A-Za-z_][\w .-]*?)\s*:\s*(.*)$/
 const FENCE_LINE = /^\s*`{3,}\s*[\w+-]*\s*$/
 const END_LINE = /^\s*end\s*$/i
 
+/**
+ * The XML-shaped near miss, tolerated because a frontier model writes it unprompted.
+ *
+ * Observed against deepseek-v4-pro on a fresh session with an eight-tool catalogue: asked to use
+ * `glob`, it wrote
+ *
+ *     <action>
+ *     glob
+ *     pattern: (a correct glob)
+ *     </action>
+ *
+ * with the arguments completely correct. The same model has also emitted its own native
+ * `<｜｜DSML｜｜Tool …/>` markup. Angle brackets are what its tool-calling was trained on, and no
+ * amount of "exactly like this" in the preamble outvotes that.
+ *
+ * Untolerated, this is the worst failure shape available: the parser finds no block, so the markup
+ * becomes the *reply* — the person is shown a tool call as prose, no repair is requested, and nothing
+ * anywhere reports that a tool was attempted. Accepting it is the same kind of tolerance the parser
+ * already extends to `- ACTION:`, `1. ACTION:`, a backticked slug and a wrapping fence: NLT's protocol
+ * is prose a model imitates, so imitations that are unambiguous are met halfway.
+ *
+ * Narrow on purpose — the opener alone on its line, the slug on the next — so prose that happens to
+ * mention an XML tag mid-sentence is untouched.
+ */
+const XML_OPEN = /^\s*<\s*action\s*>\s*$/i
+const XML_CLOSE = /^\s*<\s*\/\s*action\s*>\s*$/i
+
+/**
+ * A line that is *nothing but* an XML tag.
+ *
+ * The third shape observed from the same model was `<ebml>` wrapped around `<ACTION: glob>` and closed
+ * with `</ebml>` — an element name that means nothing to anyone, chosen apparently at random. Listing
+ * tag names cannot keep up with that, so any lone tag is treated as protocol debris and dropped.
+ *
+ * The trade-off, stated: a reply whose entire line is `<div>` loses that line. In three phases of real
+ * transcripts no model has written one, and the alternative is a reply that shows the person a tag
+ * they did not ask about wrapped round a tool call that never ran.
+ */
+const LONE_TAG = /^\s*<\/?\s*[A-Za-z_][\w.:-]*\s*\/?\s*>\s*$/
+
+/**
+ * Markup that says "this was meant to be a tool call" in a format this parser cannot read.
+ *
+ * Measured, not guessed. Asked the same question twice against deepseek-v4-pro on fresh sessions with
+ * an eight-tool catalogue, it invented **two different** formats:
+ *
+ *     <action>                            <TOOL_CALL>
+ *     glob                                <TOOL>glob</TOOL>
+ *     pattern: (a glob)                   <PARAM name="pattern">(a glob)</PARAM>
+ *     </action>                           </TOOL_CALL>
+ *
+ * and in an earlier session its own native `<｜｜DSML｜｜Tool …/>` markup. The first shape is now
+ * parsed outright; the lesson of the second is that the set of shapes cannot be enumerated, so
+ * tolerance alone is a losing game.
+ *
+ * What *can* be done reliably is notice that a call was attempted and ask for it again in the right
+ * format. That is what the repair step exists for, and one repair is far cheaper than the alternative:
+ * with no detection the markup becomes the **reply**, the person is shown protocol debris, no repair
+ * is requested, no event fires, and the turn is recorded as a clean answer. Silent, and wrong.
+ *
+ * Tight on purpose. A closing tag is required, or a vendor marker — prose about markup says
+ * "wrap it in an <action> element" and does not close it. Together with the zero-intents condition
+ * below, a step that produced a readable block never triggers this: a model that got the format right
+ * once is not guessing.
+ */
+const ATTEMPTED_CALL: readonly RegExp[] = [
+    /<\/\s*(?:tool_calls?|toolcalls?|tool|function_call|function|invoke|action|parameters?|params?|arguments?|args?)\s*>/i,
+    // DeepSeek's own tool protocol, which leaks through when it decides to use it. Matched on the
+    // bare marker rather than its delimiters: those are full-width pipes (U+FF5C), and a pattern
+    // written with the ASCII one looks correct and matches nothing — which it did, first time.
+    /DSML/,
+    /tool[\u2581_]calls?[\u2581_]begin/i,
+    // A bare JSON call, which several models fall back to when a text protocol confuses them.
+    /^\s*\{\s*"(?:name|tool|tool_name|function)"\s*:/m,
+]
+
+/**
+ * Did this step attempt a tool call the parser could not read?
+ *
+ * Only asked when nothing parsed, and answered from the *prose*, which is what the markup became.
+ */
+function attemptedCall(text: string): FieldError | undefined {
+    if (!ATTEMPTED_CALL.some((pattern) => pattern.test(text))) return undefined
+    return {
+        field: "the block",
+        message: "looks like a tool call written in a different format, so nothing ran.",
+        hint: "Tool calls in this conversation are plain lines, not tags or JSON. Write `ACTION:` then the tool name, one `name: value` per line after it, then `END` alone on its own line — exactly as the tool list shows. Nothing was executed, so writing it again correctly is safe.",
+    }
+}
+
 /** Strip the decoration a model puts around a tool name: backticks, quotes, trailing full stop. */
 function cleanSlug(raw: string): string {
     return raw
-        .replace(/^[`'"*]+/, "")
-        .replace(/[`'"*]+$/, "")
+        .replace(/^[`'"*<]+/, "")
+        .replace(/[`'"*>]+$/, "")
         .replace(/[.,;:]+$/, "")
         .trim()
 }
@@ -62,6 +155,14 @@ interface ParseState {
     heredocLines: string[]
     /** A block just ended, so a fence on the next meaningful line is its closing fence. */
     justClosed: boolean
+    /**
+     * An `<action>` opener has been seen and the slug is still to come on a following line.
+     *
+     * A separate flag rather than an empty block, because a block with no slug is not a block: the
+     * closer has to be able to tell "opened, never named" from "opened and named", and discard the
+     * first rather than emit a call to the empty string.
+     */
+    awaitingSlug: boolean
     text: string[]
     blocks: Block[]
 }
@@ -87,6 +188,7 @@ function closeBlock(state: ParseState): void {
     if (state.block !== undefined) state.blocks.push(state.block)
     state.block = undefined
     state.openKey = undefined
+    state.awaitingSlug = false
 }
 
 function newState(): ParseState {
@@ -96,6 +198,7 @@ function newState(): ParseState {
         heredocKey: undefined,
         heredocLines: [],
         justClosed: false,
+        awaitingSlug: false,
         text: [],
         blocks: [],
     }
@@ -148,6 +251,42 @@ function consumeLine(state: ParseState, line: string, fenceIsDecoration: () => b
         state.block = { slug, fields: new Map() }
         return
     }
+
+    // `<action>` on its own line: the block opens and the slug is whatever the next non-empty line
+    // says. Handled before the no-block branch below, or the opener would be delivered as prose.
+    if (XML_OPEN.test(line)) {
+        closeBlock(state)
+        state.awaitingSlug = true
+        return
+    }
+
+    if (state.awaitingSlug) {
+        if (trimmed === "") return
+        if (XML_CLOSE.test(line)) {
+            // Opened and never named. Discarded rather than emitted as a call to the empty string,
+            // and not passed through as prose either — the model meant to call something.
+            state.awaitingSlug = false
+            return
+        }
+        const slug = cleanSlug(trimmed)
+        state.awaitingSlug = false
+        if (slug !== "") state.block = { slug, fields: new Map() }
+        return
+    }
+
+    if (XML_CLOSE.test(line)) {
+        // A stray closer with nothing open. Swallowed rather than shown: it is protocol debris, and
+        // a reply ending in `</action>` is a reply nobody wrote.
+        if (state.block !== undefined) {
+            closeBlock(state)
+            state.justClosed = true
+        }
+        return
+    }
+
+    // Any other lone tag — `<ebml>`, `</ebml>`, `<tool_call>` — is dropped without closing a block,
+    // because it is a wrapper the model put *around* the call rather than part of it.
+    if (LONE_TAG.test(line)) return
 
     if (state.block === undefined) {
         // A fence that wraps a block belongs to the block, not to the reply — so the one just
@@ -235,7 +374,12 @@ export function parseNlt(output: string): ParsedOutput {
         ),
     }))
 
-    return { intents, text: state.text.join("\n").trim() }
+    const text = state.text.join("\n").trim()
+    if (intents.length > 0) return { intents, text }
+
+    // Nothing parsed. If the prose is markup rather than prose, say so instead of delivering it.
+    const attempted = attemptedCall(text)
+    return attempted === undefined ? { intents, text } : { intents, text, malformed: [attempted] }
 }
 
 /**
@@ -250,7 +394,17 @@ function mightBecomeStructure(partial: string): boolean {
     if (/^\s*(?:[-*+]|\d+[.)]?)?\s*$/.test(partial)) return true
 
     const head = partial.replace(/^\s*(?:[-*+]\s+|\d+[.)]\s+)?/, "").toLowerCase()
-    if ("action:".startsWith(head) || head.startsWith("action:")) return true
+
+    // A leading `<` is stripped before the ACTION check because `<ACTION: glob>` is one of the shapes
+    // a real model produced, and the parser accepts it — so the filter has to hold it too, or the
+    // bracket reaches the screen a moment before the rest of the line is swallowed.
+    const bare = head.startsWith("<") ? head.slice(1) : head
+    if ("action:".startsWith(bare) || bare.startsWith("action:")) return true
+
+    // A lone tag is swallowed whole, so anything that is still a *prefix of one* waits — the complete
+    // form included, since `<ebml>` is only known to be debris once the line ends.
+    if (/^<\/?$/.test(head) || /^<\/?[a-z_][\w.:-]*>?$/.test(head)) return true
+
     return /^`{1,3}[\w+-]*$/.test(head)
 }
 
@@ -353,6 +507,11 @@ export function createNltStreamFilter(): StreamFilter {
             const visible = stripCr(partial)
             if (
                 state.block === undefined &&
+                // An `<action>` opener has been seen and this line is its slug — structure, even
+                // though no block is open yet. Without this the slug streams to the screen a moment
+                // before the parser swallows it, and the reply reads "glob" above its own tool row.
+                // A stream cannot un-emit, which is why the check has to be here rather than after.
+                !state.awaitingSlug &&
                 heldFence === undefined &&
                 !mightBecomeStructure(visible)
             ) {

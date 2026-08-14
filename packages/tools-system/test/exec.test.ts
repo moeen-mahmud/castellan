@@ -390,21 +390,21 @@ test("the same command without a terminal sees a pipe", async () => {
 // ─── the provider ────────────────────────────────────────────────────────────────────────
 
 test("the provider resolves exec and omits what it does not know", async () => {
-    const provider = new SystemProvider({ env: {} })
+    const provider = new SystemProvider({ env: {}, dir: "/tmp" })
     const resolved = await provider.resolve(["exec", "not_a_tool"])
     expect(resolved.map((tool) => tool.spec.slug)).toEqual(["exec"])
 })
 
 test("the provider matches a slug tolerantly, like the registry does", async () => {
-    const provider = new SystemProvider({ env: {} })
+    const provider = new SystemProvider({ env: {}, dir: "/tmp" })
     expect((await provider.resolve(["EXEC"])).length).toBe(1)
 })
 
 test("two provider instances do not share a working directory", async () => {
     const dir = tempDir()
     mkdirSync(join(dir, "inner"))
-    const first = new SystemProvider({ env: process.env })
-    const second = new SystemProvider({ env: process.env })
+    const first = new SystemProvider({ env: process.env, dir })
+    const second = new SystemProvider({ env: process.env, dir })
     const context = toolContext({ dir })
 
     const runFirst = (await first.resolve(["exec"]))[0]

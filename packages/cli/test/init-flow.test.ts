@@ -27,6 +27,7 @@ const ANSWERS: InitAnswers = {
     baseUrl: "https://api.deepseek.com/v1",
     apiKeyEnv: "MODEL_API_KEY",
     apiKey: "sk-test-value",
+    system: "none",
     dir: "./milo",
 }
 
@@ -60,6 +61,7 @@ describe("nextQuestion", () => {
             "model",
             "baseUrl",
             "apiKey",
+            "system",
             "dir",
         ])
     })

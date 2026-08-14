@@ -163,7 +163,7 @@ tools:
     # Slots held for mutating tools so a large read surface cannot starve the writes.
     reserveWrite: 6
 
-  # ── The system provider: shell access ──
+  # ── The system provider: shell and file access ──
   # `@castellan/tools-system`, registered by the `castellan` binary. Nothing is implied — selecting
   # the provider AND pinning the tool are both required, the same way tools.local is opt-in.
   #
@@ -175,7 +175,17 @@ tools:
   #
   # provider: system
   # pinned:
-  #   - exec
+  #   - file_read      # untrusted: a file on disk may have been downloaded a minute ago
+  #   - glob           # find files by name — * stays in one directory, ** crosses them
+  #   - grep           # find lines by regex, with an optional file glob
+  #   - file_write     # trusted output: it reports what it wrote, never the content
+  #   - file_edit      # exact unique match, never a line number; two matches is a failure
+  #   - exec           # the last resort — its target is a string no rule can look inside
+  #
+  # The file tools refuse to write this manifest, SOUL.md, AGENTS.md, POLICY.md, the policy file, or
+  # anything under .ssh/.aws/.kube — and no allow rule reaches past that. USER.md and MEMORY.md stay
+  # writable: they are the tier memory_write appends to. None of it binds `exec`, whose target lives
+  # inside a shell string, which is why the descriptions push the model at the structured tools.
 
   # ── A remote provider ──
   # Registered by the embedder — nothing installs at runtime. The `castellan` binary registers

@@ -10,7 +10,12 @@
 
 import type { ChatMessage } from "../src/model/provider.ts"
 import type { StepOutput } from "../src/tools/dialect/dialect.ts"
-import { nltDialect, parseNlt, renderNltEntry } from "../src/tools/dialect/nlt.ts"
+import {
+    createNltStreamFilter,
+    nltDialect,
+    parseNlt,
+    renderNltEntry,
+} from "../src/tools/dialect/nlt.ts"
 import type { ToolResult, ToolSpec } from "../src/tools/types.ts"
 import { describe, expect, test } from "./_harness.ts"
 
@@ -564,5 +569,147 @@ describe("the trust boundary, rendered", () => {
         expect(body.indexOf("now")).toBeLessThan(body.indexOf("web_fetch"))
         expect(body.indexOf("web_fetch")).toBeLessThan(body.indexOf("memory_write"))
         expect(body.split("BEGIN UNTRUSTED_TOOL_OUTPUT").length - 1).toBe(1)
+    })
+})
+
+describe("the XML-shaped near miss", () => {
+    test("an <action> block parses, because a frontier model writes one unprompted", () => {
+        // Observed against deepseek-v4-pro on a fresh session: asked to use `glob`, it wrote exactly
+        // this, with the arguments correct. Untolerated, the markup became the *reply* — a tool call
+        // shown to the person as prose, with no repair asked for and nothing reporting the attempt.
+        const parsed = parseNlt("<action>\nglob\npattern: **/config.ts\n</action>")
+        expect(parsed.intents.length).toBe(1)
+        expect(parsed.intents[0]?.slug).toBe("glob")
+        expect(parsed.intents[0]?.args.pattern).toBe("**/config.ts")
+        expect(parsed.text).toBe("")
+    })
+
+    test("prose before it survives, and the tags do not leak into the reply", () => {
+        const parsed = parseNlt("Let me look for it.\n\n<action>\nglob\npattern: *.ts\n</action>")
+        expect(parsed.text).toBe("Let me look for it.")
+        expect(parsed.intents.length).toBe(1)
+    })
+
+    test("the tags are matched case-insensitively, like ACTION and END already are", () => {
+        expect(parseNlt("<ACTION>\nnow\n</ACTION>").intents[0]?.slug).toBe("now")
+    })
+
+    test("a tag mentioned mid-sentence is left completely alone", () => {
+        // The tolerance is narrow on purpose: the opener has to be alone on its line. Anything looser
+        // would eat a sentence about markup.
+        const prose = "Wrap it in an <action> element like any other tag."
+        expect(parseNlt(prose).text).toBe(prose)
+        expect(parseNlt(prose).intents).toEqual([])
+    })
+
+    test("opened and never named produces no call and no prose", () => {
+        // A block with no slug is not a block. Emitting a call to the empty string would be worse,
+        // and passing the tags through as a reply would be showing protocol debris to a person.
+        const parsed = parseNlt("<action>\n</action>")
+        expect(parsed.intents).toEqual([])
+        expect(parsed.text).toBe("")
+    })
+
+    test("a canonical block is unaffected", () => {
+        const parsed = parseNlt("ACTION: glob\npattern: x\nEND")
+        expect(parsed.intents[0]?.slug).toBe("glob")
+    })
+
+    test("angle brackets around the keyword itself are tolerated", () => {
+        // `<ACTION: glob>` — the third shape the same model produced, wrapped in an `<ebml>` element
+        // whose name means nothing to anyone. Listing tag names cannot keep up with that, so any lone
+        // tag is dropped as protocol debris.
+        const parsed = parseNlt("<ebml>\n<ACTION: glob>\npattern: demo/**/config.ts\n</ebml>")
+        expect(parsed.intents.length).toBe(1)
+        expect(parsed.intents[0]?.slug).toBe("glob")
+        expect(parsed.intents[0]?.args.pattern).toBe("demo/**/config.ts")
+        expect(parsed.text).toBe("")
+    })
+
+    test("a lone tag is dropped and a tag inside a sentence is not", () => {
+        // The trade-off, stated where it can be read: a reply whose entire line is `<div>` loses that
+        // line. No model has written one in three phases of transcripts, and the alternative is
+        // showing a person a wrapper round a tool call that never ran.
+        expect(parseNlt("<ebml>\nhello\n</ebml>").text).toBe("hello")
+        expect(parseNlt("Close it with a </div> tag.").text).toBe("Close it with a </div> tag.")
+    })
+})
+
+describe("the stream filter and the XML near miss", () => {
+    /** One character at a time — the worst case, and what a real stream approximates. */
+    function stream(text: string): string {
+        const filter = createNltStreamFilter()
+        let out = ""
+        for (const char of text) out += filter.push(char)
+        return out + filter.end()
+    }
+
+    test("nothing of an <action> block reaches the screen", () => {
+        // The slug sits on its own line and no block is open yet when it arrives, so the eager
+        // emit had to learn about it: without that, the reply read "glob" directly above its own
+        // tool row. A stream cannot un-emit, which is why the check is before rather than after.
+        expect(stream("<action>\nglob\npattern: *.ts\n</action>")).toBe("")
+    })
+
+    test("prose before an <action> block still reaches the screen", () => {
+        expect(stream("Looking.\n<action>\nglob\npattern: *.ts\n</action>")).toBe("Looking.")
+    })
+
+    test("a canonical block still streams as nothing", () => {
+        expect(stream("ACTION: glob\npattern: x\nEND")).toBe("")
+    })
+
+    test("a tag inside a sentence streams verbatim", () => {
+        expect(stream("Wrap it in an <action> element.")).toBe("Wrap it in an <action> element.")
+    })
+
+    test("nothing of an <ebml>-wrapped <ACTION: slug> block reaches the screen either", () => {
+        // Every shape the parser accepts has to be held by the filter too. A stream cannot un-emit,
+        // so a bracket that reaches the screen a moment before the line is swallowed stays there.
+        expect(stream("<ebml>\n<ACTION: glob>\npattern: x\n</ebml>")).toBe("")
+    })
+})
+
+describe("a tool call in some other protocol's format", () => {
+    test("invented XML markup asks for a repair instead of becoming the reply", () => {
+        // Measured: asked the same question twice on fresh sessions, deepseek-v4-pro invented two
+        // different formats. The set of shapes cannot be enumerated, so the fix is to notice that a
+        // call was attempted rather than to keep adding tolerances.
+        const parsed = parseNlt(
+            '<TOOL_CALL>\n<TOOL>glob</TOOL>\n<PARAM name="pattern">*.ts</PARAM>\n</TOOL_CALL>',
+        )
+        expect(parsed.intents).toEqual([])
+        expect(parsed.malformed?.length).toBe(1)
+        // The repair has to teach the format, since the model clearly does not have it.
+        expect(parsed.malformed?.[0]?.hint).toContain("ACTION:")
+    })
+
+    test("a vendor's own tool tokens count too", () => {
+        // Matched on the bare `DSML` marker rather than its delimiters: those are full-width pipes,
+        // and a pattern written with the ASCII one looks right and matches nothing — which it did.
+        expect(parseNlt("<｜｜DSML｜｜Tool\ncommand: pwd\n/>").malformed?.length).toBe(1)
+    })
+
+    test("a bare JSON call counts too", () => {
+        expect(
+            parseNlt('{"name": "glob", "arguments": {"pattern": "*.ts"}}').malformed?.length,
+        ).toBe(1)
+    })
+
+    test("a step that produced a readable block is never flagged", () => {
+        // A model that got the format right once is not guessing, so the detector only runs when
+        // nothing at all parsed.
+        expect(parseNlt("ACTION: glob\npattern: x\nEND").malformed).toBeUndefined()
+        expect(parseNlt("<action>\nglob\npattern: x\n</action>").malformed).toBeUndefined()
+    })
+
+    test("prose about markup is not a tool call", () => {
+        // Tight on purpose: a closing tag from the tool-ish set is required, so a sentence that
+        // mentions a tag without closing it is left alone — and so is ordinary HTML in a code span.
+        expect(
+            parseNlt("Wrap it in an <action> element like any other tag.").malformed,
+        ).toBeUndefined()
+        expect(parseNlt("Use `<div>` and close it with `</div>`.").malformed).toBeUndefined()
+        expect(parseNlt("The port is 8080.").malformed).toBeUndefined()
     })
 })

@@ -49,6 +49,7 @@ describe("the happy path", () => {
         state = commit(state) // model: preset default
         state = commit(state) // baseUrl: preset default
         state = commit(state) // apiKey: empty is a real answer — supply it later
+        state = commit(state) // system: select step, default "no system access"
         state = commit(state) // dir: derived from name
         expect(state.phase).toBe("confirm")
 
@@ -74,6 +75,7 @@ describe("the happy path", () => {
         expect(stepCounts(state).total).toBe(totalBefore - 1)
         state = commit(state) // model default
         state = commit(state) // baseUrl default
+        state = commit(state) // system default
         state = commit(state) // dir — apiKeyEnv was skipped
         expect(state.phase).toBe("confirm")
         expect(partialOf(state).apiKeyEnv).toBe(undefined)
@@ -123,6 +125,7 @@ describe("back navigation", () => {
         let state = startWizard({ user: "M", name: "Pip", purpose: "x", preset: "ollama" }, {})
         state = commit(state) // model
         state = commit(state) // baseUrl
+        state = commit(state) // system
         state = commit(state) // dir
         expect(state.phase).toBe("confirm")
         state = reduceWizard(state, {
@@ -153,6 +156,7 @@ describe("flags answering everything", () => {
         model: "deepseek-chat",
         baseUrl: "https://api.deepseek.com/v1",
         apiKeyEnv: "MODEL_API_KEY",
+        system: "none",
         dir: "./milo",
     }
 

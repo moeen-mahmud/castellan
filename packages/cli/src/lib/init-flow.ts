@@ -117,8 +117,58 @@ export interface InitAnswers {
      * steps keep saying so.
      */
     readonly apiKey?: string
+    /**
+     * How much of this machine the agent may touch: `none`, `read`, or `full`.
+     *
+     * Asked rather than left as a commented block, because the block was the bug. The generated
+     * manifest named neither the provider nor the tools, so shell access was reachable only by
+     * someone who already knew the field names — which is the opposite of what a generated file is
+     * for. The answer writes real config, permission rules included, and `none` writes the same
+     * block commented out so the shape is still there to uncomment.
+     */
+    readonly system: string
     /** Target directory, as given — the command resolves it against the cwd. */
     readonly dir: string
+}
+
+/**
+ * What system access an agent may be given, and what each answer pins.
+ *
+ * Three rather than two because "can it read my files" and "can it change them" are genuinely
+ * different questions, and collapsing them forces anyone who wants a reviewer or a summariser to
+ * grant a shell they never needed.
+ */
+export const SYSTEM_CHOICES: readonly {
+    readonly value: string
+    readonly label: string
+    readonly pinned: readonly string[]
+    /** Mutating slugs that need an allow rule, or the first untrusted read gates them. */
+    readonly allow: readonly string[]
+}[] = [
+    {
+        value: "none",
+        label: "No — it can talk and remember, nothing else (safest)",
+        pinned: [],
+        allow: [],
+    },
+    {
+        value: "read",
+        label: "Read only — it can read and search files, but change nothing",
+        pinned: ["file_read", "glob", "grep"],
+        // `memory_write` is mutating and a file read taints the turn, so without this the agent
+        // could read one file and then never save a note again for the rest of that turn.
+        allow: ["memory_write"],
+    },
+    {
+        value: "full",
+        label: "Yes — read and write files, and run shell commands",
+        pinned: ["file_read", "file_write", "file_edit", "glob", "grep", "exec"],
+        allow: ["memory_write", "file_write", "file_edit", "exec"],
+    },
+]
+
+export function systemChoice(value: string) {
+    return SYSTEM_CHOICES.find((choice) => choice.value === value)
 }
 
 export type InitStep = keyof InitAnswers
@@ -138,6 +188,7 @@ const STEP_ORDER: readonly InitStep[] = [
     "model",
     "baseUrl",
     "apiKey",
+    "system",
     "dir",
 ]
 
@@ -163,6 +214,16 @@ export interface Question {
      * other.
      */
     readonly optional?: boolean
+    /**
+     * Present when the answer is one of a fixed set, which the renderer draws as a list rather than
+     * a text field.
+     *
+     * On the question rather than hardcoded in the wizard: the preset menu was the only select for
+     * three phases, and "is this the preset step" was written into the reducer, the renderer and the
+     * cursor-prefill in three separate places. A second select had to either repeat all three or
+     * generalise them, and generalising is what stops a third one repeating them again.
+     */
+    readonly options?: readonly { readonly value: string; readonly label: string }[]
 }
 
 /**
@@ -224,8 +285,14 @@ export function nextQuestion(
             case "preset":
                 return {
                     step,
-                    prompt: presetMenu(),
+                    // Short title plus `options`, rather than a prompt with the menu baked into it.
+                    // The menu text was written for a renderer that never used it — the wizard drew
+                    // its own list from PRESETS — so the choices lived in two places and only one of
+                    // them was ever read. One source now, and `system` gets the same treatment for
+                    // free rather than adding a second special case.
+                    prompt: "Model endpoint",
                     fallback: "1",
+                    options: PRESETS.map((preset) => ({ value: preset.id, label: preset.label })),
                 }
             case "model":
                 return { step, prompt: "Model id", fallback: preset?.modelId ?? "" }
@@ -241,6 +308,16 @@ export function nextQuestion(
                     // answer rather than refusing for want of one.
                     fallback: "",
                     optional: true,
+                }
+            case "system":
+                return {
+                    step,
+                    prompt: "Can it act on this computer?",
+                    fallback: "1",
+                    options: SYSTEM_CHOICES.map((choice) => ({
+                        value: choice.value,
+                        label: choice.label,
+                    })),
                 }
             case "dir":
                 return {
@@ -259,11 +336,6 @@ export function nextQuestion(
     }
 
     return undefined
-}
-
-function presetMenu(): string {
-    const lines = PRESETS.map((preset, index) => `  ${index + 1}) ${preset.label}`)
-    return `Model endpoint\n${lines.join("\n")}\nchoice`
 }
 
 export type Answered =
@@ -332,9 +404,111 @@ export function validateAnswer(step: InitStep, raw: string): Answered {
             // an honest 401 on the first turn anyway. Empty means "not now".
             return { ok: true, value }
 
+        case "system": {
+            const byNumber = SYSTEM_CHOICES[Number(value) - 1]
+            const chosen = byNumber ?? systemChoice(value.toLowerCase())
+            return chosen === undefined
+                ? {
+                      ok: false,
+                      reason: `pick 1-${SYSTEM_CHOICES.length}, or a name: ${SYSTEM_CHOICES.map((c) => c.value).join(", ")}.`,
+                  }
+                : { ok: true, value: chosen.value }
+        }
+
         case "dir":
             return value === "" ? { ok: false, reason: "cannot be empty." } : { ok: true, value }
     }
+}
+
+/**
+ * The `provider`/`pinned` half of the answer to "can it act on this computer?".
+ *
+ * `none` still writes the block, commented, with the exact lines to uncomment. That is the whole
+ * point of the change: the previous template mentioned neither the provider nor a single tool slug,
+ * so the only way to reach shell access was to already know the field names — and a generated file
+ * that hides its own options is not doing the job a generated file exists to do.
+ */
+function systemBlock(system: string): readonly string[] {
+    const choice = systemChoice(system) ?? SYSTEM_CHOICES[0]
+    if (choice === undefined || choice.pinned.length === 0) {
+        return [
+            `  # ── acting on this computer ──`,
+            `  # Uncomment to let this agent read and search files. Add file_write, file_edit and exec`,
+            `  # for an agent that can change things and run commands — and see the policy block below,`,
+            `  # which is what keeps that from meaning "anything at all".`,
+            `  # provider: system`,
+            `  # pinned:`,
+            `  #   - file_read`,
+            `  #   - glob`,
+            `  #   - grep`,
+        ]
+    }
+
+    const shell = choice.pinned.includes("exec")
+    return [
+        `  # ── acting on this computer ──`,
+        shell
+            ? `  # This agent can read and change files and run shell commands. What it may run is decided`
+            : `  # This agent can read and search files and change nothing. Reading is still not nothing:`,
+        shell
+            ? `  # by the policy block below — narrow it, and prefer the file tools over the shell, whose`
+            : `  # anything it reads can carry text a stranger wrote, which is why the write gate exists.`,
+        ...(shell ? [`  # target a rule cannot see inside a command string.`] : []),
+        `  provider: system`,
+        `  pinned:`,
+        ...choice.pinned.map((slug) => `    - ${slug}`),
+    ]
+}
+
+/**
+ * The permission rules, and the `allow` entries without which the agent stops working mid-turn.
+ *
+ * Those entries look like they weaken the gate and are what makes it usable: a mutating call in a
+ * turn that has already read a file needs a rule naming the tool, and a blanket `mode` is the
+ * absence of one. Generated with the comment explaining what removing them costs, because the
+ * alternative — a fresh agent that reads one file and then refuses to save a note — reads as a
+ * broken runtime rather than as a security setting.
+ */
+function policyBlock(system: string): readonly string[] {
+    const choice = systemChoice(system) ?? SYSTEM_CHOICES[0]
+    const allow = choice?.allow ?? []
+    const shell = choice?.pinned.includes("exec") === true
+
+    const lines = [
+        `  # ── which calls run, which ask, and which are refused ──`,
+        `  # deny wins over allow, first match, and being more specific never reorders that. A rule`,
+        `  # naming a primary content field — exec(command:rm *) — is refused at load, because a`,
+        `  # compound command defeats it and a rule that can be defeated reads as protection.`,
+        `  #`,
+        `  # Below every setting here is a floor that cannot be lowered: rm -rf / and rm -rf ~,`,
+        `  # --no-preserve-root, fork bombs, mkfs, and dd to a block device are never permitted.`,
+        `  policy:`,
+        `    mode: allow                 # allow | ask | deny — for calls no rule mentions`,
+    ]
+
+    if (allow.length === 0) {
+        return [...lines, `    allow: []`, `    deny: []`, `    onNoApprover: deny`]
+    }
+
+    return [
+        ...lines,
+        `    # Authorises these even once untrusted content has entered the turn. Remove one and that`,
+        `    # tool stops working for the rest of any turn that has read a file — which is the gate`,
+        `    # doing its job, and worth choosing on purpose rather than discovering.`,
+        `    allow:`,
+        ...allow.map((slug) => `      - "${slug}"`),
+        ...(shell
+            ? [
+                  `    deny:`,
+                  `      # Narrow these to taste. A pattern matches the command, and every part of a`,
+                  `      # compound must match for an allow — so "git status && rm -rf x" is not allowed`,
+                  `      # by exec(git status:*).`,
+                  `      - "exec(rm *)"`,
+                  `      - "exec(sudo *)"`,
+              ]
+            : [`    deny: []`]),
+        `    onNoApprover: deny          # what "ask" means with nobody to ask — a schedule, a pipe`,
+    ]
 }
 
 export interface GeneratedFile {
@@ -589,9 +763,12 @@ function manifestFor(answers: InitAnswers): string {
         `    max: 24`,
         `    reserveWrite: 6   # slots held for mutating tools so reads cannot starve writes`,
         ``,
+        ...systemBlock(answers.system),
+        ``,
         `  # ── a remote provider (Composio) ──`,
         `  # Run \`${BRAND.slug} tools ./agent.yaml --warm\` once before starting: resolution happens`,
         `  # during boot, where no network call is permitted, and a cold cache fails the load.`,
+        `  # One provider at a time until tools.providers lands; swapping means replacing the block above.`,
         `  # provider: composio`,
         `  # providerConfig:`,
         `  #   apiKeyEnv: COMPOSIO_API_KEY   # the variable's name, never the key`,
@@ -605,12 +782,19 @@ function manifestFor(answers: InitAnswers): string {
         `  search:`,
         `    enabled: false`,
         ``,
-        `  # ── Phase 3.6: web search and page fetching — untrusted output is delimited as data ──`,
+        ...policyBlock(answers.system),
+        ``,
+        `  # ── the write gate ──`,
+        `  # A tool whose output came from outside this conversation taints the turn. After that, a`,
+        `  # tool that CHANGES something needs explicit authorisation — one of the allow rules above,`,
+        `  # or a live approval. "refuse" never prompts, which is what makes it right for a schedule.`,
+        `  untrusted:`,
+        `    onMutate: refuse            # refuse | confirm | allow`,
+        ``,
+        `  # ── web search and page fetching — arrives with the rest of Phase 3.6 ──`,
         `  # web:`,
         `  #   backend: tavily             # tavily | brave | exa`,
         `  #   apiKeyEnv: TAVILY_API_KEY`,
-        `  # untrusted:`,
-        `  #   onMutate: refuse            # refuse | confirm | allow`,
         ``,
         rule("limits"),
         `limits:`,

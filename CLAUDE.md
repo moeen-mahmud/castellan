@@ -376,6 +376,34 @@ Never claim a performance property without a number in `evals/` and a script to 
   pipes — `tools-system` hands the child a file descriptor and never buffers a byte. And `detached:
   true` is not about outliving the process: it creates a process group, so `kill(-pid)` reaches every
   stage of `sh -c "a | b | c"` instead of orphaning two of them.
+- **Protected paths are enforced in the file tools, not in the policy engine, and that ordering is the
+  point.** A `policy.allow` rule cannot reach past them because the refusal is not the engine's to
+  make — and the set holds `agent.yaml`, `SOUL.md`, `AGENTS.md`, `POLICY.md` and the policy file, so a
+  rule authorising a write to one would be a rule authorising its own replacement. `USER.md` and
+  `MEMORY.md` stay writable: they are the tier `memory_write` exists for. **None of it binds `exec`** —
+  `echo x > SOUL.md` carries its target inside a shell string nothing can inspect.
+- **`glob` and `grep` stay separate, and `file_edit` matches text rather than a line number.** One
+  `search_files(target:…)` saves a catalogue slot and costs a decision, which is the two-hop shape
+  small models fail. A line number is a fact about a file the model last saw several turns ago; an
+  exact string carries its own proof, and two matches is a *failure* rather than a coin toss that
+  reports success while editing the wrong line.
+- **A model will invent a tool-call format, and more than one.** Measured on three fresh sessions with
+  an eight-tool catalogue, deepseek-v4-pro produced `<action>…</action>`, `<TOOL_CALL><TOOL>…`, and
+  `<ACTION: glob>` inside an `<ebml>` element — arguments correct every time. So the parser drops any
+  lone XML tag as debris and sets `ParsedOutput.malformed` on anything still unreadable, which earns
+  one repair. Untolerated this was the worst shape available: the markup became the **reply**, no
+  repair was asked for, no event fired, and the turn was recorded as a clean answer. Do not "simplify"
+  this by adding tolerances one shape at a time — the set is not enumerable, which is why the backstop
+  exists.
+- **Every shape the parser swallows, `mightBecomeStructure` must also hold.** A stream cannot un-emit,
+  so a bracket that reaches the screen a moment before its line is swallowed stays there — which is
+  how `<ebml>` and a bare slug line both leaked into a reply before the lookahead learned about them.
+- **`init` must generate what the current phase actually supports.** It shipped a manifest with no
+  `system` provider, no `policy` block, and `untrusted.onMutate` commented under a "Phase 3.6" heading
+  for something that already existed — so the only way to reach shell access was to know the field
+  names already. A generated file that hides its own options is not doing the job it exists for.
+  `--system none|read|full` is the question; the generated `policy.allow` entries are what stop a
+  fresh agent reading one file and then refusing to save a note for the rest of the turn.
 - **A `ChatMessage` is no longer just `{role, content}`.** Under the `native` dialect it carries
   `toolCalls` or `toolCallId`, and every layer that copies a message must copy those too — the wire
   mapper in `chat-completions.ts`, the `message` field on `ContextBlock`, and the store's
