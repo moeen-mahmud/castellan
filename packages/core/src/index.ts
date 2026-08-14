@@ -237,6 +237,20 @@ export {
     toolContext,
 } from "./tools/local.ts"
 export {
+    DEFAULT_POLICY,
+    decidePolicy,
+    NEVER_STRIPPED,
+    type ParsedPolicy,
+    type PolicyConfig,
+    type PolicyDecision,
+    type PolicyEffect,
+    type PolicyMode,
+    type PolicyQuery,
+    parsePolicy,
+    resolveWithoutApprover,
+    subcommands,
+} from "./tools/policy.ts"
+export {
     applyBudget,
     DEFAULT_TOOL_BUDGET,
     type DroppedTool,
@@ -244,6 +258,17 @@ export {
     type ToolBudget,
     ToolRegistry,
 } from "./tools/registry.ts"
+export {
+    GATE_CODE,
+    gatedResult,
+    gateRefusalText,
+    neutraliseMarkers,
+    type OnMutate,
+    renderTrusted,
+    type Trust,
+    untrustedFence,
+    wrapUntrusted,
+} from "./tools/trust.ts"
 export type {
     FieldError,
     JsonSchemaNode,

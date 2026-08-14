@@ -20,6 +20,13 @@
  * **A failed tool is an observation, not an exception.** The model needs to see what went wrong to
  * do anything about it, so the error text goes back as the observation and the turn continues. Only
  * a broken harness throws out of here.
+ *
+ * **The write gate lives here rather than in the turn**, and that placement is load-bearing.
+ * Untrusted content and a mutating call can arrive in the *same step* — a model may write
+ * `web_fetch` and `memory_write` together. Groups run serially and a mutating call is alone in its
+ * group, so by the time the write starts the fetch has already returned; a gate reading a flag
+ * computed before this function was called would let that straight through. The taint therefore
+ * accumulates inside the loop, seeded by what earlier steps saw.
  */
 
 import { estimateTokens } from "../context/tokens.ts"
@@ -28,6 +35,7 @@ import type { EventBus } from "../events/bus.ts"
 import type { EventContext } from "../events/types.ts"
 import { coerceArgs } from "./coerce.ts"
 import type { ToolRegistry } from "./registry.ts"
+import { gatedResult } from "./trust.ts"
 import type { FieldError, Tool, ToolContext, ToolIntent, ToolResult } from "./types.ts"
 
 export interface ExecuteInput {
@@ -41,6 +49,17 @@ export interface ExecuteInput {
     readonly maxParallel: number
     /** Above this, an observation is cut to head and tail with a visible marker. */
     readonly observationMaxTokens: number
+    /**
+     * True when an earlier step in this turn produced untrusted output.
+     *
+     * Required rather than optional: a caller who forgets to wire the gate should get a compile
+     * error, not a silently open one.
+     */
+    readonly untrustedInTurn: boolean
+    /** `tools.untrusted.onMutate`. `confirm` needs an approver and is resolved before it reaches here. */
+    readonly onMutate: "refuse" | "allow"
+    /** Which slug tainted the turn, so the refusal can name a cause rather than a policy. */
+    readonly untrustedSource?: string
 }
 
 export interface ExecuteOutcome {
@@ -159,10 +178,53 @@ export async function executeIntents(input: ExecuteInput): Promise<ExecuteOutcom
     }
 
     const results: ToolResult[] = []
+    let tainted = input.untrustedInTurn
+    let source = input.untrustedSource ?? "an earlier tool call"
+
     for (const group of batch(planned, input.maxParallel)) {
         // `all` rather than `allSettled`: runOne never rejects, so a rejection here is a bug in the
         // harness and should surface as one instead of being folded into a tool failure.
-        results.push(...(await Promise.all(group.map((entry) => runOne(entry, input)))))
+        const settled = await Promise.all(
+            group.map((entry) => {
+                // Filtered per entry rather than per group. `batch` puts a mutating call alone
+                // today, and the gate must not quietly depend on that staying true. Position is
+                // preserved either way, so `results` still answers every announced call in order —
+                // which the native protocol requires.
+                const blocked = tainted && input.onMutate === "refuse" && entry.tool.spec.mutating
+                if (!blocked) return runOne(entry, input)
+
+                const gated = gatedResult(
+                    { callId: entry.intent.callId, slug: entry.tool.spec.slug },
+                    source,
+                    input.onMutate,
+                )
+                // The only event a gated call emits. No `tool.call` and no `tool.result`: nothing
+                // ran, and a consumer pairing the two would otherwise hold an orphan forever.
+                input.bus.emit(
+                    "tool.gated",
+                    {
+                        slug: gated.slug,
+                        callId: gated.callId,
+                        reason: `${source} returned untrusted content earlier in this turn.`,
+                        policy: input.onMutate,
+                    },
+                    input.eventContext,
+                )
+                return Promise.resolve(gated)
+            }),
+        )
+        results.push(...settled)
+
+        // No `ok` guard. A failed untrusted call still lands upstream bytes in the context, because
+        // `toolFailed` interpolates the cause's own message into the observation — and for an HTTP
+        // tool that message routinely carries a fragment of the response body.
+        if (!tainted) {
+            const first = settled.find((result) => result.trust === "untrusted")
+            if (first !== undefined) {
+                tainted = true
+                source = first.slug
+            }
+        }
     }
 
     return { results, repair: [] }
@@ -219,6 +281,11 @@ async function runOne(entry: PlannedCall, input: ExecuteInput): Promise<ToolResu
             latencyMs: Math.round(performance.now() - started),
             bytes: output.length,
             truncated: capped.truncated,
+            // Unreachable for anything that came through a `ToolRegistry` — every tool there has
+            // been normalised — but `ToolSpec.trust` is optional in the type, so the fallback has to
+            // exist. It is `trusted` because the only specs that bypass the registry are ones core
+            // itself constructed.
+            trust: tool.spec.trust ?? "trusted",
         }
         input.bus.emit(
             "tool.result",
@@ -229,6 +296,7 @@ async function runOne(entry: PlannedCall, input: ExecuteInput): Promise<ToolResu
                 latencyMs: result.latencyMs,
                 bytes: result.bytes,
                 truncated: result.truncated,
+                trust: result.trust,
             },
             input.eventContext,
         )

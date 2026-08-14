@@ -161,3 +161,27 @@ test("every command in the table is wired to an implementation", () => {
         expect(entry).toContain(`case "${command.name}"`)
     }
 })
+
+test("an event a person must see is handled on BOTH output paths", () => {
+    // The two paths subscribe differently, and that asymmetry is a real trap. The rich path uses
+    // `bus.on("*")`, so a new event type reaches the reducer for free — and falls into its
+    // `default` case, silently doing nothing. The plain path uses named subscriptions, so the same
+    // event is simply absent. Either way the failure is invisible, which is the worst shape for a
+    // blocked write. Pinned rather than left to vigilance.
+    const transcript = FILES.find((file) => file.path === "transcript.ts")?.text ?? ""
+    const plain = FILES.find((file) => file.path === "run.ts")?.text ?? ""
+
+    for (const type of ["tool.gated"]) {
+        expect(transcript).toContain(`case "${type}"`)
+        expect(plain).toContain(`runtime.bus.on("${type}"`)
+    }
+})
+
+test("a blocked write is reported even when tool rows are suppressed", () => {
+    // `showRows` hides tool chatter in one-shot and --quiet runs, because something is parsing the
+    // output. A gate refusal is the exception: it means the run did less than it was asked to.
+    const plain = FILES.find((file) => file.path === "run.ts")?.text ?? ""
+    const handler = plain.slice(plain.indexOf('runtime.bus.on("tool.gated"'))
+    const body = handler.slice(0, handler.indexOf("}),"))
+    expect(body.includes("showRows")).toBe(false)
+})

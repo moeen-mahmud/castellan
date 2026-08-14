@@ -64,6 +64,13 @@ export interface ToolRuntime {
      * declared anywhere writable, and the tool falls back to the agent's own directory. */
     readonly writeTarget?: WorkspaceWriteTarget
     readonly observationMaxTokens: number
+    /**
+     * What to do when untrusted content is in the turn and the model asks for a mutating tool.
+     *
+     * Resolved once at agent construction, like `writeTarget`. `confirm` is settled before it gets
+     * here — it needs an approver, which is a question about the front end rather than the loop.
+     */
+    readonly untrustedOnMutate: "refuse" | "allow"
     /** Injected so a tool that reads the clock is testable. */
     readonly now?: () => Date
 }
@@ -180,6 +187,16 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     let pendingWork = false
     /** A mutating tool succeeded. Its effect happened, whatever the turn's outcome turns out to be. */
     let sideEffects = false
+    /**
+     * Untrusted output reached this turn, and which tool brought it.
+     *
+     * Turn-scoped by decision 4.26: the injected text stays in the context influencing every later
+     * step, so clearing it between steps would gate the wrong thing. It does *not* survive into the
+     * next turn — a known, deliberate boundary, since a taint that outlives a human message is a
+     * different control and the human message is what a `confirm` policy consults.
+     */
+    let untrustedSeen = false
+    let untrustedSource: string | undefined
 
     try {
         const history: ChatMessage[] = [...input.history]
@@ -340,12 +357,25 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
                           timeoutMs: input.limits.toolTimeoutMs,
                           maxParallel: input.limits.maxParallelTools,
                           observationMaxTokens: tools.observationMaxTokens,
+                          untrustedInTurn: untrustedSeen,
+                          onMutate: tools.untrustedOnMutate,
+                          ...(untrustedSource === undefined ? {} : { untrustedSource }),
                       })
 
             if (outcome.results.some((result) => result.ok)) {
                 sideEffects ||= outcome.results.some(
                     (result) => result.ok && tools.registry.resolve(result.slug).spec.mutating,
                 )
+            }
+
+            // Seeds the next step's gate. No `ok` guard, for the same reason the executor has none:
+            // a failed untrusted call still carries upstream text into the context.
+            if (!untrustedSeen) {
+                const first = outcome.results.find((result) => result.trust === "untrusted")
+                if (first !== undefined) {
+                    untrustedSeen = true
+                    untrustedSource = first.slug
+                }
             }
 
             if (outcome.repair.length > 0) {

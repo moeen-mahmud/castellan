@@ -36,6 +36,7 @@
 import { estimateTokens } from "../../context/tokens.ts"
 import { nativeToolNameInvalid } from "../../errors.ts"
 import type { ChatMessage, ToolDefinition } from "../../model/provider.ts"
+import { renderTrusted } from "../trust.ts"
 import type { FieldError, ToolIntent, ToolSpec } from "../types.ts"
 import {
     type ParsedOutput,
@@ -220,9 +221,13 @@ export const nativeDialect: ToolDialect = {
         // because prose is its only channel; here the protocol itself says an assistant turn follows
         // the tool messages, and repeating an instruction after every observation would spend tokens
         // telling the model something the API already told it.
+        //
+        // `renderTrusted` is shared with NLT so the two cannot delimit the same bytes differently.
+        // There is no per-message header here to carry a "blocked" state, and none is needed: the
+        // refusal text opens by saying the call was not run, identically under both dialects.
         return results.map((result) => ({
             role: "tool",
-            content: result.output.trim() === "" ? "(no output)" : result.output.trimEnd(),
+            content: renderTrusted(result),
             toolCallId: result.callId,
         }))
     },

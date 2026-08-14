@@ -25,6 +25,7 @@
 import type { ContextBlock } from "../../context/blocks.ts"
 import { SLOT } from "../../context/blocks.ts"
 import { estimateMessageTokens } from "../../context/tokens.ts"
+import { renderTrusted } from "../trust.ts"
 import type { JsonSchemaNode, ToolIntent, ToolResult, ToolSpec } from "../types.ts"
 import type { ParsedOutput, StreamFilter, ToolDialect } from "./dialect.ts"
 
@@ -516,9 +517,13 @@ function block(content: string): ContextBlock {
 }
 
 function renderObservationText(result: ToolResult): string {
-    const head = `OBSERVATION ${result.slug} — ${result.ok ? "ok" : "failed"}`
-    const body = result.output.trim() === "" ? "(no output)" : result.output.trimEnd()
-    return `${head}\n${body}`
+    // Three states, not two. "failed" invites a retry, and a gated call is not going to succeed on
+    // the next attempt — a truthful-but-retryable refusal once made a real model retry until the
+    // step budget ran out (see the note on `memory_write`).
+    const state = result.gated === true ? "blocked" : result.ok ? "ok" : "failed"
+    // `renderTrusted` owns the fence and the `(no output)` placeholder, so this dialect and `native`
+    // cannot end up delimiting the same bytes two different ways.
+    return `OBSERVATION ${result.slug} — ${state}\n${renderTrusted(result)}`
 }
 
 export const nltDialect: ToolDialect = {

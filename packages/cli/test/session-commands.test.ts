@@ -113,11 +113,14 @@ describe("/tools", () => {
         ],
     }
 
-    test("reports the dialect, the count, and what slot 1 costs every turn", () => {
+    test("reports the count, the call format, and what slot 1 costs every turn", () => {
         const report = toolsReport(VIEW)
-        expect(report).toContain("dialect nlt")
         expect(report).toContain("2 tools")
+        expect(report).toContain("call format nlt")
         expect(report).toContain("412 tokens")
+        // "dialect nlt" led this line once and read as a third tool. The count leads now, and the
+        // protocol is labelled rather than named, because the name means nothing to a reader.
+        expect(report.includes("dialect nlt")).toBe(false)
     })
 
     test("marks a mutating tool as a write", () => {

@@ -164,6 +164,12 @@ export class Agent {
                 ...(requestTools === undefined ? {} : { requestTools }),
                 wireTokens: requestTools === undefined ? 0 : nativeWireTokens(requestTools),
                 observationMaxTokens: this.manifest.context.observationMaxTokens,
+                // Narrowed rather than cast. `confirm` needs an approver, which the loop has no way
+                // to reach — resolving it to `refuse` here is the honest reading of "ask someone"
+                // when there is nobody, and a fourth policy would be a compile error rather than a
+                // silent fallthrough.
+                untrustedOnMutate:
+                    this.manifest.tools.untrusted.onMutate === "allow" ? "allow" : "refuse",
             }
         }
     }

@@ -164,7 +164,7 @@ describe("tiers", () => {
 
 describe("budgets", () => {
     test("a file over its own budget fails the load and names the file", () => {
-        const dir = workspaceDir({ "AGENT.md": "---\nbudget: 5\n---\n" + "word ".repeat(200) })
+        const dir = workspaceDir({ "AGENT.md": `---\nbudget: 5\n---\n${"word ".repeat(200)}` })
         const error = caught(() => load(dir, { static: ["AGENT.md"] }))
         expect(error.code).toBe("workspace_budget_exceeded")
         expect(error.message.includes("AGENT.md")).toBe(true)
@@ -180,7 +180,7 @@ describe("budgets", () => {
 
     test("the tier total is checked even when every file is individually fine", () => {
         const dir = workspaceDir({
-            "A.md": "---\nbudget: 400\n---\n" + "word ".repeat(1200),
+            "A.md": `---\nbudget: 400\n---\n${"word ".repeat(1200)}`,
             "B.md": "---\nbudget: 400\n---\nshort",
         })
         const error = caught(() =>

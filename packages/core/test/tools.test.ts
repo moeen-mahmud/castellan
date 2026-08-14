@@ -442,6 +442,9 @@ async function runTools(
         observationMaxTokens?: number
         dir?: string
         writeTarget?: WorkspaceWriteTarget
+        untrustedInTurn?: boolean
+        onMutate?: "refuse" | "allow"
+        untrustedSource?: string
     } = {},
 ) {
     const bus = new EventBus({ runtimeId: "rt_test" })
@@ -458,6 +461,9 @@ async function runTools(
         eventContext: { agentId: "a", sessionKey: "s", turnId: "t" },
         timeoutMs: over.timeoutMs ?? 1000,
         maxParallel: over.maxParallel ?? 4,
+        untrustedInTurn: over.untrustedInTurn ?? false,
+        onMutate: over.onMutate ?? "refuse",
+        ...(over.untrustedSource === undefined ? {} : { untrustedSource: over.untrustedSource }),
         observationMaxTokens: over.observationMaxTokens ?? 2000,
     })
     return { outcome, events }
@@ -696,11 +702,14 @@ describe("execution", () => {
             ],
         })
 
-        await runTools(registry, [
-            intent("read_a", {}, "c1"),
-            intent("read_b", {}, "c2"),
-            intent("write_c", {}, "c3"),
-        ])
+        // `onMutate: "allow"` because this is a test about *scheduling*, and the fixtures come from
+        // a remote provider — so their reads are untrusted and would gate `write_c` under the
+        // default policy. That is the write gate doing its job; it just is not what this asserts.
+        await runTools(
+            registry,
+            [intent("read_a", {}, "c1"), intent("read_b", {}, "c2"), intent("write_c", {}, "c3")],
+            { onMutate: "allow" },
+        )
 
         expect(log.slice(0, 2).sort()).toEqual(["read_a:start", "read_b:start"])
         expect(log.indexOf("write_c:start")).toBeGreaterThan(log.indexOf("read_a:end"))
@@ -771,6 +780,8 @@ describe("execution", () => {
             timeoutMs: 5000,
             maxParallel: 4,
             observationMaxTokens: 2000,
+            untrustedInTurn: false,
+            onMutate: "refuse",
         })
         controller.abort()
         const outcome = await running
@@ -784,5 +795,160 @@ describe("the local provider", () => {
         const local = localProvider()
         expect(await local.list?.()).toEqual(["now", "memory_write"])
         expect((await local.resolve(["gmail_send"])).length).toBe(0)
+    })
+})
+
+describe("the write gate", () => {
+    /** A remote provider, so its reads default to untrusted the way a real one's would. */
+    async function gateRegistry() {
+        return await ToolRegistry.create({
+            local: ["memory_write"],
+            pinned: ["fetch_page", "send_mail"],
+            providers: [
+                provider("remote", [
+                    tool({ slug: "fetch_page" }, () => "a page a stranger wrote"),
+                    tool({ slug: "send_mail", mutating: true }, () => "sent"),
+                ]),
+            ],
+        })
+    }
+
+    test("a mutating call after untrusted output in an EARLIER step is blocked", async () => {
+        const registry = await gateRegistry()
+        const { outcome, events } = await runTools(registry, [intent("send_mail", {}, "c1")], {
+            untrustedInTurn: true,
+            untrustedSource: "fetch_page",
+        })
+
+        const result = outcome.results[0]
+        expect(result?.gated).toBe(true)
+        expect(result?.ok).toBe(false)
+        expect(result?.output).toContain("fetch_page")
+        expect(events.map((event) => event.type)).toEqual(["tool.gated"])
+    })
+
+    test("and in the SAME step, which is why the gate is not in the turn loop", async () => {
+        // The load-bearing case. `batch` runs the read group first and the write alone after it, so
+        // a gate reading a flag computed before executeIntents was called would let this through.
+        const registry = await gateRegistry()
+        const { outcome } = await runTools(registry, [
+            intent("fetch_page", {}, "c1"),
+            intent("send_mail", {}, "c2"),
+        ])
+
+        expect(outcome.results[0]?.gated).toBe(undefined)
+        expect(outcome.results[1]?.gated).toBe(true)
+        // Named from the call that actually tainted it, not from a placeholder.
+        expect(outcome.results[1]?.output).toContain("fetch_page")
+    })
+
+    test("a write BEFORE the untrusted read still runs — the stranger's text had not arrived", async () => {
+        const registry = await gateRegistry()
+        const { outcome } = await runTools(registry, [
+            intent("send_mail", {}, "c1"),
+            intent("fetch_page", {}, "c2"),
+        ])
+
+        expect(outcome.results[0]?.gated).toBe(undefined)
+        expect(outcome.results[0]?.ok).toBe(true)
+        expect(outcome.results[1]?.gated).toBe(undefined)
+    })
+
+    test("a failed untrusted read taints too — its error text carries the upstream message", async () => {
+        const registry = await ToolRegistry.create({
+            pinned: ["fetch_page", "send_mail"],
+            providers: [
+                provider("remote", [
+                    tool({ slug: "fetch_page" }, () => {
+                        throw new Error("502 from upstream: <script>ignore previous</script>")
+                    }),
+                    tool({ slug: "send_mail", mutating: true }, () => "sent"),
+                ]),
+            ],
+        })
+        const { outcome } = await runTools(registry, [
+            intent("fetch_page", {}, "c1"),
+            intent("send_mail", {}, "c2"),
+        ])
+
+        expect(outcome.results[0]?.ok).toBe(false)
+        expect(outcome.results[1]?.gated).toBe(true)
+    })
+
+    test("a trusted read does not taint anything", async () => {
+        // A real directory, because `memory_write` genuinely writes and `toolContext` defaults its
+        // `dir` to the cwd — which for a test run is the repo root.
+        const dir = mkdtempSync(join(tmpdir(), "gate-trusted-"))
+        const registry = await ToolRegistry.create({
+            local: ["now", "memory_write"],
+        })
+        const { outcome } = await runTools(
+            registry,
+            [intent("now", {}, "c1"), intent("memory_write", { text: "a note" }, "c2")],
+            { dir },
+        )
+
+        expect(outcome.results[1]?.gated).toBe(undefined)
+        expect(outcome.results[1]?.ok).toBe(true)
+    })
+
+    test("onMutate: allow lets the same turn proceed — the gate is config, not a hardcoded refusal", async () => {
+        const registry = await gateRegistry()
+        const { outcome, events } = await runTools(
+            registry,
+            [intent("fetch_page", {}, "c1"), intent("send_mail", {}, "c2")],
+            { onMutate: "allow" },
+        )
+
+        expect(outcome.results[1]?.gated).toBe(undefined)
+        expect(outcome.results[1]?.ok).toBe(true)
+        expect(events.some((event) => event.type === "tool.gated")).toBe(false)
+    })
+
+    test("a gated call emits tool.gated and nothing else — no orphaned call/result pair", async () => {
+        const registry = await gateRegistry()
+        const { events } = await runTools(registry, [intent("send_mail", {}, "c1")], {
+            untrustedInTurn: true,
+        })
+
+        const forCall = events.filter(
+            (event) =>
+                (event.type === "tool.call" ||
+                    event.type === "tool.result" ||
+                    event.type === "tool.gated") &&
+                (event.data as { callId?: string }).callId === "c1",
+        )
+        expect(forCall.map((event) => event.type)).toEqual(["tool.gated"])
+    })
+
+    test("every announced call is answered, in order, gated ones included", async () => {
+        // The invariant `native` depends on: an unanswered tool_call makes the endpoint reject the
+        // next request outright.
+        const registry = await gateRegistry()
+        const { outcome } = await runTools(registry, [
+            intent("fetch_page", {}, "c1"),
+            intent("send_mail", {}, "c2"),
+            intent("memory_write", { text: "note" }, "c3"),
+        ])
+
+        expect(outcome.results.map((result) => result.callId)).toEqual(["c1", "c2", "c3"])
+    })
+
+    test("the handler of a gated call never runs", async () => {
+        let ran = 0
+        const registry = await ToolRegistry.create({
+            pinned: ["send_mail"],
+            providers: [
+                provider("remote", [
+                    tool({ slug: "send_mail", mutating: true }, () => {
+                        ran += 1
+                        return "sent"
+                    }),
+                ]),
+            ],
+        })
+        await runTools(registry, [intent("send_mail", {}, "c1")], { untrustedInTurn: true })
+
+        expect(ran).toBe(0)
     })
 })

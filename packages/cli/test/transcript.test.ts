@@ -297,6 +297,7 @@ describe("tool rows", () => {
             event: ev("tool.result", {
                 slug,
                 callId: "c1",
+                trust: "trusted",
                 ok,
                 latencyMs: 12,
                 bytes: 40,
@@ -350,6 +351,27 @@ describe("tool rows", () => {
         expect(state.items[0]?.role).toBe("note")
         expect(state.items[0]?.text).toContain("memory_write")
         expect(state.items[0]?.text).toContain("asking the model again")
+    })
+
+    test("a blocked write is a visible note naming the policy that decided", () => {
+        // Invisible would be the worst outcome here: the run did less than it was asked to, and the
+        // person has to be able to see why without going looking.
+        const state = run([
+            START,
+            {
+                kind: "event",
+                event: ev("tool.gated", {
+                    slug: "memory_write",
+                    callId: "c1",
+                    reason: "web_fetch returned untrusted content earlier in this turn.",
+                    policy: "refuse",
+                }),
+            },
+        ])
+        expect(state.items[0]?.role).toBe("note")
+        expect(state.items[0]?.text).toContain("memory_write — blocked")
+        expect(state.items[0]?.text).toContain("web_fetch")
+        expect(state.items[0]?.text).toContain("refuse")
     })
 
     test("a cancellation already requested survives a tool starting", () => {

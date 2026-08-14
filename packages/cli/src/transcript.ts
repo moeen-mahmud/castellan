@@ -135,6 +135,16 @@ function reduceEvent(state: TranscriptState, event: AnyEvent): TranscriptState {
             )
         }
 
+        case "tool.gated":
+            // Deliberately visible. A blocked write is the one tool outcome a person must not have
+            // to go looking for — and it is a `note` rather than an `error` because the wire spec is
+            // explicit that this is not one: the turn continues and the model reports back.
+            return append(
+                state,
+                "note",
+                `${event.data.slug} — blocked: ${event.data.reason} (tools.untrusted.onMutate is ${event.data.policy})`,
+            )
+
         case "tool.repair":
             // A silent repair is indistinguishable from a slow turn, and it costs a whole step.
             return append(

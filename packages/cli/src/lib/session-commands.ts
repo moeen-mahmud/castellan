@@ -189,7 +189,7 @@ export function toolsView(agent: AgentToolsSource): ToolsView {
  */
 export function toolsReport(view: ToolsView): string {
     if (view.tools.length === 0) {
-        return `no tools — this agent pinned none, so the model can only reply. Add them under tools.local or tools.pinned. (dialect ${view.dialect})`
+        return `no tools — this agent pinned none, so the model can only reply. Add them under tools.local or tools.pinned. (call format ${view.dialect})`
     }
 
     const pad = view.tools.reduce((longest, tool) => Math.max(longest, tool.slug.length), 0)
@@ -198,7 +198,10 @@ export function toolsReport(view: ToolsView): string {
             `  ${tool.slug.padEnd(pad)}  ${tool.mutating ? "write" : "read "}  ${tool.summary}`,
     )
     return [
-        `dialect ${view.dialect} · ${view.tools.length} tool${view.tools.length === 1 ? "" : "s"} · catalogue ${view.catalogueTokens} tokens, on every turn`,
+        // "dialect nlt" led the line once and read as a third tool — and asked about it, the model
+        // guessed NLTK, because the dialect is harness plumbing it is never told the name of. The
+        // count leads; the protocol is labelled as what it is.
+        `${view.tools.length} tool${view.tools.length === 1 ? "" : "s"} · call format ${view.dialect} · catalogue ${view.catalogueTokens} tokens, on every turn`,
         ...rows,
     ].join("\n")
 }

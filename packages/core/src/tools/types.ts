@@ -13,6 +13,7 @@
  */
 
 import type { ErrorDetail } from "../errors.ts"
+import type { Trust } from "./trust.ts"
 
 export type JsonType = "string" | "number" | "integer" | "boolean" | "array" | "object"
 
@@ -52,6 +53,16 @@ export interface ToolSpec {
     readonly whenNotToUse?: string
     /** Mutating tools serialise, hold reserved budget slots, and are never retried. */
     readonly mutating: boolean
+    /**
+     * Whether this tool's output may contain text a stranger wrote.
+     *
+     * Optional here and **normalised by the registry**, which defaults anything a remote provider
+     * resolved to `untrusted`. Optional rather than required on purpose: a provider package that
+     * forgot the field would otherwise ship trusted, and decision 4.25's whole premise is that a
+     * provider cannot know what its upstream returns. Declaring `trusted` explicitly is honoured
+     * and warned about, so opting out of the boundary is visible at load.
+     */
+    readonly trust?: Trust
     /** Matched by `phases.*.allow` as `tag:<name>`. */
     readonly tags: readonly string[]
     readonly parameters: ToolParameters
@@ -200,4 +211,17 @@ export interface ToolResult {
     readonly bytes: number
     /** True when the observation was capped. Never silent — the marker is in `output`. */
     readonly truncated: boolean
+    /**
+     * Stamped from the spec so a dialect can delimit without reaching for the registry.
+     *
+     * **Required**, unlike `ToolSpec.trust` — the opposite call for the same reason. A `ToolResult`
+     * is built only inside core, so an optional field here would mean "absent reads as trusted",
+     * which is a fail-open default baked into the type.
+     */
+    readonly trust: Trust
+    /**
+     * The write gate refused this call. It did not run, and retrying will not change that — which
+     * is why a dialect renders it as "blocked" rather than "failed".
+     */
+    readonly gated?: boolean
 }

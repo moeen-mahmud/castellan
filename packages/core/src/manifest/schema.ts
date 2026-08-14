@@ -227,6 +227,20 @@ export const ToolBudgetSchema = z
     })
     .strict()
 
+/**
+ * What happens when untrusted content is in the turn and a mutating tool is requested.
+ *
+ * `refuse` is the default and never prompts, which is what makes it right for the unattended runs
+ * this runtime exists for. `confirm` asks, and therefore needs an approver to be reachable — with
+ * none, it refuses like `refuse` rather than proceeding. `allow` accepts the risk, stated rather
+ * than assumed.
+ */
+export const ToolsUntrustedSchema = z
+    .object({
+        onMutate: z.enum(["refuse", "confirm", "allow"]).default("refuse"),
+    })
+    .strict()
+
 export const ToolsSchema = z
     .object({
         /** Config only — never auto-detected, so behaviour cannot drift with the model. */
@@ -240,6 +254,7 @@ export const ToolsSchema = z
             .strict()
             .prefault({}),
         local: z.array(z.string().min(1)).default([]),
+        untrusted: ToolsUntrustedSchema.prefault({}),
     })
     .strict()
 

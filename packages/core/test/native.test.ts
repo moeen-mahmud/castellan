@@ -20,6 +20,7 @@ import {
     renderNativeDescription,
 } from "../src/tools/dialect/native.ts"
 import { nltDialect, renderNltEntry } from "../src/tools/dialect/nlt.ts"
+import { renderTrusted, untrustedFence } from "../src/tools/trust.ts"
 import type { ToolResult, ToolSpec } from "../src/tools/types.ts"
 import { describe, expect, test } from "./_harness.ts"
 
@@ -269,6 +270,7 @@ function result(over: Partial<ToolResult> = {}): ToolResult {
         slug: "now",
         ok: true,
         output: "2026-08-13",
+        trust: "trusted",
         latencyMs: 1,
         bytes: 10,
         truncated: false,
@@ -356,5 +358,32 @@ describe("streaming", () => {
         const filter = nativeDialect.createStreamFilter()
         expect(filter.push("ACTION: now\n")).toBe("ACTION: now\n")
         expect(filter.end()).toBe("")
+    })
+})
+
+describe("the trust boundary, rendered", () => {
+    test("every announced call is answered, gated ones included", () => {
+        // The protocol invariant: an unanswered tool_call makes the endpoint reject the next
+        // request outright. This is the test that fails if anyone ever "optimises" the write gate
+        // by dropping the call instead of answering it.
+        const messages = nativeDialect.renderObservation([
+            result({ callId: "c1" }),
+            result({ callId: "c2", ok: false, gated: true, output: "was not run" }),
+            result({ callId: "c3" }),
+        ])
+        expect(messages.map((message) => message.toolCallId)).toEqual(["c1", "c2", "c3"])
+    })
+
+    test("an untrusted tool message carries the same fence NLT produced", () => {
+        // Asserted against the shared helper rather than an inline literal, so the two dialects
+        // cannot drift into delimiting the same bytes differently.
+        const untrusted = result({
+            slug: "web_fetch",
+            trust: "untrusted",
+            output: "a page of text long enough to be worth fencing",
+        })
+        const [message] = nativeDialect.renderObservation([untrusted])
+        expect(message?.content).toBe(renderTrusted(untrusted))
+        expect(message?.content).toContain(untrustedFence("web_fetch").open)
     })
 })

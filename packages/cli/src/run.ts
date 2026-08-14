@@ -343,6 +343,17 @@ async function runPlain(wired: Wired): Promise<number> {
             // Worth a line of its own: a silent repair looks like a slow turn.
             row(`  · ${event.data.slugs.join(", ")} — could not be used, asking again`)
         }),
+
+        // Deliberately NOT gated on `showRows`. Every other row here is for a person watching, and
+        // suppressing them in a one-shot run is right — but a blocked write is the run doing less
+        // than it was asked to, and a scripted caller parsing the output needs to know that even
+        // more than a person does.
+        runtime.bus.on("tool.gated", (event: AnyEvent) => {
+            if (event.type !== "tool.gated") return
+            row(
+                `  · ${event.data.slug} — blocked: ${event.data.reason} (tools.untrusted.onMutate is ${event.data.policy})`,
+            )
+        }),
     ]
     const unsubscribe = () => {
         for (const off of subscriptions) off()

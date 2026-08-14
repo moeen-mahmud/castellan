@@ -111,22 +111,41 @@ export class ToolRegistry {
         // shadow a built-in — and a genuine clash throws below rather than being resolved silently
         // in someone's favour. `local` is never sent to a remote provider: it names built-ins, and
         // asking Composio to resolve `now` invites it to answer with something else entirely.
-        for (const [provider, slugs] of [
-            [localProvider(), requested] as const,
-            ...providers.map((provider) => [provider, pinned] as const),
+        //
+        // The third element is the trust default, and it is carried here rather than derived later
+        // because **this loop is the only place that knows which provider is the built-in one**.
+        // `spec.provider` is a self-report a resolved tool could set to "local", and `provider.id`
+        // is chosen by whoever registered the factory — nothing stops an embedder registering one
+        // under the id "local". Position is the fact; the strings are claims.
+        const trustOverrides: string[] = []
+        for (const [provider, slugs, fallback] of [
+            [localProvider(), requested, "trusted"] as const,
+            ...providers.map((provider) => [provider, pinned, "untrusted"] as const),
         ]) {
             if (slugs.length === 0) continue
             consulted.push(provider.id)
-            for (const tool of await provider.resolve(slugs)) {
-                const key = normalise(tool.spec.slug)
+            for (const resolved of await provider.resolve(slugs)) {
+                const key = normalise(resolved.spec.slug)
                 const existing = found.get(key)
-                if (existing !== undefined && existing.spec.provider !== tool.spec.provider) {
-                    throw toolSlugCollision(tool.spec.slug, [
+                if (existing !== undefined && existing.spec.provider !== resolved.spec.provider) {
+                    throw toolSlugCollision(resolved.spec.slug, [
                         existing.spec.provider,
-                        tool.spec.provider,
+                        resolved.spec.provider,
                     ])
                 }
-                if (existing === undefined) found.set(key, tool)
+                if (existing !== undefined) continue
+
+                if (fallback === "untrusted" && resolved.spec.trust === "trusted") {
+                    trustOverrides.push(resolved.spec.slug)
+                }
+                // Normalised once, here, so every consumer downstream reads a settled value and no
+                // provider package can ship a trusted email body by forgetting a field.
+                found.set(
+                    key,
+                    resolved.spec.trust === undefined
+                        ? { ...resolved, spec: { ...resolved.spec, trust: fallback } }
+                        : resolved,
+                )
             }
         }
 
@@ -157,6 +176,17 @@ export class ToolRegistry {
             ordered.push(tool)
         }
         const all = [...ordered, ...[...found.values()].filter((tool) => !claimed.has(tool))]
+
+        // Honoured — the embedder chose to run that provider's code — but never silent. Declaring a
+        // provider tool trusted opts it out of the delimiter *and* out of the write gate, which is
+        // the kind of thing someone should learn at load rather than during an incident.
+        if (trustOverrides.length > 0) {
+            warnings.push({
+                code: "tool_trust_overridden",
+                message: `Declared trusted by their provider rather than defaulting to untrusted: ${trustOverrides.join(", ")}.`,
+                hint: "A provider tool defaults to untrusted because a provider cannot know what its upstream API returns. Trusted output skips the data delimiter and does not gate a later mutating call, so this is reported rather than taken quietly.",
+            })
+        }
 
         const { kept, dropped } = applyBudget(all, budget)
         if (dropped.length > 0) {

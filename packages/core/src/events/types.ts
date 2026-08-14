@@ -7,6 +7,7 @@
  */
 
 import type { ErrorDetail } from "../errors.ts"
+import type { OnMutate, Trust } from "../tools/trust.ts"
 
 /** Envelope fields shared by every event. */
 export interface EventContext {
@@ -102,7 +103,20 @@ export interface EventDataMap {
         /** Of the observation before any truncation, so a cut is visible as a size, not a guess. */
         bytes: number
         truncated: boolean
+        /** Whether this output may contain text a stranger wrote. */
+        trust: Trust
     }
+    /**
+     * A mutating call was refused because untrusted content entered the turn.
+     *
+     * **Not an error.** The model is told to say what it would have done and ask, and the turn
+     * continues. `policy` names the `tools.untrusted.onMutate` setting that decided it, so a
+     * surprised operator can see whether they were on the default.
+     *
+     * A gated call emits this and nothing else — no `tool.call`, no `tool.result` — because nothing
+     * ran, and a consumer pairing call with result would otherwise be left holding an orphan.
+     */
+    "tool.gated": { slug: string; callId: string; reason: string; policy: OnMutate }
     /**
      * A step's tool calls could not be used as written. The first occurrence is followed by one
      * correction request; a second in a row ends the turn with `tool_repair_failed` rather than
