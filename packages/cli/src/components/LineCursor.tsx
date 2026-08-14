@@ -14,9 +14,15 @@ import type { EditorState } from "#lib/types"
 export interface LineCursorProps {
     readonly editor: EditorState
     readonly placeholder?: string
+    /**
+     * Render every character as a dot. For a value that must not appear on screen, in scrollback,
+     * or over a shoulder — the cursor still moves normally, because the editing model is unchanged
+     * and only the rendering differs.
+     */
+    readonly secret?: boolean
 }
 
-export function LineCursor({ editor, placeholder }: LineCursorProps) {
+export function LineCursor({ editor, placeholder, secret }: LineCursorProps) {
     if (editor.value === "" && placeholder !== undefined && placeholder !== "") {
         const chars = [...placeholder]
         return (
@@ -27,7 +33,8 @@ export function LineCursor({ editor, placeholder }: LineCursorProps) {
         )
     }
 
-    const chars = [...editor.value]
+    // Masked per code point, so the dot count matches what was typed rather than its byte length.
+    const chars = secret === true ? [...editor.value].map(() => "•") : [...editor.value]
     const before = chars.slice(0, editor.cursor).join("")
     const under = chars[editor.cursor] ?? " "
     const after = chars.slice(editor.cursor + 1).join("")

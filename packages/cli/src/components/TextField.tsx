@@ -18,9 +18,11 @@ export interface TextFieldProps {
     readonly placeholder?: string
     /** A validation failure, rendered beneath in the error colour. Cleared upstream on edit. */
     readonly error?: string
+    /** Mask the value as it is typed. Passed straight through to the cursor. */
+    readonly secret?: boolean
 }
 
-export function TextField({ label, editor, placeholder, error }: TextFieldProps) {
+export function TextField({ label, editor, placeholder, error, secret }: TextFieldProps) {
     return (
         <Box flexDirection="column">
             <Text>{label}</Text>
@@ -29,6 +31,7 @@ export function TextField({ label, editor, placeholder, error }: TextFieldProps)
                 <LineCursor
                     editor={editor}
                     {...(placeholder === undefined ? {} : { placeholder })}
+                    {...(secret === true ? { secret: true } : {})}
                 />
             </Text>
             {error === undefined ? null : (

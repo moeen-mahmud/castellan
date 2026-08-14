@@ -21,6 +21,7 @@ import { GLYPH, THEME } from "#lib/theme"
 import {
     answeredRows,
     currentQuestion,
+    isSecretStep,
     isSelectStep,
     partialOf,
     reduceWizard,
@@ -133,6 +134,7 @@ export function WizardApp({ title, given, defaults, onDone }: WizardAppProps) {
                                 editor={state.editor}
                                 placeholder={currentQuestion(state)?.fallback ?? ""}
                                 {...(state.error === undefined ? {} : { error: state.error })}
+                                {...(isSecretStep(state) ? { secret: true } : {})}
                             />
                         )}
                     </WizardFrame>

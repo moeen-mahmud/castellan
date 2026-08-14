@@ -58,9 +58,12 @@ castellan run           # or just this: picks from your agents, or walks you thr
 ```
 
 `init` writes a complete starter agent — a reference-style manifest, a SOUL.md identity pair, an
-AGENTS.md operations file, the tiered workspace, `.env` — and validates it with the real loader before exiting. It never asks
-for your API key; set it in the generated `.env`. Every question has a flag
-(`init --user Ada --name Scout --preset ollama --yes`) for scripted use.
+AGENTS.md operations file, the tiered workspace, `.env` — and validates it with the real loader
+before exiting. It asks for your API key at the prompt, masked, and writes it to the gitignored
+`.env` beside the manifest; `agent.yaml` only ever names the variable. No flag accepts a key — one
+passed on the command line lands in shell history — so a scripted run
+(`init --user Ada --name Scout --preset ollama --yes`) leaves the line blank and says where to fill
+it in.
 
 ## Development
 

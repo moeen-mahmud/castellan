@@ -33,6 +33,7 @@ import {
     type InitStep,
     nextQuestion,
     planFiles,
+    presetById,
     type QuestionDefaults,
     validateAnswer,
 } from "#lib/init-flow"
@@ -50,6 +51,9 @@ const FLAG_FOR: Record<InitStep, string> = {
     model: "--model",
     baseUrl: "--base-url",
     apiKeyEnv: "--api-key-env",
+    // No flag, on purpose: a key on the command line lands in shell history. With --yes the .env
+    // is written with an empty value and the next steps say where to put it.
+    apiKey: "(asked at the prompt only)",
     dir: "<dir>",
 }
 
@@ -140,6 +144,7 @@ async function runInit(options: InitOptions): Promise<InitResult> {
         const keyVar = answers.apiKeyEnv
         const needsStub =
             keyVar !== undefined &&
+            answers.apiKey === undefined &&
             (process.env[keyVar] === undefined || process.env[keyVar] === "")
         const loaded = loadManifest(join(targetDir, "agent.yaml"), {
             knownProviders: PROVIDER_IDS,
@@ -255,6 +260,12 @@ function fillDefaults(
     for (;;) {
         const question = nextQuestion(partial, defaults)
         if (question === undefined) break
+        if (question.optional === true) {
+            // An empty answer is the answer. Refusing here would make `--yes` demand a secret it
+            // deliberately offers no flag for.
+            partial[question.step] = ""
+            continue
+        }
         if (question.fallback === "") {
             missing.push(question.step)
             // Placeholder purely to advance the walk; discarded by the throw below.
@@ -275,11 +286,20 @@ function fillDefaults(
 }
 
 function complete(partial: Partial<Record<InitStep, string>>): InitAnswers {
-    // apiKeyEnv legitimately stays undefined for a keyless endpoint; everything else is present
-    // once nextQuestion returns undefined.
-    const answers = partial as Record<Exclude<InitStep, "apiKeyEnv">, string> & {
+    // `apiKeyEnv` and `apiKey` legitimately stay undefined — the first for a keyless endpoint, the
+    // second for anyone exporting the variable another way. Everything else is present once
+    // nextQuestion returns undefined.
+    const answers = partial as Record<Exclude<InitStep, "apiKeyEnv" | "apiKey">, string> & {
         apiKeyEnv?: string
+        apiKey?: string
     }
+    // Which variable holds the key is no longer asked — it comes from `--api-key-env`, or from the
+    // preset. Defaulted HERE, at the one funnel both the wizard and the scripted path pass through:
+    // when this lived in the question list, removing the question silently dropped `apiKeyEnv` from
+    // the manifest altogether and generated an agent with no key configuration at all.
+    const preset = presetById(answers.preset)
+    const keyVar = answers.apiKeyEnv ?? preset?.apiKeyEnv
+
     return {
         user: answers.user,
         name: answers.name,
@@ -287,7 +307,10 @@ function complete(partial: Partial<Record<InitStep, string>>): InitAnswers {
         preset: answers.preset as InitAnswers["preset"],
         model: answers.model,
         baseUrl: answers.baseUrl,
-        ...(answers.apiKeyEnv === undefined ? {} : { apiKeyEnv: answers.apiKeyEnv }),
+        ...(keyVar === undefined ? {} : { apiKeyEnv: keyVar }),
+        ...(answers.apiKey === undefined || answers.apiKey === ""
+            ? {}
+            : { apiKey: answers.apiKey }),
         dir: answers.dir,
     }
 }
@@ -304,7 +327,9 @@ function nextSteps(
     const manifest = join(targetDir, "agent.yaml")
 
     const steps: string[] = []
-    if (answers.apiKeyEnv !== undefined) {
+    // Only when there is genuinely nothing to run with. Telling someone to add a key they just
+    // typed in is the kind of instruction people learn to skip past.
+    if (answers.apiKeyEnv !== undefined && answers.apiKey === undefined) {
         steps.push(`Add your key: edit ${join(targetDir, ".env")} and set ${answers.apiKeyEnv}=`)
     }
     steps.push(`${BRAND.slug} run ${runRef}`)

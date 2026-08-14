@@ -26,6 +26,7 @@ const ANSWERS: InitAnswers = {
     model: "deepseek-chat",
     baseUrl: "https://api.deepseek.com/v1",
     apiKeyEnv: "MODEL_API_KEY",
+    apiKey: "sk-test-value",
     dir: "./milo",
 }
 
@@ -58,7 +59,7 @@ describe("nextQuestion", () => {
             "preset",
             "model",
             "baseUrl",
-            "apiKeyEnv",
+            "apiKey",
             "dir",
         ])
     })
@@ -77,7 +78,7 @@ describe("nextQuestion", () => {
             steps.push(question.step)
             partial[question.step] = question.fallback || "x"
         }
-        expect(steps.includes("apiKeyEnv")).toBe(false)
+        expect(steps.includes("apiKey")).toBe(false)
     })
 
     test("model and base URL default from the chosen preset; custom offers nothing", () => {
@@ -228,10 +229,23 @@ describe("planFiles", () => {
         expect(env?.contents).toContain("MODEL_ID=qwen3.5:9b")
     })
 
-    test("the key line in .env is present and empty — the wizard never asks for the secret", () => {
-        const env = planFiles(ANSWERS).find((f) => f.relPath === ".env")
+    test("the key the wizard collected lands in .env, so a fresh agent actually runs", () => {
+        // The manifest still holds only the variable's *name* — hard rule 10 is about the manifest.
+        // The value belongs in the gitignored file beside it, and leaving it blank produced agents
+        // that only worked when some other .env happened to be in scope.
+        const files = planFiles(ANSWERS)
+        expect(files.find((f) => f.relPath === ".env")?.contents).toContain(
+            "MODEL_API_KEY=sk-test-value",
+        )
+        const yaml = files.find((f) => f.relPath === "agent.yaml")?.contents ?? ""
+        expect(yaml).toContain("apiKeyEnv: MODEL_API_KEY")
+        expect(yaml.includes("sk-test-value")).toBe(false)
+    })
+
+    test("no key given leaves the line blank to be filled in", () => {
+        const { apiKey: _omitted, ...noKey } = ANSWERS
+        const env = planFiles(noKey).find((f) => f.relPath === ".env")
         expect(env?.contents).toContain("MODEL_API_KEY=\n")
-        expect(env?.contents.includes("MODEL_API_KEY=s")).toBe(false)
     })
 
     test(".gitignore covers the .env that carries the key", () => {

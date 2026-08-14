@@ -924,7 +924,11 @@ templates — nothing on channels — and before it the only onboarding path was
   omits the key line from `.env`; the result loads with no stub
 - [x] Re-running into the same directory refuses, naming every collision
 - [x] Non-interactive without `--user`/`--name` refuses, naming the flags and why it could not ask
-- [x] The wizard never asks for, and no flag accepts, the API key's value
+- [x] No flag accepts the API key's value — one on the command line lands in shell history
+- [x] **Revised 2026-08-15:** the wizard *does* ask for the key, masked, and writes it to the
+  gitignored `.env`; the manifest still names only the variable. Asking for the variable *name*
+  while asking for every other setting's value outright produced an empty `MODEL_API_KEY=` and an
+  agent that only ran where another `.env` happened to be in scope
 
 **Non-goals.** An Ink wizard (the flow is pure so a renderer swap stays cheap; a numbered menu is
 equivalent for a run-once command) — **reversed by decision 11.13 in Phase 3.8**, exactly through

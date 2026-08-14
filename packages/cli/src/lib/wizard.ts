@@ -22,6 +22,7 @@ import {
     presetById,
     type Question,
     type QuestionDefaults,
+    SECRET_STEPS,
     validateAnswer,
 } from "#lib/init-flow"
 import { moveSelect, type SelectState } from "#lib/select"
@@ -73,6 +74,12 @@ export function currentQuestion(state: WizardState): Question | undefined {
 /** Is the current question a select (the preset menu) rather than a text field? */
 export function isSelectStep(state: WizardState): boolean {
     return state.phase === "asking" && currentQuestion(state)?.step === "preset"
+}
+
+/** Whether the question on screen is one whose answer must never be rendered. */
+export function isSecretStep(state: WizardState): boolean {
+    const step = currentQuestion(state)?.step
+    return state.phase === "asking" && step !== undefined && SECRET_STEPS.has(step)
 }
 
 /**
@@ -199,6 +206,18 @@ export function reduceWizard(state: WizardState, action: WizardAction): WizardSt
     }
 }
 
+/**
+ * What a secret looks like on screen.
+ *
+ * Enough to recognise a paste went in, never enough to reconstruct. Short values show nothing at
+ * all rather than most of themselves.
+ */
+export function maskSecret(value: string): string {
+    if (value === "") return ""
+    if (value.length <= 8) return "•".repeat(value.length)
+    return `${value.slice(0, 3)}${"•".repeat(6)}${value.slice(-2)}`
+}
+
 /** The confirm screen's rows, shared with the plain path's wording. */
 export function summaryRows(
     state: WizardState,
@@ -206,12 +225,11 @@ export function summaryRows(
     const partial = partialOf(state)
     const preset = partial.preset === undefined ? undefined : presetById(partial.preset)
     const endpoint = `${partial.model ?? ""} at ${partial.baseUrl ?? ""}`
+    const keyVar = partial.apiKeyEnv ?? preset?.apiKeyEnv
     const key =
-        partial.apiKeyEnv !== undefined
-            ? ` (key: ${partial.apiKeyEnv})`
-            : preset?.apiKeyEnv === undefined
-              ? " (no key)"
-              : ""
+        keyVar === undefined
+            ? " (no key)"
+            : ` (${keyVar}=${partial.apiKey === undefined || partial.apiKey === "" ? "not set yet" : maskSecret(partial.apiKey)})`
     return [
         { label: "agent", value: partial.name ?? "" },
         { label: "for", value: `${partial.user ?? ""} — ${partial.purpose ?? ""}` },
@@ -232,7 +250,13 @@ export function answeredRows(
         model: "Model",
         baseUrl: "Base URL",
         apiKeyEnv: "Key env var",
+        apiKey: "API key",
         dir: "Directory",
     }
-    return state.log.map((entry) => ({ label: labels[entry.step], value: entry.value }))
+    return state.log.map((entry) => ({
+        label: labels[entry.step],
+        // A secret is never echoed back, not even to the person who just typed it: these lines
+        // stay on screen for the rest of the wizard and end up in scrollback.
+        value: SECRET_STEPS.has(entry.step) ? maskSecret(entry.value) : entry.value,
+    }))
 }

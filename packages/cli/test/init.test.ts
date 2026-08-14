@@ -216,3 +216,39 @@ describe("initCommand", () => {
         expect(JSON.stringify(error?.details ?? []) + error?.message).toContain("Phase 7")
     })
 })
+
+describe("the API key", () => {
+    test("the manifest names the variable and the .env holds the value", async () => {
+        // The bug this pins: init asked for the *variable name* while asking for every other
+        // setting's value outright, then wrote `MODEL_API_KEY=` blank — so a fresh agent only ran
+        // where some other .env happened to be in scope. Hard rule 10 is about the manifest, and it
+        // still holds: names in agent.yaml, values in the gitignored file beside it.
+        const dir = scratch()
+        expect(await initCommand({ ...FLAGS, dir })).toBe(EXIT_OK)
+
+        const yaml = readFileSync(join(dir, "agent.yaml"), "utf8")
+        expect(yaml).toContain("apiKeyEnv: MODEL_API_KEY")
+
+        const env = readFileSync(join(dir, ".env"), "utf8")
+        expect(env).toContain("MODEL_API_KEY=")
+    })
+
+    test("the variable is defaulted from the preset, not left to a question nobody answers", async () => {
+        // Regression: `apiKeyEnv` stopped being asked when the wizard began asking for the key
+        // itself, and nothing defaulted it — so the manifest omitted the field entirely and the
+        // generated agent had no key configuration at all. Caught live; pinned here.
+        const dir = scratch()
+        await initCommand({ ...FLAGS, dir })
+        expect(readFileSync(join(dir, "agent.yaml"), "utf8")).toContain("\n    apiKeyEnv:")
+    })
+
+    test("a keyless preset still omits the field and the .env line", async () => {
+        const dir = scratch()
+        expect(await initCommand({ ...FLAGS, preset: "ollama", dir })).toBe(EXIT_OK)
+
+        expect(readFileSync(join(dir, "agent.yaml"), "utf8").includes("\n    apiKeyEnv:")).toBe(
+            false,
+        )
+        expect(readFileSync(join(dir, ".env"), "utf8").includes("MODEL_API_KEY")).toBe(false)
+    })
+})

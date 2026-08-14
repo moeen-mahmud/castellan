@@ -48,7 +48,7 @@ describe("the happy path", () => {
         state = commit(state)
         state = commit(state) // model: preset default
         state = commit(state) // baseUrl: preset default
-        state = commit(state) // apiKeyEnv: default MODEL_API_KEY
+        state = commit(state) // apiKey: empty is a real answer — supply it later
         state = commit(state) // dir: derived from name
         expect(state.phase).toBe("confirm")
 
@@ -145,20 +145,39 @@ describe("abort", () => {
 })
 
 describe("flags answering everything", () => {
-    test("opens directly on confirm rather than asking zero questions", () => {
-        const state = startWizard(
-            {
-                user: "Moeen",
-                name: "Milo",
-                purpose: "x",
-                preset: "deepseek",
-                model: "deepseek-chat",
-                baseUrl: "https://api.deepseek.com/v1",
-                apiKeyEnv: "MODEL_API_KEY",
-                dir: "./milo",
-            },
-            {},
-        )
+    const ALL_FLAGS = {
+        user: "Moeen",
+        name: "Milo",
+        purpose: "x",
+        preset: "deepseek",
+        model: "deepseek-chat",
+        baseUrl: "https://api.deepseek.com/v1",
+        apiKeyEnv: "MODEL_API_KEY",
+        dir: "./milo",
+    }
+
+    test("still asks for the key, which is the one thing no flag carries", () => {
+        // Deliberate: a key passed on the command line lands in shell history, so at a terminal it
+        // is asked for even when every other answer arrived as a flag. The alternative was writing
+        // an empty MODEL_API_KEY= and producing an agent that cannot run.
+        const state = startWizard(ALL_FLAGS, {})
+        expect(state.phase).toBe("asking")
+        expect(currentQuestion(state)?.step).toBe("apiKey")
+    })
+
+    test("answering it reaches confirm, and the key is never shown back", () => {
+        let state = startWizard(ALL_FLAGS, {})
+        state = reduceWizard(state, { kind: "edit", intent: { kind: "insert", text: "sk-secret" } })
+        state = reduceWizard(state, { kind: "commit" })
+
+        expect(state.phase).toBe("confirm")
+        const endpoint = summaryRows(state).find((row) => row.label === "endpoint")?.value ?? ""
+        expect(endpoint.includes("sk-secret")).toBe(false)
+        expect(endpoint).toContain("MODEL_API_KEY=")
+    })
+
+    test("a keyless preset asks nothing and opens on confirm", () => {
+        const state = startWizard({ ...ALL_FLAGS, preset: "ollama" }, {})
         expect(state.phase).toBe("confirm")
         expect(summaryRows(state).map((row) => row.label)).toEqual([
             "agent",

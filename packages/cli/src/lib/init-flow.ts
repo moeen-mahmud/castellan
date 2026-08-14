@@ -101,8 +101,22 @@ export interface InitAnswers {
     readonly preset: PresetId
     readonly model: string
     readonly baseUrl: string
-    /** Absent = the manifest omits the field (keyless endpoint). */
+    /**
+     * The env var the manifest names. Absent = the manifest omits the field entirely (a keyless
+     * endpoint). Set from `--api-key-env` or the preset, never asked: which *variable* holds the
+     * key is a detail of the generated file, and asking for it while asking for every other value
+     * outright is the confusing shape this replaced.
+     */
     readonly apiKeyEnv?: string
+    /**
+     * The key itself. Written to the gitignored `.env` beside the manifest, never to `agent.yaml`
+     * — hard rule 10 is about what the *manifest* contains, and it still holds: the manifest names
+     * the variable, this fills it in.
+     *
+     * Empty is a legitimate answer for anyone who exports the variable another way, and the next
+     * steps keep saying so.
+     */
+    readonly apiKey?: string
     /** Target directory, as given — the command resolves it against the cwd. */
     readonly dir: string
 }
@@ -123,16 +137,32 @@ const STEP_ORDER: readonly InitStep[] = [
     "preset",
     "model",
     "baseUrl",
-    "apiKeyEnv",
+    "apiKey",
     "dir",
 ]
+
+/**
+ * Steps whose answer must never be echoed, logged, or shown in a summary.
+ *
+ * The renderer reads this rather than special-casing a slug, so a second secret question later
+ * cannot be added without the masking coming with it.
+ */
+export const SECRET_STEPS: ReadonlySet<InitStep> = new Set<InitStep>(["apiKey"])
 
 export interface Question {
     readonly step: InitStep
     /** One line, printed before the input prompt. */
     readonly prompt: string
-    /** Offered default; empty string means the answer is required. */
+    /** Offered default; empty string means the answer is required — unless `optional`. */
     readonly fallback: string
+    /**
+     * An empty answer is a real answer here, not a missing one.
+     *
+     * Stated rather than inferred from an empty fallback: those two things look identical and mean
+     * opposite things to the non-interactive path, which must refuse for one and proceed for the
+     * other.
+     */
+    readonly optional?: boolean
 }
 
 /**
@@ -176,7 +206,7 @@ export function nextQuestion(
         if (partial[step] !== undefined) continue
         // A keyless preset asks no key question. An explicit --api-key-env still lands in
         // `partial` before this runs, so the deliberate keyed-proxy override survives the skip.
-        if (step === "apiKeyEnv" && preset !== undefined && preset.apiKeyEnv === undefined) {
+        if (step === "apiKey" && preset !== undefined && preset.apiKeyEnv === undefined) {
             continue
         }
 
@@ -201,11 +231,16 @@ export function nextQuestion(
                 return { step, prompt: "Model id", fallback: preset?.modelId ?? "" }
             case "baseUrl":
                 return { step, prompt: "Base URL", fallback: preset?.baseUrl ?? "" }
-            case "apiKeyEnv":
+            case "apiKey":
                 return {
                     step,
-                    prompt: "Env var that will hold the API key",
-                    fallback: preset?.apiKeyEnv ?? "MODEL_API_KEY",
+                    prompt: "API key (stored in .env beside the manifest, never in agent.yaml)",
+                    // Empty is allowed and means "I supply it another way" — the next steps then
+                    // say where to put it. There is deliberately no flag for this: a key passed on
+                    // the command line lands in shell history, which is why `--yes` takes the empty
+                    // answer rather than refusing for want of one.
+                    fallback: "",
+                    optional: true,
                 }
             case "dir":
                 return {
@@ -290,6 +325,12 @@ export function validateAnswer(step: InitStep, raw: string): Answered {
             return ENV_NAME.test(value)
                 ? { ok: true, value }
                 : { ok: false, reason: "must be an env var name, like MODEL_API_KEY." }
+
+        case "apiKey":
+            // Never rejected. Key formats differ per vendor and change without notice, so a shape
+            // check here would refuse a valid key on the vendor's say-so — and the endpoint gives
+            // an honest 401 on the first turn anyway. Empty means "not now".
+            return { ok: true, value }
 
         case "dir":
             return value === "" ? { ok: false, reason: "cannot be empty." } : { ok: true, value }
@@ -630,9 +671,11 @@ function envFor(answers: InitAnswers): string {
         `MODEL_BASE_URL=${answers.baseUrl}`,
     ]
     if (answers.apiKeyEnv !== undefined) {
-        // Deliberately left empty: the wizard never asks for the secret. Typing a key into a
-        // prompt invites shoulder-surfing; passing it as a flag writes it into shell history.
-        lines.push(`${answers.apiKeyEnv}=`)
+        // The value the wizard collected, or an empty line to fill in. This file is gitignored and
+        // sits beside the manifest, which is the whole point: the manifest names the variable, the
+        // key lives here. A key is still never accepted as a command-line flag — that writes it
+        // into shell history — so the scripted path leaves this blank and the next steps say so.
+        lines.push(`${answers.apiKeyEnv}=${answers.apiKey ?? ""}`)
     }
     return `${lines.join("\n")}\n`
 }
