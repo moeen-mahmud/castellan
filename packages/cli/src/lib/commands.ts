@@ -91,7 +91,7 @@ export const COMMANDS: readonly CommandSpec[] = [
                 name: "system",
                 kind: "string",
                 placeholder: "level",
-                help: "what it may touch on this machine: none | read | full",
+                help: "what it may touch on this machine: none | read | write | full",
                 defaultHelp: "none",
             },
             {

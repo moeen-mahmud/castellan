@@ -13,6 +13,8 @@ import { join } from "node:path"
 import { EventBus } from "../src/events/bus.ts"
 import type { AnyEvent } from "../src/events/types.ts"
 import { coerceArgs } from "../src/tools/coerce.ts"
+import { nativeDialect } from "../src/tools/dialect/native.ts"
+import { nltDialect } from "../src/tools/dialect/nlt.ts"
 import {
     type ApprovalRequest,
     batch,
@@ -1047,5 +1049,78 @@ describe("what the approval prompt is shown", () => {
         })
 
         expect(shown).toBe("git status --short")
+    })
+})
+
+describe("telling the model what it was not given", () => {
+    const OFFERED = [
+        { slug: "exec", summary: "Runs a shell command." },
+        { slug: "file_write", summary: "Writes a file." },
+    ]
+
+    async function withAvailable(pinned: readonly string[]): Promise<ToolRegistry> {
+        const remote: ToolProvider = {
+            id: "remote",
+            resolve: (slugs) =>
+                Promise.resolve(
+                    OFFERED.filter((entry) => slugs.includes(entry.slug)).map((entry) =>
+                        tool(
+                            { slug: entry.slug, summary: entry.summary, mutating: true },
+                            () => "ok",
+                        ),
+                    ),
+                ),
+            available: () => Promise.resolve(OFFERED),
+        }
+        return ToolRegistry.create({ pinned, providers: [remote] })
+    }
+
+    test("what a provider offers and the manifest did not pin is recorded", async () => {
+        const registry = await withAvailable(["exec"])
+        expect(registry.notEnabled.map((entry) => entry.slug)).toEqual(["file_write"])
+    })
+
+    test("nothing is recorded when everything offered was pinned", async () => {
+        const registry = await withAvailable(["exec", "file_write"])
+        expect(registry.notEnabled).toEqual([])
+    })
+
+    test("a provider that offers nothing is silent, which is what keeps this cheap", async () => {
+        // A catalogue of twenty-five thousand tools omits `available` entirely. Listing them would be
+        // a second catalogue, which is the opposite of the point.
+        const registry = await ToolRegistry.create({
+            pinned: ["send_mail"],
+            providers: [provider("remote", [tool({ slug: "send_mail" }, () => "ok")])],
+        })
+        expect(registry.notEnabled).toEqual([])
+    })
+
+    test("the NLT catalogue names them and says what to do about it", async () => {
+        const registry = await withAvailable(["exec"])
+        const rendered = nltDialect.renderCatalogue(registry.specs(), registry.notEnabled)
+        const text = rendered.map((block) => block.content).join("\n")
+        expect(text).toContain("Not enabled for you")
+        expect(text).toContain("file_write — Writes a file.")
+        // Three instructions, each answering a failure: name the tool, say "not permitted" rather than
+        // "unable", and do not reach for another tool to get around it.
+        expect(text).toContain("tools.pinned")
+        expect(text).toContain("not permitted to yet")
+        expect(text).toContain("work around it")
+    })
+
+    test("native says the same thing, in the only place it can", async () => {
+        // Its catalogue lives in the request's `tools` parameter, which has no field for "and here is
+        // what you were not given" — so this is its one slot-1 block. Both dialects must put the same
+        // guidance in front of the model, or an eval comparing them measures the guidance.
+        const registry = await withAvailable(["exec"])
+        const rendered = nativeDialect.renderCatalogue(registry.specs(), registry.notEnabled)
+        expect(rendered.length).toBe(1)
+        expect(rendered[0]?.content).toContain("file_write — Writes a file.")
+        expect(rendered[0]?.pinned).toBe(true)
+    })
+
+    test("native's slot 1 stays empty when there is nothing to say", async () => {
+        const registry = await withAvailable(["exec", "file_write"])
+        expect(nativeDialect.renderCatalogue(registry.specs(), registry.notEnabled)).toEqual([])
     })
 })

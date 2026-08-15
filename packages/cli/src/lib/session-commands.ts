@@ -152,6 +152,15 @@ export interface ToolsView {
          * blocked?" is answered by this column and by nothing else on this surface.
          */
         readonly trust: string
+        /**
+         * Why a tool declares itself trusted when a provider tool defaults to untrusted.
+         *
+         * Shown here rather than warned about at boot. The warning fired on every start of every agent
+         * using the system provider — four tools whose output the runtime composed — and a warning that
+         * is always present for a correct configuration is one people stop reading. The reason belongs
+         * where someone is already looking at the catalogue.
+         */
+        readonly trustReason?: string
         readonly summary: string
     }[]
 }
@@ -171,6 +180,7 @@ export interface AgentToolsSource {
             readonly mutating: boolean
             /** Optional here because it is optional on `ToolSpec`; the registry settles it. */
             readonly trust?: string
+            readonly trustReason?: string
             readonly summary: string
         }[]
     }
@@ -189,6 +199,7 @@ export function toolsView(agent: AgentToolsSource): ToolsView {
             // came through one — but `ToolSpec.trust` is optional in the type, and a view that
             // silently printed nothing would be the wrong way to find that out.
             trust: spec.trust ?? "trusted",
+            ...(spec.trustReason === undefined ? {} : { trustReason: spec.trustReason }),
             summary: spec.summary,
         })),
     }
@@ -207,12 +218,20 @@ export function toolsReport(view: ToolsView): string {
     }
 
     const pad = view.tools.reduce((longest, tool) => Math.max(longest, tool.slug.length), 0)
-    const rows = view.tools.map(
-        (tool) =>
-            `  ${tool.slug.padEnd(pad)}  ${tool.mutating ? "write" : "read "}  ${
-                tool.trust === "untrusted" ? "untrusted" : "trusted  "
-            }  ${tool.summary}`,
-    )
+    const rows = view.tools.flatMap((tool) => [
+        `  ${tool.slug.padEnd(pad)}  ${tool.mutating ? "write" : "read "}  ${
+            tool.trust === "untrusted" ? "untrusted" : "trusted  "
+        }  ${tool.summary}`,
+        // Only a tool that opted out of the untrusted default has one, so this is rare and worth the
+        // line when it appears: it is the difference between a fence someone removed on purpose and one
+        // a package forgot.
+        // Aligned under the summary column: 2 leading spaces, the slug, and the two fixed columns
+        // with their separators. Computed rather than hardcoded, or it drifts the first time a column
+        // changes width.
+        ...(tool.trustReason === undefined
+            ? []
+            : [`${" ".repeat(2 + pad + 2 + 5 + 2 + 9 + 2)}trusted: ${tool.trustReason}`]),
+    ])
     return [
         // "dialect nlt" led the line once and read as a third tool — and asked about it, the model
         // guessed NLTK, because the dialect is harness plumbing it is never told the name of. The

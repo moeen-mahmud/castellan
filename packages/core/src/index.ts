@@ -220,6 +220,7 @@ export {
     parseNlt,
     renderNltEntry,
 } from "./tools/dialect/nlt.ts"
+export { renderNotEnabledBlock, renderNotEnabledText } from "./tools/dialect/not-enabled.ts"
 export {
     type ApprovalRequest,
     batch,
@@ -281,6 +282,7 @@ export type {
     JsonSchemaNode,
     JsonType,
     Tool,
+    ToolAvailability,
     ToolContext,
     ToolHandler,
     ToolIntent,

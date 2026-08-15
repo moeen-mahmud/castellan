@@ -28,6 +28,7 @@
         "access": "public"
     },
     "dependencies": {
-        "@castellan/core": "workspace:*"
+        "@castellan/core": "workspace:*",
+        "yaml": "^2.8.1"
     }
 }

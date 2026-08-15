@@ -28,6 +28,7 @@ import { estimateMessageTokens } from "../../context/tokens.ts"
 import { renderTrusted } from "../trust.ts"
 import type { FieldError, JsonSchemaNode, ToolIntent, ToolResult, ToolSpec } from "../types.ts"
 import type { ParsedOutput, StreamFilter, ToolDialect } from "./dialect.ts"
+import { renderNotEnabledText } from "./not-enabled.ts"
 
 /** Opens a multi-line value. */
 const HEREDOC_OPEN = "<<<"
@@ -688,10 +689,17 @@ function renderObservationText(result: ToolResult): string {
 export const nltDialect: ToolDialect = {
     id: "nlt",
 
-    renderCatalogue(specs) {
+    renderCatalogue(specs, notEnabled) {
         if (specs.length === 0) return []
         const entries = specs.map(renderNltEntry).join("\n\n")
-        return [block(`${PREAMBLE}\n\n## Available tools\n\n${entries}`)]
+        // Appended to the catalogue block rather than added as a second one: both are settled at
+        // load and neither varies per turn, so they are one fixed statement rather than two.
+        const extra = renderNotEnabledText(notEnabled)
+        return [
+            block(
+                `${PREAMBLE}\n\n## Available tools\n\n${entries}${extra === "" ? "" : `\n\n${extra}`}`,
+            ),
+        ]
     },
 
     // The whole protocol is in the text, so the request carries no `tools` key at all and a

@@ -160,7 +160,10 @@ export class Agent {
                 registry: init.tools,
                 dialect,
                 dir: init.loaded.dir,
-                blocks: dialect.renderCatalogue(specs),
+                // The catalogue *and* what was left out of it. Both are settled at load, so both
+                // belong to the cache-stable prefix; passing `notEnabled` per turn would be the one
+                // way to make slot 1 vary and quietly stop prompt caching.
+                blocks: dialect.renderCatalogue(specs, init.tools.notEnabled),
                 ...(target === undefined ? {} : { writeTarget: target }),
                 ...(requestTools === undefined ? {} : { requestTools }),
                 wireTokens: requestTools === undefined ? 0 : nativeWireTokens(requestTools),

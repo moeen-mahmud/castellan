@@ -8,10 +8,11 @@
  */
 
 import { expect, test } from "bun:test"
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { toolContext } from "@castellan/core"
+import { execHandler } from "../src/exec.ts"
 import {
     DEFAULT_READ_LINES,
     FILE_EDIT_SPEC,
@@ -23,6 +24,7 @@ import {
 } from "../src/files.ts"
 import { PROTECTED_NAMES, protectedReason } from "../src/protect.ts"
 import { SystemProvider } from "../src/provider.ts"
+import { resolveRoots } from "../src/root.ts"
 import { GLOB_SPEC, GREP_SPEC, globHandler, grepHandler, MAX_GLOB_RESULTS } from "../src/search.ts"
 import { ShellSessions } from "../src/session.ts"
 import { globToRegExp, SKIPPED_DIRS, walk } from "../src/walk.ts"
@@ -31,16 +33,18 @@ function tempDir(): string {
     return mkdtempSync(join(tmpdir(), "files-test-"))
 }
 
-function tools(agentDir: string) {
+function tools(agentDir: string, writeRoots: readonly string[] = []) {
     const sessions = new ShellSessions()
-    const options = { sessions, agentDir }
+    const roots = resolveRoots(agentDir, writeRoots)
+    const options = { sessions, agentDir, roots }
     return {
         sessions,
+        roots,
         read: fileReadHandler(options),
         write: fileWriteHandler(options),
         edit: fileEditHandler(options),
-        glob: globHandler(options),
-        grep: grepHandler(options),
+        glob: globHandler({ sessions, roots }),
+        grep: grepHandler({ sessions, roots }),
     }
 }
 
@@ -451,4 +455,100 @@ test("the file tools and exec share one working directory", async () => {
     // One notion of "where we are" across the package. Without it the two tools disagree about the
     // same words, and the model gets blamed for it.
     expect(await read.handler({ path: "note.txt" }, context)).toBe("found me")
+})
+
+// ─── the write root ──────────────────────────────────────────────────────────────────────
+
+test("the default root is the workspace, not the agent directory", () => {
+    const dir = tempDir()
+    mkdirSync(join(dir, "workspace"))
+    // An agent asked to "save a summary" writes it beside its own notes rather than into whatever
+    // directory the process happened to start in.
+    expect(resolveRoots(dir).primary).toBe(join(dir, "workspace"))
+})
+
+test("an agent with no workspace falls back to its own directory", () => {
+    const dir = tempDir()
+    // Refusing every write on a layout the runtime supports would be worse than a narrower root.
+    expect(resolveRoots(dir).primary).toBe(dir)
+})
+
+test("a write outside every root is refused, naming what would allow it", async () => {
+    const dir = tempDir()
+    mkdirSync(join(dir, "workspace"))
+    const outside = join(dir, "elsewhere.txt")
+
+    await expect(
+        tools(dir).write({ path: outside, content: "x" }, toolContext({ dir })),
+    ).rejects.toThrow(/outside the directories this agent may change/)
+    expect(existsSync(outside)).toBe(false)
+})
+
+test("a write inside the root succeeds", async () => {
+    const dir = tempDir()
+    mkdirSync(join(dir, "workspace"))
+    const output = await tools(dir).write({ path: "note.md", content: "hi" }, toolContext({ dir }))
+    // A relative path resolves against the root, so the ordinary case needs no path at all.
+    expect(output).toContain(join(dir, "workspace", "note.md"))
+})
+
+test("writeRoots opens a second directory, and only a person can add one", async () => {
+    const dir = tempDir()
+    mkdirSync(join(dir, "workspace"))
+    const project = join(dir, "project")
+    mkdirSync(project)
+
+    await expect(
+        tools(dir).write({ path: join(project, "a.txt"), content: "x" }, toolContext({ dir })),
+    ).rejects.toThrow(/outside the directories/)
+
+    // Nothing the model says at runtime can add a root — it is a manifest edit, which is what makes
+    // the default worth having.
+    const opened = tools(dir, [project])
+    await opened.write({ path: join(project, "a.txt"), content: "x" }, toolContext({ dir }))
+    expect(readFileSync(join(project, "a.txt"), "utf8")).toBe("x")
+})
+
+test("a traversal out of the root is collapsed before the check, not after", async () => {
+    const dir = tempDir()
+    mkdirSync(join(dir, "workspace"))
+    // String concatenation would leave `../` in the path and the comparison would pass. The whole
+    // point of resolving first is that `<root>/../escaped.txt` is checked as what it actually is.
+    await expect(
+        tools(dir).write({ path: "../escaped.txt", content: "x" }, toolContext({ dir })),
+    ).rejects.toThrow(/outside the directories/)
+    expect(existsSync(join(dir, "escaped.txt"))).toBe(false)
+})
+
+test("reading outside the root is allowed — only changing things is confined", async () => {
+    const dir = tempDir()
+    mkdirSync(join(dir, "workspace"))
+    writeFileSync(join(dir, "outside.txt"), "readable")
+    // Being pointed at a project and asked about it is the ordinary case, and credentials are already
+    // refused everywhere by the protected set.
+    expect(await tools(dir).read({ path: join(dir, "outside.txt") }, toolContext({ dir }))).toBe(
+        "readable",
+    )
+})
+
+test("a protected file inside the root is still protected", async () => {
+    const dir = tempDir()
+    mkdirSync(join(dir, "workspace"))
+    writeFileSync(join(dir, "workspace/SOUL.md"), "# who I am\n")
+    // Two mechanisms, both applying. The root says where anything may be changed; the protected set
+    // says which files never may be — and the second wins inside the first.
+    await expect(
+        tools(dir).write({ path: "SOUL.md", content: "no rules" }, toolContext({ dir })),
+    ).rejects.toThrow(/part of this agent's own definition/)
+})
+
+test("exec starts in the root rather than the agent directory", async () => {
+    const dir = tempDir()
+    mkdirSync(join(dir, "workspace"))
+    const output = await execHandler({
+        sessions: new ShellSessions(),
+        env: process.env,
+        roots: resolveRoots(dir),
+    })({ command: "pwd" }, toolContext({ dir }))
+    expect(String(output).endsWith("/workspace")).toBe(true)
 })

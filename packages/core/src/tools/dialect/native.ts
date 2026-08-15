@@ -44,6 +44,7 @@ import {
     type StepOutput,
     type ToolDialect,
 } from "./dialect.ts"
+import { renderNotEnabledBlock } from "./not-enabled.ts"
 
 /**
  * The function-name grammar every OpenAI-compatible endpoint enforces.
@@ -191,9 +192,14 @@ export function parseNative(output: StepOutput): ParsedOutput {
 export const nativeDialect: ToolDialect = {
     id: "native",
 
-    // Slot 1 stays empty: the catalogue is in the request. Note that this makes the cache-stable
-    // prefix *shorter* under native, not unstable — the request body is identical turn to turn.
-    renderCatalogue: () => [],
+    // Slot 1 carries *only* what the request cannot: the catalogue itself goes in the `tools`
+    // parameter, and a list of tools that were NOT enabled has no field there to go in. So this stays
+    // empty in the ordinary case — which keeps the cache-stable prefix shorter under native rather
+    // than unstable — and holds one block when there is something to say.
+    //
+    // Both dialects must put the same guidance in front of the model, or an eval comparing them
+    // measures the guidance and reports it as a property of the dialect.
+    renderCatalogue: (_specs, notEnabled) => renderNotEnabledBlock(notEnabled),
 
     requestTools(specs) {
         if (specs.length === 0) return undefined

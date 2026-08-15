@@ -33,6 +33,7 @@ import type { Tool, ToolContext, ToolHandler, ToolProviderContext } from "@caste
 import { execCommandEmpty, execWorkdirMissing } from "./errors.ts"
 import { humanBytes, readOutput, stripLeadingEcho } from "./output.ts"
 import { SYSTEM_PROVIDER_ID, spillDir } from "./paths.ts"
+import type { Roots } from "./root.ts"
 import { runCommand } from "./run.ts"
 import type { ShellSessions } from "./session.ts"
 
@@ -61,6 +62,15 @@ export interface ExecOptions {
     readonly sessions: ShellSessions
     /** The manifest's environment layered over the ambient one, as the provider received it. */
     readonly env: Readonly<Record<string, string | undefined>>
+    /**
+     * Where a shell starts when nothing has moved it — the workspace, not the agent directory.
+     *
+     * Only the starting point. A shell cannot be confined to it: `sh -c "echo x > ~/notes"` carries
+     * its target inside a string no path check can see, so `exec` is granted the machine and the
+     * roots bind only the file tools. Said here because a reader of this field would otherwise
+     * reasonably assume otherwise.
+     */
+    readonly roots: Roots
 }
 
 export const EXEC_SPEC: Tool["spec"] = {
@@ -144,7 +154,7 @@ export function execHandler(options: ExecOptions): ToolHandler {
         if (command === "") throw execCommandEmpty()
 
         const remembered = options.sessions.lastCwd(context.sessionKey)
-        const base = remembered ?? context.dir
+        const base = remembered ?? options.roots.primary
         const asked = typeof args.workdir === "string" ? args.workdir.trim() : ""
         const wanted = asked === "" ? base : isAbsolute(asked) ? asked : resolve(base, asked)
 
@@ -298,6 +308,10 @@ export function execTool(options: ExecOptions): Tool {
 }
 
 /** The provider hands its own resolved environment through; nothing here reads `process.env`. */
-export function execFromContext(context: ToolProviderContext, sessions: ShellSessions): Tool {
-    return execTool({ sessions, env: context.env })
+export function execFromContext(
+    context: ToolProviderContext,
+    sessions: ShellSessions,
+    roots: Roots,
+): Tool {
+    return execTool({ sessions, env: context.env, roots })
 }

@@ -123,3 +123,72 @@ export function grepPatternInvalid(pattern: string, cause: string): ToolError {
         field: "pattern",
     })
 }
+
+/**
+ * A write outside every writable root.
+ *
+ * Distinct from `fileProtected` on purpose. That refusal is permanent and no setting overrides it;
+ * this one names the setting that would allow it, because "work in my project directory" is an
+ * entirely reasonable thing to want and the answer is one line of manifest rather than a refusal.
+ */
+export function fileOutsideRoot(path: string, roots: readonly string[]): ToolError {
+    return new ToolError({
+        code: "file_outside_root",
+        message: `${path} is outside the directories this agent may change.`,
+        hint: `Writable: ${roots.join(", ")}. Everything else is read-only by default — an agent that has misunderstood a request cannot damage anything while misunderstanding it. To work somewhere else, the person you work for adds it to tools.providerConfig.writeRoots in agent.yaml; nothing said in a conversation can add one. Reading outside these directories is allowed and unaffected.`,
+        field: "path",
+    })
+}
+
+// ─── the agent's own configuration ───────────────────────────────────────────────────────
+
+export function configReadFailed(file: string, cause: string): ToolError {
+    return new ToolError({
+        code: "config_read_failed",
+        message: `This agent's configuration could not be read from ${file}.`,
+        hint: `${cause}. The agent is running, so the file existed at boot — it has been moved or its permissions have changed since.`,
+    })
+}
+
+export function configPathUnknown(path: string, known: readonly string[]): ToolError {
+    return new ToolError({
+        code: "config_path_unknown",
+        message: `"${path}" is not a setting config_set will change.`,
+        hint: `Settable: ${known.join(", ")}. Deliberately a list rather than anything the schema accepts: a tool that can write any field can write the ones that decide what it is allowed to do, and the list is where that judgement lives. Call config_read with no path to see each one explained.`,
+        field: "path",
+    })
+}
+
+export function configValueUnreadable(raw: string, cause: string): ToolError {
+    return new ToolError({
+        code: "config_value_unreadable",
+        message: `That value could not be read: ${JSON.stringify(raw)}`,
+        hint: `${cause}. Write it the way it would appear in the file — a bare word, a number, or a list as ["a", "b"]. Refused rather than guessed at, because guessing is how tools.pinned becomes a list of single characters.`,
+        field: "value",
+    })
+}
+
+export function configInvalid(path: string, raw: string, why: string): ToolError {
+    return new ToolError({
+        code: "config_invalid",
+        message: `Setting ${path} to ${JSON.stringify(raw)} would produce a configuration that does not load: ${why}`,
+        hint: "Nothing was written, so the agent is unchanged and still starts. An invalid manifest is not a failure that shows up now — it is one that shows up at the next boot, by which time the change looks like it succeeded.",
+        field: "value",
+    })
+}
+
+/**
+ * The floor under `config_set`. Two edits, both in the direction of "stop checking".
+ *
+ * Everything that *grants* — pinning a tool, adding an allow rule, opening a write root — is settable,
+ * because granting is what a person asks for. A guard the agent can switch off on request is not a
+ * guard, so these two are not settable at all.
+ */
+export function configRefused(path: string, why: string): ToolError {
+    return new ToolError({
+        code: "config_refused",
+        message: `${path} cannot be changed from inside a conversation: ${why}.`,
+        hint: "No permission rule overrides this, and asking again will not change it. Every other setting can be changed — including enabling a tool or adding a permission rule, which is what this tool is for. Say what you would have changed and let the person edit it themselves.",
+        field: "path",
+    })
+}

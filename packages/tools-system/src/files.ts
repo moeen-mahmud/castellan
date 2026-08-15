@@ -33,19 +33,21 @@
  */
 
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises"
-import { dirname } from "node:path"
+import { dirname, isAbsolute, resolve } from "node:path"
 import { stripControl, type Tool, type ToolHandler } from "@castellan/core"
 import {
     fileEditAmbiguous,
     fileEditNoMatch,
     fileIsBinary,
     fileMissing,
+    fileOutsideRoot,
     filePathEmpty,
     fileProtected,
     fileTooLarge,
 } from "./errors.ts"
 import { SYSTEM_PROVIDER_ID } from "./paths.ts"
 import { protectedReason } from "./protect.ts"
+import { isWritable, type Roots, writable } from "./root.ts"
 import type { ShellSessions } from "./session.ts"
 
 /**
@@ -61,6 +63,15 @@ export interface FileOptions {
     readonly sessions: ShellSessions
     /** The agent's own directory, for the protected set. */
     readonly agentDir: string
+    /**
+     * Where writes are allowed, and where a relative path resolves when no shell has moved.
+     *
+     * Two mechanisms, not one. `protect` is a deny list and has to anticipate every path worth
+     * protecting; the root anticipates nothing, because everything outside it is refused and the
+     * exceptions are written by a person. Both apply, and `protect` wins — a protected file inside
+     * the root is still protected.
+     */
+    readonly roots: Roots
     readonly protect?: readonly string[]
 }
 
@@ -113,6 +124,8 @@ export const FILE_WRITE_SPEC: Tool["spec"] = {
         "you are changing part of an existing file — that is file_edit, which cannot silently destroy the rest of it",
     mutating: true,
     trust: "trusted",
+    trustReason:
+        "It reports what it wrote — the path, the line count — and never any of the content, so nothing from the file reaches the model through it.",
     policyArg: "path",
     tags: ["write", "file"],
     parameters: {
@@ -138,6 +151,8 @@ export const FILE_EDIT_SPEC: Tool["spec"] = {
         "you have not read the file in this conversation, or you are writing the whole thing; guessing at text that is already there fails rather than damaging the file, but it still wastes the step",
     mutating: true,
     trust: "trusted",
+    trustReason:
+        "It reports which occurrence changed and how long the file now is, never the text on either side of the change.",
     policyArg: "path",
     tags: ["write", "file"],
     parameters: {
@@ -163,17 +178,41 @@ export const FILE_EDIT_SPEC: Tool["spec"] = {
     },
 }
 
-/** The one place a caller-supplied path becomes an absolute one. */
+/**
+ * The one place a caller-supplied path becomes an absolute one.
+ *
+ * `resolve` rather than string concatenation, because the string form leaves `../` in the path and a
+ * confinement check performed on `<root>/../../etc/passwd` passes. The traversal has to be collapsed
+ * *before* anything compares the result to a root, and doing it here means no caller can forget.
+ */
 export function resolvePath(
     raw: unknown,
     sessions: ShellSessions,
     sessionKey: string,
-    agentDir: string,
+    base: string,
 ): string {
     const given = typeof raw === "string" ? raw.trim() : ""
     if (given === "") throw filePathEmpty()
-    const base = sessions.lastCwd(sessionKey) ?? agentDir
-    return given.startsWith("/") ? given : `${base}/${given}`.replace(/\/+/g, "/")
+    const from = sessions.lastCwd(sessionKey) ?? base
+    return isAbsolute(given) ? resolve(given) : resolve(from, given)
+}
+
+/**
+ * Every check a write has to pass, in the order it has to pass them.
+ *
+ * The root is checked first because it is the cheaper and broader question — "may this agent change
+ * anything here at all" — and the protected set second, because a protected file *inside* the root is
+ * still protected. Both refusals name what would change the answer, except the one that nothing does.
+ */
+function assertWritable(path: string, options: FileOptions): void {
+    if (!isWritable(path, options.roots)) {
+        throw fileOutsideRoot(path, writable(options.roots))
+    }
+    const refusal = protectedReason(path, {
+        agentDir: options.agentDir,
+        ...(options.protect === undefined ? {} : { extra: options.protect }),
+    })
+    if (refusal !== undefined) throw fileProtected(path, refusal)
 }
 
 function numberArg(value: unknown): number | undefined {
@@ -182,7 +221,12 @@ function numberArg(value: unknown): number | undefined {
 
 export function fileReadHandler(options: FileOptions): ToolHandler {
     return async (args, context) => {
-        const path = resolvePath(args.path, options.sessions, context.sessionKey, options.agentDir)
+        const path = resolvePath(
+            args.path,
+            options.sessions,
+            context.sessionKey,
+            options.roots.primary,
+        )
 
         let size: number
         try {
@@ -219,12 +263,13 @@ export function fileReadHandler(options: FileOptions): ToolHandler {
 
 export function fileWriteHandler(options: FileOptions): ToolHandler {
     return async (args, context) => {
-        const path = resolvePath(args.path, options.sessions, context.sessionKey, options.agentDir)
-        const refusal = protectedReason(path, {
-            agentDir: options.agentDir,
-            ...(options.protect === undefined ? {} : { extra: options.protect }),
-        })
-        if (refusal !== undefined) throw fileProtected(path, refusal)
+        const path = resolvePath(
+            args.path,
+            options.sessions,
+            context.sessionKey,
+            options.roots.primary,
+        )
+        assertWritable(path, options)
 
         const content = typeof args.content === "string" ? args.content : String(args.content ?? "")
         const existed = await stat(path).then(
@@ -245,12 +290,13 @@ export function fileWriteHandler(options: FileOptions): ToolHandler {
 
 export function fileEditHandler(options: FileOptions): ToolHandler {
     return async (args, context) => {
-        const path = resolvePath(args.path, options.sessions, context.sessionKey, options.agentDir)
-        const refusal = protectedReason(path, {
-            agentDir: options.agentDir,
-            ...(options.protect === undefined ? {} : { extra: options.protect }),
-        })
-        if (refusal !== undefined) throw fileProtected(path, refusal)
+        const path = resolvePath(
+            args.path,
+            options.sessions,
+            context.sessionKey,
+            options.roots.primary,
+        )
+        assertWritable(path, options)
 
         const find = typeof args.find === "string" ? args.find : ""
         const replace = typeof args.replace === "string" ? args.replace : ""

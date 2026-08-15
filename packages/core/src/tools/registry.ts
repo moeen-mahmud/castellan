@@ -29,7 +29,7 @@ import {
     unknownToolAtRuntime,
 } from "../errors.ts"
 import { localProvider } from "./local.ts"
-import type { Tool, ToolProvider, ToolSpec } from "./types.ts"
+import type { Tool, ToolAvailability, ToolProvider, ToolSpec } from "./types.ts"
 
 export interface ToolBudget {
     readonly max: number
@@ -64,11 +64,21 @@ export class ToolRegistry {
     readonly #order: readonly ToolSpec[]
     readonly dropped: readonly DroppedTool[]
     readonly warnings: readonly ErrorDetail[]
+    /**
+     * Tools a provider offers that this manifest did not pin.
+     *
+     * Rendered into the catalogue so the model can answer "I can't do that yet, and here is what would
+     * let me" instead of "I can't do that". Without it a pinned-down agent is silently less capable
+     * than its own runtime and only the person reading the manifest can work out why — which is a
+     * question they asked the agent precisely because they did not want to read the manifest.
+     */
+    readonly notEnabled: readonly ToolAvailability[]
 
     private constructor(init: {
         tools: readonly Tool[]
         dropped: readonly DroppedTool[]
         warnings: readonly ErrorDetail[]
+        notEnabled?: readonly ToolAvailability[]
     }) {
         const bySlug = new Map<string, Tool>()
         const byNormalised = new Map<string, Tool>()
@@ -81,6 +91,7 @@ export class ToolRegistry {
         this.#order = init.tools.map((tool) => tool.spec)
         this.dropped = init.dropped
         this.warnings = init.warnings
+        this.notEnabled = init.notEnabled ?? []
     }
 
     /** An agent with no tools configured. Distinct from one whose resolution produced nothing. */
@@ -135,7 +146,14 @@ export class ToolRegistry {
                 }
                 if (existing !== undefined) continue
 
-                if (fallback === "untrusted" && resolved.spec.trust === "trusted") {
+                // Only an *unexplained* override warns. A provider that declares trusted and says why
+                // has thought about it, and the reason belongs in `tools` output rather than in a
+                // banner that fires on every boot of a correct configuration.
+                if (
+                    fallback === "untrusted" &&
+                    resolved.spec.trust === "trusted" &&
+                    (resolved.spec.trustReason ?? "") === ""
+                ) {
                     trustOverrides.push(resolved.spec.slug)
                 }
                 // Normalised once, here, so every consumer downstream reads a settled value and no
@@ -183,16 +201,26 @@ export class ToolRegistry {
         if (trustOverrides.length > 0) {
             warnings.push({
                 code: "tool_trust_overridden",
-                message: `Declared trusted by their provider rather than defaulting to untrusted: ${trustOverrides.join(", ")}.`,
+                message: `Declared trusted by their provider, with no reason given: ${trustOverrides.join(", ")}.`,
                 // The hint used to assert *why* — "a provider cannot know what its upstream API
                 // returns" — which is true of a remote catalogue and plainly false of a local
                 // package whose write tools return a sentence the runtime composed. A warning that
                 // states a wrong reason at every boot is how a correct warning gets ignored, so this
                 // one states the consequence, which holds either way, and leaves the judgement to
                 // whoever knows what the tool actually returns.
-                hint: "Trusted output skips the data delimiter and does not gate a later mutating call. That is right for a tool whose output this runtime composed itself, and wrong for one that returns anything an upstream API or a file supplied — so it is reported rather than taken quietly.",
+                hint: "Trusted output skips the data delimiter and does not gate a later mutating call. That is right for a tool whose output the runtime composed itself and wrong for one returning anything an upstream API or a file supplied — so a provider that opts out is asked to say why, in ToolSpec.trustReason. With a reason this is silent and the reason is shown by the tools command instead.",
             })
         }
+
+        // Asked after resolution, so the answer is "not pinned" rather than "not resolved" — and only
+        // of providers that volunteer it. A catalogue of twenty-five thousand omits `available`
+        // entirely, which is what keeps this a handful of tokens instead of a second catalogue.
+        const offered: ToolAvailability[] = []
+        for (const provider of providers) {
+            if (provider.available === undefined) continue
+            offered.push(...(await provider.available()))
+        }
+        const notEnabled = offered.filter((entry) => !found.has(normalise(entry.slug)))
 
         const { kept, dropped } = applyBudget(all, budget)
         if (dropped.length > 0) {
@@ -218,7 +246,7 @@ export class ToolRegistry {
             })
         }
 
-        return new ToolRegistry({ tools: kept, dropped, warnings })
+        return new ToolRegistry({ tools: kept, dropped, warnings, notEnabled })
     }
 
     get size(): number {

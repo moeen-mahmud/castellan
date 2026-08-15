@@ -24,6 +24,7 @@ import {
 } from "../src/exec.ts"
 import { INLINE_CAP, readOutput, stripLeadingEcho } from "../src/output.ts"
 import { SystemProvider } from "../src/provider.ts"
+import { resolveRoots } from "../src/root.ts"
 import { backgroundable, buildWrapper, commandLine } from "../src/run.ts"
 import { ShellSessions } from "../src/session.ts"
 
@@ -31,9 +32,18 @@ function tempDir(): string {
     return mkdtempSync(join(tmpdir(), "system-test-"))
 }
 
-/** One handler with its own session state, as a provider would build it. */
-function handler(): ReturnType<typeof execHandler> {
-    return execHandler({ sessions: new ShellSessions(), env: process.env })
+/**
+ * One handler with its own session state, as a provider would build it.
+ *
+ * The root is the directory itself rather than `<dir>/workspace`, which is what `resolveRoots`
+ * returns for a directory with no workspace — every temp dir here is one.
+ */
+function handler(dir: string): ReturnType<typeof execHandler> {
+    return execHandler({
+        sessions: new ShellSessions(),
+        env: process.env,
+        roots: resolveRoots(dir),
+    })
 }
 
 const ESC = String.fromCharCode(27)
@@ -65,26 +75,26 @@ test("exec's negative guidance names the structured tools it must lose to", () =
 
 test("a command's output comes back", async () => {
     const dir = tempDir()
-    const output = await handler()({ command: "echo hello" }, toolContext({ dir }))
+    const output = await handler(dir)({ command: "echo hello" }, toolContext({ dir }))
     expect(output).toBe("hello")
 })
 
 test("a command that prints nothing says so rather than returning an empty observation", async () => {
     const dir = tempDir()
-    const output = await handler()({ command: "true" }, toolContext({ dir }))
+    const output = await handler(dir)({ command: "true" }, toolContext({ dir }))
     expect(output.includes("printed nothing")).toBe(true)
 })
 
 test("a failure reports its exit code and keeps the output", async () => {
     const dir = tempDir()
-    const output = await handler()({ command: "echo before; exit 3" }, toolContext({ dir }))
+    const output = await handler(dir)({ command: "echo before; exit 3" }, toolContext({ dir }))
     expect(output.includes("exit code 3")).toBe(true)
     expect(output.includes("before")).toBe(true)
 })
 
 test("stderr and stdout arrive together, in order", async () => {
     const dir = tempDir()
-    const output = await handler()(
+    const output = await handler(dir)(
         { command: "echo one; echo two 1>&2; echo three" },
         toolContext({ dir }),
     )
@@ -94,13 +104,13 @@ test("stderr and stdout arrive together, in order", async () => {
 test("the command runs in the agent's directory, not the process's", async () => {
     const dir = tempDir()
     writeFileSync(join(dir, "marker.txt"), "x")
-    const output = await handler()({ command: "ls" }, toolContext({ dir }))
+    const output = await handler(dir)({ command: "ls" }, toolContext({ dir }))
     expect(output.includes("marker.txt")).toBe(true)
 })
 
 test("an empty command is a named failure rather than an empty shell", async () => {
     const dir = tempDir()
-    await expect(handler()({ command: "   " }, toolContext({ dir }))).rejects.toThrow(
+    await expect(handler(dir)({ command: "   " }, toolContext({ dir }))).rejects.toThrow(
         /exec was called with no command/,
     )
 })
@@ -108,7 +118,7 @@ test("an empty command is a named failure rather than an empty shell", async () 
 test("a workdir that does not exist is refused by name", async () => {
     const dir = tempDir()
     await expect(
-        handler()({ command: "pwd", workdir: join(dir, "nowhere") }, toolContext({ dir })),
+        handler(dir)({ command: "pwd", workdir: join(dir, "nowhere") }, toolContext({ dir })),
     ).rejects.toThrow(/does not exist/)
 })
 
@@ -117,7 +127,7 @@ test("a workdir that does not exist is refused by name", async () => {
 test("a cd in one call is visible to the next", async () => {
     const dir = tempDir()
     mkdirSync(join(dir, "inner"))
-    const run = handler()
+    const run = handler(dir)
     const context = toolContext({ dir })
 
     await run({ command: "cd inner" }, context)
@@ -129,7 +139,7 @@ test("a cd in one call is visible to the next", async () => {
 
 test("an export in one call is NOT visible to the next", async () => {
     const dir = tempDir()
-    const run = handler()
+    const run = handler(dir)
     const context = toolContext({ dir })
 
     await run({ command: "export LEAKED=yes" }, context)
@@ -142,7 +152,7 @@ test("an export in one call is NOT visible to the next", async () => {
 
 test("a shell function defined in one call cannot shadow a command in the next", async () => {
     const dir = tempDir()
-    const run = handler()
+    const run = handler(dir)
     const context = toolContext({ dir })
 
     await run({ command: "hijacked() { echo pwned; }" }, context)
@@ -154,7 +164,7 @@ test("a shell function defined in one call cannot shadow a command in the next",
 test("two sessions do not share a directory", async () => {
     const dir = tempDir()
     mkdirSync(join(dir, "inner"))
-    const run = handler()
+    const run = handler(dir)
 
     await run({ command: "cd inner" }, toolContext({ dir, sessionKey: "a" }))
     const output = await run({ command: "pwd" }, toolContext({ dir, sessionKey: "b" }))
@@ -166,7 +176,7 @@ test("a remembered directory that has been deleted clears itself instead of fail
     const dir = tempDir()
     mkdirSync(join(dir, "gone"))
     const sessions = new ShellSessions()
-    const run = execHandler({ sessions, env: process.env })
+    const run = execHandler({ sessions, env: process.env, roots: resolveRoots(dir) })
     const context = toolContext({ dir })
 
     await run({ command: "cd gone" }, context)
@@ -184,7 +194,7 @@ test("a remembered directory that has been deleted clears itself instead of fail
 
 test("terminal escapes never reach the observation", async () => {
     const dir = tempDir()
-    const output = await handler()(
+    const output = await handler(dir)(
         { command: `printf '%s' 'git status${ESC}[2K${ESC}[1G && rm -rf ~'` },
         toolContext({ dir }),
     )
@@ -195,7 +205,7 @@ test("terminal escapes never reach the observation", async () => {
 
 test("a colour sequence is removed without touching the text around it", async () => {
     const dir = tempDir()
-    const output = await handler()(
+    const output = await handler(dir)(
         { command: `printf '%s' '${ESC}[31mred${ESC}[0m and plain'` },
         toolContext({ dir }),
     )
@@ -222,7 +232,7 @@ test("a deadline too short for the margin still yields a positive timeout", () =
 
 test("sleep is killed at the deadline rather than backgrounded", async () => {
     const dir = tempDir()
-    const output = await handler()(
+    const output = await handler(dir)(
         { command: "sleep 30", timeoutMs: 400 },
         toolContext({ dir, deadlineMs: 30_000 }),
     )
@@ -232,7 +242,7 @@ test("sleep is killed at the deadline rather than backgrounded", async () => {
 
 test("a long build is backgrounded rather than thrown away", async () => {
     const dir = tempDir()
-    const output = await handler()(
+    const output = await handler(dir)(
         // Not on the never-background list, so it is left alone and its output keeps accumulating.
         { command: "echo starting; while true; do :; done", timeoutMs: 400 },
         toolContext({ dir, deadlineMs: 30_000 }),
@@ -259,7 +269,7 @@ test("background: true returns before the command finishes", async () => {
     const dir = tempDir()
     const marker = join(dir, "late.txt")
     const started = Date.now()
-    const output = await handler()(
+    const output = await handler(dir)(
         { command: `sleep 2; echo done > "${marker}"`, background: true },
         toolContext({ dir }),
     )
@@ -272,7 +282,7 @@ test("background: true returns before the command finishes", async () => {
 
 test("large output spills to a file and the model is told where", async () => {
     const dir = tempDir()
-    const output = await handler()(
+    const output = await handler(dir)(
         // 20 000 characters, comfortably over the inline cap.
         { command: "awk 'BEGIN { while (i++ < 2000) print \"0123456789\" }'" },
         toolContext({ dir }),
@@ -289,10 +299,10 @@ test("a spill on success shows the start; a spill on failure shows both ends", a
     const dir = tempDir()
     const long = "awk 'BEGIN { while (i++ < 2000) print \"0123456789\" }'"
 
-    const ok = await handler()({ command: long }, toolContext({ dir }))
+    const ok = await handler(dir)({ command: long }, toolContext({ dir }))
     expect(ok.includes("End of the output")).toBe(false)
 
-    const bad = await handler()(
+    const bad = await handler(dir)(
         { command: `${long}; echo THE-ACTUAL-ERROR; exit 1` },
         toolContext({ dir }),
     )
@@ -303,7 +313,7 @@ test("a spill on success shows the start; a spill on failure shows both ends", a
 
 test("small output leaves nothing behind in the spill directory", async () => {
     const dir = tempDir()
-    const output = await handler()({ command: "echo tidy" }, toolContext({ dir }))
+    const output = await handler(dir)({ command: "echo tidy" }, toolContext({ dir }))
     expect(output).toBe("tidy")
     // No path is offered, so keeping the file would be litter nobody will ever open.
     expect(output.includes(tmpdir())).toBe(false)
@@ -354,7 +364,7 @@ test("the two script conventions are both argv, so nothing is quoted twice", () 
 
 test("a command under a terminal reports its own exit code, not the wrapper's", async () => {
     const dir = tempDir()
-    const output = await handler()({ command: "exit 7", pty: true }, toolContext({ dir }))
+    const output = await handler(dir)({ command: "exit 7", pty: true }, toolContext({ dir }))
     // `script`'s own status is not the command's on every platform, which is why the sidecar exists.
     // Getting this wrong reports a failed build as green, with nothing anywhere saying otherwise.
     expect(output.includes("exit code 7")).toBe(true)
@@ -371,7 +381,7 @@ test("the terminal's echo of our own end-of-input is not reported as output", ()
 
 test("a command under a terminal sees one", async () => {
     const dir = tempDir()
-    const output = await handler()(
+    const output = await handler(dir)(
         { command: "test -t 1 && echo tty || echo pipe", pty: true },
         toolContext({ dir }),
     )
@@ -380,7 +390,7 @@ test("a command under a terminal sees one", async () => {
 
 test("the same command without a terminal sees a pipe", async () => {
     const dir = tempDir()
-    const output = await handler()(
+    const output = await handler(dir)(
         { command: "test -t 1 && echo tty || echo pipe" },
         toolContext({ dir }),
     )

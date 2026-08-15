@@ -49,6 +49,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@castellan/core": "workspace:*",
+        "yaml": "^2.8.1",
       },
     },
   },

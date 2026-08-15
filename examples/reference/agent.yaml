@@ -181,11 +181,20 @@ tools:
   #   - file_write     # trusted output: it reports what it wrote, never the content
   #   - file_edit      # exact unique match, never a line number; two matches is a failure
   #   - exec           # the last resort — its target is a string no rule can look inside
+  #   - config_read     # read this file and tell the person which setting to change
+  #   - config_set      # change this file when asked. Refuses to weaken tools.policy.deny
+  # providerConfig:
+  #   writeRoots:       # extra directories the file tools may write to
+  #     - ~/code/thing  #   absolute, or relative to this file
   #
-  # The file tools refuse to write this manifest, SOUL.md, AGENTS.md, POLICY.md, the policy file, or
-  # anything under .ssh/.aws/.kube — and no allow rule reaches past that. USER.md and MEMORY.md stay
-  # writable: they are the tier memory_write appends to. None of it binds `exec`, whose target lives
-  # inside a shell string, which is why the descriptions push the model at the structured tools.
+  # Writes are confined to workspace/ — everything else is read-only until writeRoots says otherwise.
+  # On top of that the file tools refuse this manifest, SOUL.md, AGENTS.md, POLICY.md, and anything
+  # under .ssh/.aws/.kube, and no allow rule reaches past that. USER.md and MEMORY.md stay writable:
+  # they are the tier memory_write appends to.
+  #
+  # NEITHER confinement binds `exec`: a shell carries its target inside a string no path check can
+  # look inside. "Only inside workspace/" is a true statement only for an agent with no shell — which
+  # is what `castellan init --system write` generates.
 
   # ── A remote provider ──
   # Registered by the embedder — nothing installs at runtime. The `castellan` binary registers

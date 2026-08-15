@@ -64,6 +64,22 @@ export interface ToolSpec {
      */
     readonly trust?: Trust
     /**
+     * Why this tool declares `trust: "trusted"` when the registry would have defaulted it to
+     * `untrusted`.
+     *
+     * The registry warns about a provider tool that opts out of the boundary, because opting out
+     * silently is how an email body ends up unfenced. That warning fired on every boot of every agent
+     * using the system provider — four tools whose output is a sentence the runtime composed — and a
+     * warning that appears every time for a correct configuration is how people learn to ignore
+     * warnings.
+     *
+     * So the requirement is not "never declare trusted", it is **say why**. A reason here suppresses
+     * the warning and is shown by `tools` instead, where a person looking at the catalogue can read it.
+     * A tool that declares trusted with no reason still warns, which is the case worth catching: a
+     * package that forgot rather than a package that decided.
+     */
+    readonly trustReason?: string
+    /**
      * Which argument a `tools.policy` pattern matches against — `command` for a shell tool, `path`
      * for a file tool.
      *
@@ -154,6 +170,17 @@ export interface Tool {
     readonly handler: ToolHandler
 }
 
+/**
+ * One line about a tool that exists but was not pinned.
+ *
+ * Slug and summary only. The full spec would be the whole catalogue again, and the point of this is to
+ * cost a few tokens rather than to be a second catalogue.
+ */
+export interface ToolAvailability {
+    readonly slug: string
+    readonly summary: string
+}
+
 export interface ToolProvider {
     readonly id: string
     /**
@@ -176,6 +203,19 @@ export interface ToolProvider {
      * implementation.
      */
     refresh?(slugs: readonly string[], signal?: AbortSignal): Promise<ToolProviderRefresh>
+    /**
+     * Everything this provider offers, pinned or not, so the model can be told what it *could* have.
+     *
+     * Optional, and the reason it is optional is the whole design: a provider with twenty-five
+     * thousand tools has nothing useful to say here and omits it, while a provider with eight can list
+     * them for a handful of tokens. `list()` is not enough — a bare slug tells the model nothing about
+     * whether it is the tool the request needs.
+     *
+     * What this buys is the difference between "I can't do that" and "I can't do that *yet*, and here
+     * is the one line that would let me". Without it a pinned-down agent is silently less capable than
+     * its own runtime, and only the person reading the manifest can work out why.
+     */
+    available?(): Promise<readonly ToolAvailability[]>
 }
 
 export interface ToolProviderRefresh {

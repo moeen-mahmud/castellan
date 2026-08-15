@@ -13,7 +13,7 @@
 
 import type { ContextBlock } from "../../context/blocks.ts"
 import type { ChatMessage, ToolCallRequest, ToolDefinition } from "../../model/provider.ts"
-import type { FieldError, ToolIntent, ToolResult, ToolSpec } from "../types.ts"
+import type { FieldError, ToolAvailability, ToolIntent, ToolResult, ToolSpec } from "../types.ts"
 
 export type DialectId = "nlt" | "native"
 
@@ -94,7 +94,10 @@ export interface ToolDialect {
      *
      * Empty under `native`, where the catalogue travels in the request instead. See `wireTokens`.
      */
-    renderCatalogue(specs: readonly ToolSpec[]): readonly ContextBlock[]
+    renderCatalogue(
+        specs: readonly ToolSpec[],
+        notEnabled?: readonly ToolAvailability[],
+    ): readonly ContextBlock[]
     /**
      * The request's `tools` parameter, or `undefined` for a dialect whose protocol is text.
      *

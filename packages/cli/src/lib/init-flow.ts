@@ -154,16 +154,39 @@ export const SYSTEM_CHOICES: readonly {
     {
         value: "read",
         label: "Read only — it can read and search files, but change nothing",
-        pinned: ["file_read", "glob", "grep"],
+        // `config_read` on every level above `none`: without it the agent cannot tell you which
+        // setting to change when a request needs a tool it does not have, which is the whole point of
+        // telling it that the tool exists.
+        pinned: ["file_read", "glob", "grep", "config_read"],
         // `memory_write` is mutating and a file read taints the turn, so without this the agent
         // could read one file and then never save a note again for the rest of that turn.
         allow: ["memory_write"],
     },
     {
+        // The level that makes confinement *real*. `full` pins `exec`, and a shell carries its target
+        // inside a string no path check can look inside — so the write root binds the file tools and
+        // not the shell. Verified live: a full agent refused a `file_write` outside the root and then
+        // did the same thing with `echo … >`. Anyone who wants "only inside workspace/, never
+        // anywhere" and means it wants this level, and there was no way to ask for it.
+        value: "write",
+        label: "Read and write files — confined to its own workspace, no shell",
+        pinned: ["file_read", "file_write", "file_edit", "glob", "grep", "config_read"],
+        allow: ["memory_write", "file_write", "file_edit"],
+    },
+    {
         value: "full",
-        label: "Yes — read and write files, and run shell commands",
-        pinned: ["file_read", "file_write", "file_edit", "glob", "grep", "exec"],
-        allow: ["memory_write", "file_write", "file_edit", "exec"],
+        label: "Yes — read and write files, run commands, and change its own configuration",
+        pinned: [
+            "file_read",
+            "file_write",
+            "file_edit",
+            "glob",
+            "grep",
+            "exec",
+            "config_read",
+            "config_set",
+        ],
+        allow: ["memory_write", "file_write", "file_edit", "exec", "config_set"],
     },
 ]
 
@@ -436,11 +459,19 @@ function systemBlock(system: string): readonly string[] {
             `  # Uncomment to let this agent read and search files. Add file_write, file_edit and exec`,
             `  # for an agent that can change things and run commands — and see the policy block below,`,
             `  # which is what keeps that from meaning "anything at all".`,
+            `  #`,
+            `  # Whatever is left out, the agent is told it exists and what it is for, so it can name the`,
+            `  # setting you would have to change instead of saying it cannot do something.`,
             `  # provider: system`,
             `  # pinned:`,
-            `  #   - file_read`,
-            `  #   - glob`,
-            `  #   - grep`,
+            `  #   - file_read      # read a file`,
+            `  #   - glob           # find files by name`,
+            `  #   - grep           # find lines by pattern`,
+            `  #   - config_read    # let it read this file and tell you what to change`,
+            `  #   - file_write     # write a file — only inside workspace/ unless writeRoots says otherwise`,
+            `  #   - file_edit      # change part of a file`,
+            `  #   - exec           # run a shell command`,
+            `  #   - config_set     # let it change this file when you ask it to`,
         ]
     }
 
@@ -454,9 +485,26 @@ function systemBlock(system: string): readonly string[] {
             ? `  # by the policy block below — narrow it, and prefer the file tools over the shell, whose`
             : `  # anything it reads can carry text a stranger wrote, which is why the write gate exists.`,
         ...(shell ? [`  # target a rule cannot see inside a command string.`] : []),
+        `  #`,
+        ...(shell
+            ? [
+                  `  # Writes are confined to workspace/ — add tools.providerConfig.writeRoots below to`,
+                  `  # open another directory. That confinement binds the file tools and NOT exec, whose`,
+                  `  # target lives inside a shell string no path check can see.`,
+              ]
+            : [
+                  `  # Reading is not confined; changing things would be, but nothing here changes things.`,
+              ]),
         `  provider: system`,
         `  pinned:`,
         ...choice.pinned.map((slug) => `    - ${slug}`),
+        ...(shell
+            ? [
+                  `  # providerConfig:`,
+                  `  #   writeRoots:`,
+                  `  #     - ~/code/my-project    # absolute, or relative to this file's directory`,
+              ]
+            : []),
     ]
 }
 

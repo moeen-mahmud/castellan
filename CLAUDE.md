@@ -404,6 +404,36 @@ Never claim a performance property without a number in `evals/` and a script to 
   names already. A generated file that hides its own options is not doing the job it exists for.
   `--system none|read|full` is the question; the generated `policy.allow` entries are what stop a
   fresh agent reading one file and then refusing to save a note for the rest of the turn.
+- **A write root and a protected list are different mechanisms and both apply.** `protect.ts` is a
+  deny list — it must anticipate every path worth protecting, so an unforeseen path is writable.
+  `root.ts` is an allow root — it anticipates nothing, because everything outside is refused and the
+  exceptions are `tools.providerConfig.writeRoots`, which only a manifest edit can add. Deny lists
+  fail open on the unknown case; roots fail closed. `protect` still wins *inside* the root. And
+  **resolve the path before comparing it to a root**, or `<root>/../../etc/passwd` passes.
+- **The write root does not bind `exec`, and "confined" is only true without a shell.** Verified live:
+  a `--system full` agent had `file_write` refused outside the root and then did it with `echo … >`.
+  All the root can decide is where a shell *starts*. That is why `init` has a `write` level between
+  `read` and `full` — files without a shell is the only configuration in which "only inside
+  workspace/" is a true statement.
+- **The model is told what it was NOT given.** `ToolProvider.available?()` is optional so a
+  25,000-tool catalogue omits it; the system provider's eight entries cost a handful of tokens.
+  Without it a pinned-down agent is silently less capable than its runtime and only the manifest
+  explains why. One shared renderer for both dialects — under `native` it is the *only* slot-1 block,
+  because the request's `tools` parameter has no field for what was left out.
+- **`agent.yaml` is edited by `config_set`, never by `file_write`, and never by re-serialising it.**
+  A whole-file overwrite cannot be validated; a targeted change is re-checked against the schema
+  before anything is written. And `parseDocument` → `setIn` → `String(doc)` **reflows the file**: a
+  comment between two top-level keys belongs to the end of the first, so re-emitting indents a section
+  header into the section above — one change produced a thirty-line diff. `setInSource` edits the
+  source text and falls back to the round-trip only when it cannot place a path.
+- **`config_set` escalates on purpose, and two edits are floored.** Pinning tools and adding allow
+  rules is the point. Replacing `tools.policy.deny` and setting `tools.untrusted.onMutate: allow` are
+  refused whatever the policy says. `onMutate` has to *stay in the settable list* for that floor to be
+  reachable — left out, the settable check ran first and refused `confirm` for the wrong reason.
+- **A `trust: "trusted"` declaration on a provider tool needs a `trustReason`.** The warning fired at
+  every boot of every system-provider agent, and a warning always present for a correct configuration
+  is one nobody reads. With a reason it is silent and `tools` prints the reason; without one it still
+  warns, which is the case worth catching.
 - **A `ChatMessage` is no longer just `{role, content}`.** Under the `native` dialect it carries
   `toolCalls` or `toolCallId`, and every layer that copies a message must copy those too — the wire
   mapper in `chat-completions.ts`, the `message` field on `ContextBlock`, and the store's

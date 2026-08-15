@@ -29,6 +29,7 @@ import { stripControl, type Tool, type ToolHandler } from "@castellan/core"
 import { grepPatternInvalid } from "./errors.ts"
 import { resolvePath } from "./files.ts"
 import { SYSTEM_PROVIDER_ID } from "./paths.ts"
+import type { Roots } from "./root.ts"
 import type { ShellSessions } from "./session.ts"
 import { globToRegExp, walk } from "./walk.ts"
 
@@ -39,7 +40,8 @@ const MAX_GREP_FILE_BYTES = 1_000_000
 
 export interface SearchOptions {
     readonly sessions: ShellSessions
-    readonly agentDir: string
+    /** Where a relative `path` resolves. Searching is not confined to it — reading never is. */
+    readonly roots: Roots
 }
 
 export const GLOB_SPEC: Tool["spec"] = {
@@ -120,7 +122,7 @@ function rootFor(
     key: string,
 ): string {
     const given = typeof args.path === "string" && args.path.trim() !== "" ? args.path : "."
-    return resolvePath(given, options.sessions, key, options.agentDir)
+    return resolvePath(given, options.sessions, key, options.roots.primary)
 }
 
 export function globHandler(options: SearchOptions): ToolHandler {

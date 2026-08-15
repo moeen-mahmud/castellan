@@ -4,7 +4,9 @@ The agent acting on the machine it runs on: a shell, and a file family that exis
 actually work. Governed by `tools.policy` and the trust gate from the first line of code rather than
 from a later hardening pass.
 
-`castellan init --system full` generates all of this. `--system read` generates the read-only half.
+`castellan init --system none|read|write|full` generates a working set and its permission rules.
+**`write` is files without a shell** — the only level in which "confined to the workspace" is a true
+statement, for the reason in *Where writes may go* below.
 
 ```yaml
 tools:
@@ -71,6 +73,25 @@ downloaded a minute ago and a filename is attacker-controlled, so reading taints
 return a sentence this runtime composed and never echo content — marking them untrusted would mean a
 write gated the *next* write.
 
+### Where writes may go
+
+Confined to a root: `<agentDir>/workspace`, or the agent's own directory when there is no workspace.
+Everything outside is read-only. `tools.providerConfig.writeRoots` adds directories — absolute, or
+relative to the agent directory — and **nothing said at runtime can add one**, which is what makes the
+default worth having.
+
+A protected list must anticipate every path worth protecting; a root anticipates nothing. Both apply,
+and the protected set wins inside the root. Paths are resolved before comparison, so `../` out of the
+root is checked as what it actually is.
+
+**Reads are not confined.** Being pointed at a project and asked about it is the ordinary case, and
+credentials are refused everywhere anyway.
+
+**The root does not bind `exec`.** Verified live: an agent with both had `file_write` refused outside
+the root and then wrote the file with `echo … >`. A shell carries its target inside a string no path
+check can look inside; all the root decides is where the shell starts. If the confinement has to be
+real, the agent cannot have a shell — that is `--system write`.
+
 ### Protected paths
 
 Not writable, and **no `policy.allow` rule reaches past them**: `agent.yaml`, the workspace identity
@@ -86,6 +107,31 @@ to. `tools.providerConfig.protect` adds patterns; nothing removes any.
 **It binds the file tools and not `exec`.** `echo x > SOUL.md` carries its target inside a shell string
 where no path check can see it. Pinning `exec` grants more than this protects, and saying so is cheaper
 than implying a boundary that is not there.
+
+## The agent's own configuration
+
+`config_read` returns the manifest plus every setting `config_set` will change and what each means, so
+an agent asked for something it cannot do can name the field instead of only saying no. `config_set`
+changes one dotted path, re-validating against the real schema before anything is written.
+
+`agent.yaml` stays protected from `file_write`: a whole-file overwrite cannot be validated, and an
+invalid manifest is a failure that surfaces at the *next* boot, by which time the change looked like it
+worked. The **source text** is edited rather than the document re-serialised — `parseDocument` → `setIn`
+→ `String(doc)` keeps every comment and moves half of them, because a comment between two top-level
+keys belongs to the end of the first as far as the parser is concerned. One change produced a
+thirty-line diff before this was fixed.
+
+It escalates on purpose — pinning a tool and adding an allow rule is what people ask for. Two edits are
+refused whatever the policy says: replacing `tools.policy.deny`, and setting
+`tools.untrusted.onMutate` to `allow`. A guard the agent can switch off on request is not a guard.
+`onMutate: confirm` is settable.
+
+## Tools that were not enabled
+
+Whatever this provider offers and the manifest did not pin, the model is told about in one line — and
+told to name the tool, say it is *not permitted yet* rather than that it is unable, and not to work
+around it with something else. Without that a pinned-down agent is silently less capable than its own
+runtime and only the manifest explains why.
 
 ## Sessions: the directory carries, the environment does not
 

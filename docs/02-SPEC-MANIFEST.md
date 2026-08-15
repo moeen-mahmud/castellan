@@ -310,9 +310,13 @@ tools:
     deny:  ["exec(rm *)", "exec(curl *)"]
 ```
 
-Six tools: `exec`, `file_read`, `file_write`, `file_edit`, `glob`, `grep`. Pin only what the agent
-needs — `file_read`, `glob`, `grep` is a complete read-only set, and `castellan init --system read`
-generates exactly that.
+Eight tools: `exec`, `file_read`, `file_write`, `file_edit`, `glob`, `grep`, `config_read`,
+`config_set`. `castellan init --system none|read|write|full` generates a working set and its
+permission rules; `write` is files **without** a shell, which is the only configuration in which
+"confined to the workspace" is a true statement — see below.
+
+`tools.providerConfig` accepts `writeRoots` (extra writable directories) and `protect` (extra refused
+paths). Both widen their respective set; nothing narrows either.
 
 `exec` takes `command`, `workdir`, `timeoutMs`, `pty`, and `background`. It takes **no `env`
 argument**, deliberately: a per-call environment map is invisible to the policy engine, which matches
@@ -338,6 +342,25 @@ behaves the way a person means it.
 picking one would be a coin toss that reports success while editing the wrong line. Nothing is written
 on either failure path.
 
+### Where writes may go
+
+**Writes are confined to a root.** `<agentDir>/workspace` by default, falling back to the agent's own
+directory when there is no workspace. Everything outside is read-only, and the exceptions are
+`tools.providerConfig.writeRoots` — absolute, or relative to the agent directory. **Nothing said at
+runtime can add one**, which is the property that makes the default worth having: an agent that has
+misunderstood a request cannot damage anything while misunderstanding it.
+
+A protected list has to anticipate every path worth protecting; a root anticipates nothing. Both
+apply, and the protected set wins *inside* the root.
+
+**Reads are deliberately not confined.** Being pointed at a project and asked about it is the ordinary
+case, and credentials are refused everywhere already.
+
+**The root does not bind `exec`, and cannot.** Verified: an agent with both had `file_write` refused
+outside the root and then wrote the file with `echo … >`. A shell carries its target inside a string
+no path check can look inside, so all the root decides is where the shell starts. If "only inside the
+workspace" has to be true, the agent cannot have a shell — that is what `--system write` is for.
+
 ### Protected paths
 
 Not writable by the file tools, and **no `policy.allow` rule reaches past them**:
@@ -356,6 +379,40 @@ nothing removes any, because the set contains the policy file.
 **Stated rather than discovered: this binds the file tools and not `exec`.** `echo x > SOUL.md` carries
 its target inside a shell string where no path check can see it. Pinning `exec` grants more than this
 protects.
+
+### The agent's own configuration
+
+`config_read` returns the manifest and every setting `config_set` will change, each with one line on
+what it means — so an agent asked for something it cannot do can name the field rather than only
+saying no. `config_set` changes one dotted path: it is re-validated against the schema before anything
+is written, comments and formatting survive because the *source text* is edited rather than the
+document re-serialised, and `policyArg` is the manifest path, so `deny: ["config_set(tools.policy*)"]`
+is expressible.
+
+`agent.yaml` stays in the protected set for `file_write`. A whole-file overwrite cannot be validated;
+a targeted change can, and an invalid manifest is a failure that shows up at the *next* boot, by which
+time the change looked like it succeeded.
+
+**This escalates, and that is the point** — pinning a tool and adding an allow rule is what a person
+asks for. Bounded three ways: `config_set` is `mutating`, so the write gate applies; a `deny` rule can
+put the security fields out of reach; and two edits are refused whatever the policy says —
+
+| refused edit | why |
+| --- | --- |
+| replacing `tools.policy.deny` | its only purpose is removing a restriction someone set deliberately |
+| `tools.untrusted.onMutate: allow` | it turns off the check on outside content driving a write |
+
+A guard the agent can switch off on request is not a guard. Everything else, including `onMutate:
+confirm`, is settable.
+
+### Tools that exist and were not enabled
+
+The model is told, in one line each, which of the provider's tools this manifest did not pin — and
+told to name the tool, say it is *not permitted yet* rather than that it is unable, and not to reach
+for another tool to work around it. Without this a pinned-down agent is silently less capable than its
+own runtime, and only someone reading the manifest can find out why.
+
+Provider-opt-in via `ToolProvider.available?()`, so a catalogue of 25,000 tools omits it entirely.
 
 Not a sandbox. A policy decides *whether* a command runs; a sandbox decides *where*. This ships the
 first, and containment stays a deployment concern.

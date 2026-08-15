@@ -8,6 +8,16 @@
  */
 
 export {
+    CONFIG_READ_SPEC,
+    CONFIG_SET_SPEC,
+    type ConfigOptions,
+    configReadHandler,
+    configSetHandler,
+    configTools,
+    parseValue,
+    SETTABLE_PATHS,
+} from "./config.ts"
+export {
     execCommandEmpty,
     execPtyUnavailable,
     execSpawnFailed,

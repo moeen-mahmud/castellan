@@ -31,12 +31,15 @@
 import {
     ConfigError,
     type Tool,
+    type ToolAvailability,
     type ToolProvider,
     type ToolProviderContext,
 } from "@castellan/core"
+import { configTools } from "./config.ts"
 import { execTool } from "./exec.ts"
 import { fileTools } from "./files.ts"
 import { SYSTEM_PROVIDER_ID } from "./paths.ts"
+import { resolveRoots } from "./root.ts"
 import { searchTools } from "./search.ts"
 import { ShellSessions } from "./session.ts"
 
@@ -56,6 +59,8 @@ export interface SystemProviderOptions {
      * unprotect itself.
      */
     readonly protect?: readonly string[]
+    /** Extra writable directories. Absolute, or relative to the agent directory. */
+    readonly writeRoots?: readonly string[]
 }
 
 function normalise(slug: string): string {
@@ -74,16 +79,32 @@ export class SystemProvider implements ToolProvider {
     readonly #tools: readonly Tool[]
 
     constructor(options: SystemProviderOptions) {
+        const roots = resolveRoots(options.dir, options.writeRoots ?? [])
         const shared = {
             sessions: this.#sessions,
             agentDir: options.dir,
+            roots,
             ...(options.protect === undefined ? {} : { protect: options.protect }),
         }
         this.#tools = [
-            execTool({ sessions: this.#sessions, env: options.env }),
+            execTool({ sessions: this.#sessions, env: options.env, roots }),
             ...fileTools(shared),
-            ...searchTools(shared),
+            ...searchTools({ sessions: this.#sessions, roots }),
+            ...configTools({ agentDir: options.dir }),
         ]
+    }
+
+    /**
+     * Every tool this provider offers, whether or not the manifest pinned it.
+     *
+     * The registry uses this to tell the model what it *could* have. Bounded by construction — eight
+     * entries — which is why the method is optional on `ToolProvider` rather than required: a provider
+     * with twenty-five thousand tools has nothing useful to say here and omits it.
+     */
+    available(): Promise<readonly ToolAvailability[]> {
+        return Promise.resolve(
+            this.#tools.map((tool) => ({ slug: tool.spec.slug, summary: tool.spec.summary })),
+        )
     }
 
     /**
@@ -109,6 +130,8 @@ export const SYSTEM_TOOL_SLUGS: readonly string[] = [
     "file_edit",
     "glob",
     "grep",
+    "config_read",
+    "config_set",
 ]
 
 /**
@@ -119,7 +142,7 @@ export const SYSTEM_TOOL_SLUGS: readonly string[] = [
  */
 export const SYSTEM_READONLY_SLUGS: readonly string[] = ["file_read", "glob", "grep"]
 
-const CONFIG_KEYS = ["protect"] as const
+const CONFIG_KEYS = ["protect", "writeRoots"] as const
 
 export function systemFromConfig(context: ToolProviderContext): SystemProvider {
     const unknown = Object.keys(context.config).filter(
@@ -129,15 +152,19 @@ export function systemFromConfig(context: ToolProviderContext): SystemProvider {
         throw new ConfigError({
             code: "system_config_unknown",
             message: `tools.providerConfig has ${unknown.length === 1 ? "a key" : "keys"} the system provider does not read: ${unknown.join(", ")}.`,
-            hint: `The only accepted key is ${CONFIG_KEYS.join(", ")}, a list of extra paths the file tools refuse to write. Refused rather than ignored, because a protection that looks applied and is not is worse than a rejected manifest.`,
+            hint: `Accepted keys are ${CONFIG_KEYS.join(", ")} — extra paths the file tools refuse to write, and extra directories they may write. Refused rather than ignored, because a protection that looks applied and is not is worse than a rejected manifest.`,
             field: "tools.providerConfig",
         })
     }
 
     const protect = context.config.protect
+    const writeRoots = context.config.writeRoots
     return new SystemProvider({
         env: context.env,
         dir: context.dir,
         ...(Array.isArray(protect) ? { protect: protect.map((entry) => String(entry)) } : {}),
+        ...(Array.isArray(writeRoots)
+            ? { writeRoots: writeRoots.map((entry) => String(entry)) }
+            : {}),
     })
 }
