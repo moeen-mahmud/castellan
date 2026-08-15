@@ -28,6 +28,7 @@
         "release": "changeset publish",
         "bench:boot": "bun scripts/bench-boot.ts",
         "eval:tools": "bun scripts/eval-tools.ts",
+        "eval:injection": "bun scripts/eval-injection.ts",
         "mock": "bun scripts/mock-endpoint.ts",
         "verify:endpoints": "bun scripts/verify-endpoints.ts"
     },

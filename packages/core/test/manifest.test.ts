@@ -4,6 +4,7 @@ import { join } from "node:path"
 import { BRAND } from "../src/brand.ts"
 import { HarnessError } from "../src/errors.ts"
 import { loadManifest } from "../src/manifest/load.ts"
+import { providerIds, resolveProviders } from "../src/manifest/providers.ts"
 import { describe, expect, test } from "./_harness.ts"
 
 /**
@@ -781,5 +782,44 @@ server:
 `),
         })
         expect(loaded.manifest.server.enabled).toBe(false)
+    })
+})
+
+describe("resolveProviders", () => {
+    test("the map is read in order and each block reaches its own provider", () => {
+        const plan = resolveProviders({
+            providers: { system: { writeRoots: ["./notes"] }, web: { backend: "brave" } },
+        })
+        expect(plan.selections.map((entry) => entry.id)).toEqual(["system", "web"])
+        expect(plan.selections[1]?.config).toEqual({ backend: "brave" })
+        expect(plan.warnings).toEqual([])
+    })
+
+    test("no providers at all is not a warning", () => {
+        expect(resolveProviders({}).selections).toEqual([])
+        expect(resolveProviders({}).warnings).toEqual([])
+    })
+
+    test("a providerConfig with no provider to apply it to is reported, not ignored", () => {
+        // Settings that look applied and are not. The half-finished state of a migration where the
+        // provider line was deleted and its block was left behind.
+        const plan = resolveProviders({ providerConfig: { apiKeyEnv: "TAVILY_API_KEY" } })
+        expect(plan.selections).toEqual([])
+        expect(plan.warnings[0]?.code).toBe("tools_provider_config_orphaned")
+    })
+
+    test("a providerConfig beside the map is a conflict, since it belongs to the other spelling", () => {
+        expect(() =>
+            resolveProviders({ providers: { web: {} }, providerConfig: { backend: "brave" } }),
+        ).toThrow(/tools_provider_alias_conflict|deprecated/)
+        // Empty is the schema default and means nothing at all.
+        expect(resolveProviders({ providers: { web: {} }, providerConfig: {} }).warnings).toEqual(
+            [],
+        )
+    })
+
+    test("providerIds lists both spellings for a message that has to name them", () => {
+        expect(providerIds({ providers: { a: {}, b: {} } })).toEqual(["a", "b"])
+        expect(providerIds({ provider: "c" })).toEqual(["c"])
     })
 })

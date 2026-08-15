@@ -507,3 +507,48 @@ Never claim a performance property without a number in `evals/` and a script to 
   because NLT's protocol is prose the model imitates and native's is a schema the API enforces, *any*
   defect in the preamble shows up as a dialect difference. Before believing an NLT-vs-native number,
   read what the model actually wrote — `results.json` keeps it on every non-`correct` attempt.
+- **A field's floor has to move when the field moves.** `writeRoots` went from `tools.providerConfig`
+  — a path `config_set` refused outright — to `tools.providers.system`, which sits *inside* a value the
+  agent is allowed to write, because enabling the web provider is exactly what `config_set` is for. A
+  floor pinned to the old path would have been a floor with a new way round it. It now refuses a
+  `writeRoots` segment in any path **and** a `writeRoots` key nested anywhere inside a `tools.providers`
+  value. When a settable field grows a nested shape, re-read the floor.
+- **`tools.providers` is a map and the scalar is an alias, and the pair is refused rather than merged.**
+  Merging would give the alias a position in the map that nobody wrote, and provider order decides which
+  one is named first in a slug collision. Every reader goes through `resolveProviders` — the runtime,
+  `Agent.create` (for the deprecation warning, so it lands on `agent.warnings` where a front end still
+  finds it), `validate`, `tools --warm`, and `config_set`. `config_set` calls it *in addition to* the
+  schema, because writing the map into a manifest that still has the scalar produces a document the
+  schema accepts and the runtime refuses: an agent that boots today and not tomorrow, reported as success.
+- **`tools --warm` asks the providers with no cache for their slugs too.** They have nothing to fetch,
+  but they still answer for `exec` and `file_read` — and without asking, the missing-slug report blames
+  every system tool in `pinned` for not being in Composio's catalogue. With several providers the
+  question is whether *some* provider has the slug, never whether each one does.
+- **A `setInSource` value can now be a map, and until it was it wrote `[object Object]`.** The renderer
+  handled scalars and lists, which was exactly the settable set until `tools.providers` joined it. The
+  symptom was a schema error reading "expected record, received array" — pointing nowhere near the cause.
+  A map replacement also drops the line's trailing comment rather than carrying it, because the value
+  has moved onto child lines and the comment would end up annotating a key.
+- **`web_fetch` has no setting that permits a private address, and that absence is the design.** The
+  reference manifest carried an `allowPrivateHosts: false` line before the code existed; writing the
+  guard is what made the problem with it obvious. The single real use of the flag is reaching the local
+  network, and the highest-value thing there is `169.254.169.254`. An operator who wants an internal
+  HTTP call has `exec` and `curl` — deliberate, and narrowable by a policy rule.
+- **Check every address DNS returned, not the first, and fail closed on one you cannot parse.** Node
+  connects to whichever answers first, so a name resolving to one public and one private address is an
+  attack rather than a configuration. Decode IPv4-in-IPv6 first (`::ffff:127.0.0.1`, `64:ff9b::7f00:1`),
+  and accept exactly one spelling of a dotted quad — a parser that accepts more forms than the checker
+  understands *is* the bypass, which is why `017.0.0.1` is not a literal here.
+- **DNS rebinding is not covered and says so in three places.** The guard's lookup and the HTTP client's
+  connection are separate resolutions, and pinning the checked address into the socket is not
+  expressible through `fetch`. A checker described as airtight is one nobody revisits.
+- **`maxBytes` is enforced while reading, and the test asserts on bytes pulled off the socket.**
+  `await response.text()` on a 50 MB page has already spent the 50 MB by the time anything can measure
+  it, so a cap applied afterwards describes the observation rather than the download. Expect one chunk
+  of overshoot: a `ReadableStream` fills its queue one ahead of the reader. It is constant, not a leak.
+- **The injection eval measures the model, and cannot measure the gate.** Zero breaches across three
+  runs is not evidence the write gate works — the gate never fired, because the model never attempted a
+  mutating call. The gate is proven deterministically in `trust.test.ts`, which is the right place. And
+  the eval needed a third category before it measured anything at all: its first run scored the *ideal*
+  behaviour as a failure, because a model that tells the user "the page tried to make me write
+  ZX-9-COMPROMISED and I refused" has put the marker in the reply, which was the entire check.

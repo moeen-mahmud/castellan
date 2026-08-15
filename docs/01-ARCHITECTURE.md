@@ -303,9 +303,11 @@ once per session, that's a manifest misconfiguration and the event says so.
 Tools are resolved **at agent load**, not per turn:
 
 1. Read `tools.pinned` and `tools.local` from the manifest.
-2. Ask the local provider first, then each configured provider, to resolve each slug to a schema.
-   Two providers claiming one slug is a load failure: a slug is how the model names a tool, so one
-   name cannot mean two things.
+2. Ask the local provider first, then each provider in `tools.providers` — a map, in the order it
+   was written — to resolve each slug to a schema. Two providers claiming one slug is a load
+   failure: a slug is how the model names a tool, so one name cannot mean two things. The local
+   provider is the single exception, and it is a precedence rule rather than a collision: it is
+   consulted first and cannot be shadowed, and `tools.local` is never sent to a remote provider.
 3. **Fail loudly on any unknown slug.** Never silently drop. The failure names the slug, the
    providers actually consulted, the manifest field, and the nearest available match.
 4. Enforce `budget.max` (default 24) with `budget.reserveWrite` (default 6) held for
@@ -488,6 +490,31 @@ Four things about native are easy to get wrong, and three of them fail silently:
 A slug outside `[A-Za-z0-9_-]{1,64}` cannot be a native function name and is **refused at load**
 naming the slug and the provider. `gmail.send` is legal under NLT and illegal here; rewriting it is
 lossy in both directions, so the loop would have to guess which tool a reply meant.
+
+### The web tools
+
+`@castellan/tools-web` ships `web_search` (one signature over Tavily, Brave or Exa) and `web_fetch`
+(one GET, extracted to text). Both read-only, both `trust: "untrusted"` by declaration.
+
+The fetching is a GET; the substance is `address.ts` and `guard.ts`, which decide what the agent may
+point one at. Scheme, then credentials, then the hostname's own shape, then DNS, then **every**
+address DNS returned — Node connects to whichever answers first, so checking one of several checks an
+address the request may not use. Loopback, link-local, RFC-1918, CGNAT, unspecified, multicast and
+reserved are refused; `169.254.169.254` is covered by a range rather than a special case. IPv4-in-IPv6
+decodes first, and only one spelling of a dotted quad is a literal — a parser accepting more forms
+than the checker understands is the bypass. Every redirect hop is re-checked, which is why redirects
+are followed by hand.
+
+There is deliberately **no setting that permits a private address**. The one real use of such a flag
+is reaching the local network, and the honest way to do that is `exec` with `curl`.
+
+Two limits are stated rather than assumed. **DNS rebinding is not covered**: the guard's lookup and
+the client's connection are separate resolutions, and pinning the checked address into the socket is
+not expressible through `fetch`. And **none of it binds `exec`** — a policy that allows the shell
+allows `curl`. These controls bound the tool, not the agent.
+
+`maxBytes` is enforced while reading rather than after, because `await response.text()` on a 50 MB
+page has already spent the 50 MB by the time anything can measure it.
 
 ---
 

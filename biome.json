@@ -7,7 +7,7 @@
             "!**/dist",
             "!**/node_modules",
             "!**/*.tsbuildinfo",
-            "!evals/*/results.json"
+            "!evals/**/results.json"
         ]
     },
     "formatter": {

@@ -18,6 +18,7 @@ import { HarnessError, toolProviderUnknown } from "../errors.ts"
 import { EventBus } from "../events/bus.ts"
 import type { EnvSource } from "../manifest/env.ts"
 import { type LoadedManifest, loadManifest, loadManifestFromObject } from "../manifest/load.ts"
+import { resolveProviders } from "../manifest/providers.ts"
 import type { FetchLike } from "../model/provider.ts"
 import { TurnStreams } from "../store/buffer.ts"
 import { SqliteStore } from "../store/sqlite/store.ts"
@@ -176,19 +177,17 @@ export class Runtime {
         //    refreshes after readiness — hard rule 4 has no exception for "just this one call".
         //    The factory is called here rather than at first use so an unregistered id fails during
         //    boot, next to the manifest that named it — not on the first turn, hours later.
-        const providersByAgent = new Map<string, ToolProvider>()
+        const providersByAgent = new Map<string, readonly ToolProvider[]>()
         const registries = await markAsync("tools", () =>
             Promise.all(
                 loaded.map((entry: LoadedManifest) => {
-                    const provider = buildProvider(entry, options)
-                    if (provider !== undefined) {
-                        providersByAgent.set(entry.manifest.id, provider)
-                    }
+                    const providers = buildProviders(entry, options)
+                    if (providers.length > 0) providersByAgent.set(entry.manifest.id, providers)
                     return ToolRegistry.create({
                         pinned: entry.manifest.tools.pinned,
                         local: entry.manifest.tools.local,
                         budget: entry.manifest.tools.budget,
-                        ...(provider === undefined ? {} : { providers: [provider] }),
+                        ...(providers.length === 0 ? {} : { providers }),
                     })
                 }),
             ),
@@ -269,42 +268,48 @@ export class Runtime {
         // would put a remote round trip back inside `Runtime.create` — the boot cost this project
         // exists to remove — just on the far side of the event. So it runs detached and reports through
         // the bus, and a failure leaves the agent serving the catalogue it resolved from disk.
-        for (const [agentId, provider] of providersByAgent) {
+        for (const [agentId, providers] of providersByAgent) {
             const entry = loaded.find((item: LoadedManifest) => item.manifest.id === agentId)
             const slugs = entry?.manifest.tools.pinned ?? []
-            if (provider.refresh === undefined || slugs.length === 0) continue
-            const from = performance.now()
-            void provider
-                .refresh(slugs)
-                .then((result) => {
-                    bus.emit(
-                        "tools.refreshed",
-                        {
-                            provider: provider.id,
-                            ok: true,
-                            fetched: result.fetched,
-                            changed: [...result.changed],
-                            missing: [...result.missing],
-                            latencyMs: Math.round(performance.now() - from),
-                        },
-                        { agentId },
-                    )
-                })
-                .catch((error: unknown) => {
-                    bus.emit(
-                        "tools.refreshed",
-                        {
-                            provider: provider.id,
-                            ok: false,
-                            fetched: 0,
-                            changed: [],
-                            missing: [],
-                            latencyMs: Math.round(performance.now() - from),
-                            error: error instanceof Error ? error.message : String(error),
-                        },
-                        { agentId },
-                    )
-                })
+            for (const provider of providers) {
+                // Most providers have nothing to fetch — `system` and `web` resolve from module
+                // constants — so this skips them rather than requiring an empty implementation. With
+                // several configured, each reports its own `tools.refreshed` and one failing leaves
+                // the others alone.
+                if (provider.refresh === undefined || slugs.length === 0) continue
+                const from = performance.now()
+                void provider
+                    .refresh(slugs)
+                    .then((result) => {
+                        bus.emit(
+                            "tools.refreshed",
+                            {
+                                provider: provider.id,
+                                ok: true,
+                                fetched: result.fetched,
+                                changed: [...result.changed],
+                                missing: [...result.missing],
+                                latencyMs: Math.round(performance.now() - from),
+                            },
+                            { agentId },
+                        )
+                    })
+                    .catch((error: unknown) => {
+                        bus.emit(
+                            "tools.refreshed",
+                            {
+                                provider: provider.id,
+                                ok: false,
+                                fetched: 0,
+                                changed: [],
+                                missing: [],
+                                latencyMs: Math.round(performance.now() - from),
+                                error: error instanceof Error ? error.message : String(error),
+                            },
+                            { agentId },
+                        )
+                    })
+            }
         }
 
         return runtime
@@ -358,25 +363,32 @@ function envOptions(options: RuntimeOptions): {
 }
 
 /**
- * Construct the agent's tool provider, if its manifest names one.
+ * Construct the agent's tool providers, in the order its manifest listed them.
  *
- * The provider gets the *manifest's* directory and env rather than the process's: a resolution cache
+ * Each provider gets the *manifest's* directory and env rather than the process's: a resolution cache
  * belongs beside the agent it describes, and `process.cwd()` belongs to whoever launched the process
  * and moves depending on how they did it. Same reasoning as `ToolContext.dir`.
+ *
+ * Order is manifest order, and it is load-bearing: the registry consults providers in sequence and a
+ * slug two of them both resolve is a collision it refuses — so the order decides which one is named
+ * first in that failure, and nothing here may sort it into something tidier than what was written.
  */
-function buildProvider(entry: LoadedManifest, options: RuntimeOptions): ToolProvider | undefined {
-    const id = entry.manifest.tools.provider
-    if (id === undefined) return undefined
-
+function buildProviders(entry: LoadedManifest, options: RuntimeOptions): readonly ToolProvider[] {
     const factories = options.toolProviders ?? {}
-    const factory = factories[id]
-    if (factory === undefined) throw toolProviderUnknown(id, Object.keys(factories))
 
-    return factory({
-        dir: entry.dir,
-        env: entry.env,
-        config: entry.manifest.tools.providerConfig,
-        agentId: entry.manifest.id,
+    // The plan's warnings are deliberately not collected here. `Agent.create` reads them from the
+    // same function, so they arrive on `agent.warnings` where a front end still finds them after
+    // boot — the lesson from the trimmed-catalogue warning, which was emitted during boot into an
+    // empty room for weeks.
+    return resolveProviders(entry.manifest.tools).selections.map((selection) => {
+        const factory = factories[selection.id]
+        if (factory === undefined) throw toolProviderUnknown(selection.id, Object.keys(factories))
+        return factory({
+            dir: entry.dir,
+            env: entry.env,
+            config: selection.config,
+            agentId: entry.manifest.id,
+        })
     })
 }
 

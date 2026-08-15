@@ -2,9 +2,11 @@ import { mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { BRAND } from "../src/brand.ts"
+import { HarnessError } from "../src/errors.ts"
 import type { AnyEvent } from "../src/events/types.ts"
 import type { FetchLike } from "../src/model/provider.ts"
 import { Runtime } from "../src/runtime/runtime.ts"
+import type { ToolProviderFactory } from "../src/tools/types.ts"
 import { describe, expect, sleep, test } from "./_harness.ts"
 
 /**
@@ -709,5 +711,187 @@ limits:
 
         expect(agent.describe().knowledge.map((entry) => entry.name)).toEqual(["deploys.md"])
         await runtime.stop()
+    })
+})
+
+describe("tools.providers", () => {
+    /** A provider whose tools are named after it, so a catalogue can be attributed by eye. */
+    function stub(id: string, slugs: readonly string[]): ToolProviderFactory {
+        return () => ({
+            id,
+            resolve(wanted) {
+                return Promise.resolve(
+                    slugs
+                        .filter((slug) => wanted.includes(slug))
+                        .map((slug) => ({
+                            spec: {
+                                slug,
+                                provider: id,
+                                summary: `${slug} from ${id}`,
+                                whenToUse: "testing",
+                                whenNotToUse: "not testing",
+                                mutating: false,
+                                tags: [],
+                                parameters: { type: "object" as const, properties: {} },
+                            },
+                            handler: () => "ok",
+                        })),
+                )
+            },
+        })
+    }
+
+    function withTools(tools: string): string {
+        const dir = mkdtempSync(join(tmpdir(), "runtime-providers-"))
+        writeFileSync(
+            join(dir, "agent.yaml"),
+            `apiVersion: ${BRAND.apiVersion}
+id: test
+model:
+  main:
+    id: gpt-4o-mini
+    baseUrl: https://api.example.com/v1
+    apiKeyEnv: MODEL_API_KEY
+${tools}
+`,
+        )
+        return dir
+    }
+
+    test("several providers resolve into one catalogue, in manifest order", async () => {
+        const dir = withTools(`tools:
+  providers:
+    alpha: {}
+    beta: {}
+  pinned: [a_one, b_one, a_two]`)
+
+        const runtime = await Runtime.create({
+            agents: [join(dir, "agent.yaml")],
+            env: ENV,
+            fetch: replyFetch,
+            toolProviders: {
+                alpha: stub("alpha", ["a_one", "a_two"]),
+                beta: stub("beta", ["b_one"]),
+            },
+        })
+
+        // Catalogue order is manifest order — what the author pinned first survives a trim — and the
+        // providers were consulted in the order the map lists them.
+        expect(
+            runtime
+                .agent("test")
+                .tools.specs()
+                .map((entry) => entry.slug),
+        ).toEqual(["a_one", "b_one", "a_two"])
+        expect(
+            runtime
+                .agent("test")
+                .tools.specs()
+                .map((entry) => entry.provider),
+        ).toEqual(["alpha", "beta", "alpha"])
+        await runtime.stop()
+    })
+
+    test("a slug two providers both answer is a load failure naming both", async () => {
+        const dir = withTools(`tools:
+  providers:
+    alpha: {}
+    beta: {}
+  pinned: [shared]`)
+
+        // Silently taking the first would make which provider ran a fact about map order rather
+        // than about the manifest — and the two tools with one name do different things.
+        let error: HarnessError | undefined
+        try {
+            await Runtime.create({
+                agents: [join(dir, "agent.yaml")],
+                env: ENV,
+                fetch: replyFetch,
+                toolProviders: {
+                    alpha: stub("alpha", ["shared"]),
+                    beta: stub("beta", ["shared"]),
+                },
+            })
+        } catch (thrown) {
+            if (thrown instanceof HarnessError) error = thrown
+        }
+        expect(error?.code).toBe("tool_slug_collision")
+        expect(error?.message).toContain("alpha")
+        expect(error?.message).toContain("beta")
+    })
+
+    test("the old singular provider still loads, with a warning that names the rewrite", async () => {
+        const dir = withTools(`tools:
+  provider: alpha
+  providerConfig: { flavour: vanilla }
+  pinned: [a_one]`)
+
+        const seen: Record<string, unknown>[] = []
+        const runtime = await Runtime.create({
+            agents: [join(dir, "agent.yaml")],
+            env: ENV,
+            fetch: replyFetch,
+            toolProviders: {
+                alpha: (context) => {
+                    seen.push({ ...context.config })
+                    return stub("alpha", ["a_one"])(context)
+                },
+            },
+        })
+
+        const agent = runtime.agent("test")
+        expect(agent.tools.specs().map((entry) => entry.slug)).toEqual(["a_one"])
+        // The config still reaches the provider — the alias is a spelling, not a downgrade.
+        expect(seen).toEqual([{ flavour: "vanilla" }])
+
+        // Read off the agent rather than caught on the bus: boot finishes before anything subscribes.
+        const warning = agent.warnings.find((entry) => entry.code === "tools_provider_deprecated")
+        expect(warning).toBeDefined()
+        expect(warning?.hint).toContain("providers:")
+        await runtime.stop()
+    })
+
+    test("both spellings at once is refused rather than merged", async () => {
+        const dir = withTools(`tools:
+  providers:
+    alpha: {}
+  provider: beta
+  pinned: [a_one]`)
+
+        let error: HarnessError | undefined
+        try {
+            await Runtime.create({
+                agents: [join(dir, "agent.yaml")],
+                env: ENV,
+                fetch: replyFetch,
+                toolProviders: { alpha: stub("alpha", ["a_one"]), beta: stub("beta", []) },
+            })
+        } catch (thrown) {
+            if (thrown instanceof HarnessError) error = thrown
+        }
+        expect(error?.code).toBe("tools_provider_alias_conflict")
+    })
+
+    test("an unregistered id fails at load, naming the field it was written in", async () => {
+        const dir = withTools(`tools:
+  providers:
+    nowhere: {}
+  pinned: [a_one]`)
+
+        let error: HarnessError | undefined
+        try {
+            await Runtime.create({
+                agents: [join(dir, "agent.yaml")],
+                env: ENV,
+                fetch: replyFetch,
+                toolProviders: { alpha: stub("alpha", ["a_one"]) },
+            })
+        } catch (thrown) {
+            if (thrown instanceof HarnessError) error = thrown
+        }
+        // Refused by the loader's knownProviders check before construction is even attempted.
+        expect(error?.details?.some((detail) => detail.field === "tools.providers.nowhere")).toBe(
+            true,
+        )
     })
 })

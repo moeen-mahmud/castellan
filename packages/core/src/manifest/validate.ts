@@ -420,20 +420,37 @@ function validateSupportedSections(
     if (tools !== null && typeof tools === "object" && !Array.isArray(tools)) {
         const toolKeys = tools as Record<string, unknown>
 
-        // `provider` and `providerConfig` are implemented now, but only for an id the caller registered.
-        // Checked against `knownProviders` rather than dropped from this list entirely: naming a
-        // provider nobody supplied has to fail, and failing here — beside the field — beats failing at
-        // resolution, where the report blames twenty slugs for one missing registration.
-        const declared = toolKeys.provider
-        if (typeof declared === "string" && declared !== "" && !knownProviders.includes(declared)) {
+        // Providers are implemented now, but only for ids the caller registered. Checked against
+        // `knownProviders` rather than dropped from this list entirely: naming a provider nobody
+        // supplied has to fail, and failing here — beside the field — beats failing at resolution,
+        // where the report blames twenty slugs for one missing registration.
+        //
+        // Both spellings are read, from the same function the runtime uses. A check only `run`
+        // performs is a check `validate` disagrees with, and this one had that shape already: the
+        // map would have gone unchecked entirely while the scalar was still reported.
+        const declaredMap = toolKeys.providers
+        const declaredIds = [
+            ...(declaredMap !== null &&
+            typeof declaredMap === "object" &&
+            !Array.isArray(declaredMap)
+                ? Object.keys(declaredMap as Record<string, unknown>).map(
+                      (id) => [id, `tools.providers.${id}`] as const,
+                  )
+                : []),
+            ...(typeof toolKeys.provider === "string" && toolKeys.provider !== ""
+                ? [[toolKeys.provider, "tools.provider"] as const]
+                : []),
+        ]
+        for (const [declared, field] of declaredIds) {
+            if (knownProviders.includes(declared)) continue
             found.push({
                 code: "tool_provider_unknown",
-                message: `tools.provider is "${declared}", which is not registered here.${knownProviders.length === 0 ? "" : ` Available: ${knownProviders.join(", ")}.`}`,
+                message: `${field} names "${declared}", which is not registered here.${knownProviders.length === 0 ? "" : ` Available: ${knownProviders.join(", ")}.`}`,
                 hint:
                     knownProviders.length === 0
                         ? `A provider is supplied by the embedder — nothing installs at runtime. Pass it as Runtime.create({ toolProviders: { ${declared}: (ctx) => new … } }). ${BRAND.slug} validate reports this whenever it is run without one, since it cannot know what an embedder would register.`
                         : "Check the spelling against the available ids.",
-                field: "tools.provider",
+                field,
             })
         }
 

@@ -59,7 +59,10 @@ context:
 
 tools:
   dialect: nlt
-  provider: composio
+  providers:
+    composio:
+      apiKeyEnv: COMPOSIO_API_KEY
+      userId: me
   budget:
     max: 24
     reserveWrite: 6
@@ -273,15 +276,14 @@ case-insensitive and whole-word against the current input. See `07-SPEC-WORKSPAC
 | Field | Default | Notes |
 | --- | --- | --- |
 | `dialect` | `nlt` | `nlt` or `native`. Config only — never auto-detected. `native` is refused at load when the resolved model has `capabilities.nativeTools: false`, and when any resolved slug falls outside a native function name's `[A-Za-z0-9_-]{1,64}`. |
-| `provider` | none | Provider id the embedder registered: `composio`, `system`, or custom. Omit for local-only. **Naming an unregistered id fails the load** — resolving nothing instead would blame every pinned slug for one missing registration. |
-| `providerConfig` | `{}` | Passed to the provider, which validates it and **refuses an unknown key** rather than ignoring it. Secrets are env var *names*. |
+| `providers` | `{}` | Map of provider id → that provider's own config: `system`, `web`, `composio`, or anything the embedder registered. Several at once. Each block is validated by its provider, which **refuses an unknown key** rather than ignoring it. Secrets are env var *names*. **Naming an unregistered id fails the load** — resolving nothing instead would blame every pinned slug for one missing registration. |
+| `provider` | none | **Deprecated alias** for a single `providers` entry. Still loads, with a `tools_provider_deprecated` warning naming the rewrite. Setting it *and* `providers` is a load failure, not a merge. |
+| `providerConfig` | `{}` | Goes with `provider`. Non-empty with no `provider` to apply it to earns `tools_provider_config_orphaned`. |
 | `budget.max` | 24 | Hard cap on catalogue size. |
 | `budget.reserveWrite` | 6 | Slots held for mutating tools so reads cannot starve writes. |
 | `pinned` | `[]` | Slugs resolved at load. **An unknown slug fails the load** with the slug and provider named. |
 | `search.enabled` | false | Exposes a provider search meta-tool as an escape hatch. Off by default: search-then-execute is two-hop reasoning and small models fail it. |
 | `local` | `[]` | Built-in tools: `memory_write`, `phase_set`, `handoff`, `now`. |
-| `providers` | `{}` | **Phase 3.6.** Map of provider id → its config, so more than one can be used at once. `provider` + `providerConfig` remain as the single-provider alias and warn. |
-| `web` | none | **Phase 3.6.** `backend` (`tavily \| brave \| exa`), `apiKeyEnv`, `maxBytes`, `timeoutMs`, `allowPrivateHosts`. |
 | `policy.mode` | `allow` | What happens to a call no rule mentions. `allow` because **pinning is the primary authorization** — an agent has only the tools its manifest pinned. `ask` on an unattended run means `onNoApprover` answers it, so a schedule would do nothing. |
 | `policy.allow` / `policy.deny` | `[]` | `Tool` or `Tool(pattern)`. Evaluated **deny → allow, first match, specificity never reorders** — so a deny carries no exceptions. A rule naming a primary content field (`exec(command:…)`) is refused: a compound command defeats it. |
 | `policy.onNoApprover` | `deny` | What `ask` means with nobody to ask — a schedule, a pipe, a channel with no approver. |
@@ -303,7 +305,8 @@ still has to select it and pin the tool, because availability and grant are sepa
 
 ```yaml
 tools:
-  provider: system
+  providers:
+    system: {}
   pinned: [exec]
   policy:
     allow: ["exec"]                    # or narrower: "exec(git *)", "exec(npm test:*)"
@@ -315,8 +318,8 @@ Eight tools: `exec`, `file_read`, `file_write`, `file_edit`, `glob`, `grep`, `co
 permission rules; `write` is files **without** a shell, which is the only configuration in which
 "confined to the workspace" is a true statement — see below.
 
-`tools.providerConfig` accepts `writeRoots` (extra writable directories) and `protect` (extra refused
-paths). Both widen their respective set; nothing narrows either.
+`tools.providers.system` accepts `writeRoots` (extra writable directories) and `protect` (extra
+refused paths). Both widen their respective set; nothing narrows either.
 
 `exec` takes `command`, `workdir`, `timeoutMs`, `pty`, and `background`. It takes **no `env`
 argument**, deliberately: a per-call environment map is invisible to the policy engine, which matches
@@ -346,7 +349,7 @@ on either failure path.
 
 **Writes are confined to a root.** `<agentDir>/workspace` by default, falling back to the agent's own
 directory when there is no workspace. Everything outside is read-only, and the exceptions are
-`tools.providerConfig.writeRoots` — absolute, or relative to the agent directory. **Nothing said at
+`tools.providers.system.writeRoots` — absolute, or relative to the agent directory. **Nothing said at
 runtime can add one**, which is the property that makes the default worth having: an agent that has
 misunderstood a request cannot damage anything while misunderstanding it.
 
@@ -373,7 +376,7 @@ Not writable by the file tools, and **no `policy.allow` rule reaches past them**
 
 Elsewhere this protects config. Here the workspace files **are the agent**, and a rule authorising a
 write to them would be a rule authorising its own replacement. `USER.md` and `MEMORY.md` stay writable
-— they are the volatile tier `memory_write` exists for. `tools.providerConfig.protect` adds patterns;
+— they are the volatile tier `memory_write` exists for. `tools.providers.system.protect` adds patterns;
 nothing removes any, because the set contains the policy file.
 
 **Stated rather than discovered: this binds the file tools and not `exec`.** `echo x > SOUL.md` carries
@@ -399,7 +402,7 @@ put the security fields out of reach; and two edits are refused whatever the pol
 
 | refused edit | why |
 | --- | --- |
-| widening `tools.providerConfig.writeRoots` | where the agent may write is the person's decision. Asked to create a file, an agent granted itself the whole home directory and wrote there |
+| a `writeRoots` list anywhere — `tools.providers.<id>.writeRoots`, or nested inside a `tools.providers` value | where the agent may write is the person's decision. Asked to create a file, an agent granted itself the whole home directory and wrote there |
 | replacing `tools.policy.deny` | its only purpose is removing a restriction someone set deliberately |
 | `tools.untrusted.onMutate: allow` | it turns off the check on outside content driving a write |
 
@@ -458,7 +461,7 @@ The consequence is that a cold agent must be warmed once — `castellan tools <m
 empty cache fails the load naming the slugs and that command, rather than making the call it is not
 allowed to make. A warmed agent boots and serves its catalogue with no API key present at all.
 
-`tools.providerConfig` for `composio` accepts `apiKeyEnv` (default `COMPOSIO_API_KEY`), `userId`, and
+`tools.providers.composio` accepts `apiKeyEnv` (default `COMPOSIO_API_KEY`), `userId`, and
 `baseUrl`. Anything else is refused: the schema keeps this a free-form record, so nothing upstream
 catches `userid` for `userId`, and a silently ignored setting is a configuration that looks applied
 and is not.

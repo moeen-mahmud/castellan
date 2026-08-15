@@ -45,7 +45,7 @@
 
 import { readFile, writeFile } from "node:fs/promises"
 import { join } from "node:path"
-import { AgentManifestSchema, type Tool, type ToolHandler } from "@castellan/core"
+import { AgentManifestSchema, resolveProviders, type Tool, type ToolHandler } from "@castellan/core"
 import { isMap, isSeq, parseDocument, stringify } from "yaml"
 import {
     configInvalid,
@@ -74,8 +74,8 @@ export interface ConfigOptions {
 const SETTABLE: readonly { readonly path: string; readonly means: string }[] = [
     { path: "tools.local", means: "built-in tools: now, memory_write" },
     {
-        path: "tools.provider",
-        means: 'which provider supplies tools — "system" for shell and files',
+        path: "tools.providers",
+        means: "where tools come from, as a map — {system: {}} for shell and files, {web: {backend: tavily, apiKeyEnv: TAVILY_API_KEY}} for the internet. Several at once. A writeRoots key inside is refused",
     },
     { path: "tools.pinned", means: "the tools from that provider this agent may call" },
     {
@@ -119,9 +119,17 @@ const SETTABLE: readonly { readonly path: string; readonly means: string }[] = [
  */
 function floorRefusal(path: string, value?: unknown): string | undefined {
     const key = path.toLowerCase()
-    if (key.startsWith("tools.providerconfig.writeroots")) {
-        return "widening where you may write is not yours to do. Asked to create a file, an agent granted itself the whole home directory and then wrote there — which is what this refusal exists to prevent"
-    }
+    const WRITE_ROOTS =
+        "widening where you may write is not yours to do. Asked to create a file, an agent granted itself the whole home directory and then wrote there — which is what this refusal exists to prevent"
+
+    // Any segment, either spelling. `writeRoots` moved from `tools.providerConfig` to
+    // `tools.providers.system` when the map replaced the scalar, and a floor pinned to the old path
+    // would have been a floor with a new way round it — the setting the agent may not touch is the
+    // one whose location changed.
+    if (key.split(".").includes("writeroots")) return WRITE_ROOTS
+    // And not through the parent, either: `tools.providers` is settable so the agent can turn on the
+    // web provider when asked, which means the *value* is a place a writeRoots list could hide.
+    if (key.startsWith("tools.providers") && containsKey(value, "writeroots")) return WRITE_ROOTS
     if (key === "tools.policy.deny") {
         return "removing or replacing the deny rules is the one edit whose only purpose is to remove a restriction someone deliberately set"
     }
@@ -133,6 +141,15 @@ function floorRefusal(path: string, value?: unknown): string | undefined {
         return 'setting the write gate to "allow" turns off the check that stops text from outside the conversation driving a tool that changes things'
     }
     return undefined
+}
+
+/** Is `name` a key anywhere in this value, at any depth? Case-insensitive; arrays included. */
+function containsKey(value: unknown, name: string): boolean {
+    if (Array.isArray(value)) return value.some((entry) => containsKey(entry, name))
+    if (typeof value !== "object" || value === null) return false
+    return Object.entries(value as Record<string, unknown>).some(
+        ([key, nested]) => key.toLowerCase() === name || containsKey(nested, name),
+    )
 }
 
 function manifestPath(options: ConfigOptions): string {
@@ -266,7 +283,7 @@ export function configReadHandler(options: ConfigOptions): ToolHandler {
             "",
             "Anything not on this list is not settable from a conversation. A change takes effect when the agent next starts, not in the current conversation.",
             "",
-            "Three edits are refused whatever the rules say, because each one only ever removes a check: widening tools.providerConfig.writeRoots, replacing tools.policy.deny, and setting tools.untrusted.onMutate to allow. Where you may write is the person's decision and not yours — if you need somewhere outside your workspace, say which directory and why, and let them add it.",
+            "Three edits are refused whatever the rules say, because each one only ever removes a check: a writeRoots list anywhere, replacing tools.policy.deny, and setting tools.untrusted.onMutate to allow. Where you may write is the person's decision and not yours — if you need somewhere outside your workspace, say which directory and why, and let them add it.",
             "",
             `The whole file, comments and all, is at ${file} — read it with file_read if that tool is enabled, or ask the person to open it.`,
         ].join("\n")
@@ -333,6 +350,20 @@ export function configSetHandler(options: ConfigOptions): ToolHandler {
                 path,
                 raw,
                 `${first?.path.join(".") ?? path}: ${first?.message ?? "does not fit the schema"}`,
+            )
+        }
+
+        // The schema alone is not the whole load. Writing `tools.providers` into a manifest that
+        // still carries the deprecated `tools.provider` produces a document the schema accepts and
+        // the runtime refuses — an agent that boots today and not tomorrow, which is the failure this
+        // validation exists to prevent. Same function the runtime calls, so they cannot disagree.
+        try {
+            resolveProviders(parsed.data.tools)
+        } catch (cause) {
+            throw configInvalid(
+                path,
+                raw,
+                cause instanceof Error ? cause.message : "the providers block does not resolve",
             )
         }
 

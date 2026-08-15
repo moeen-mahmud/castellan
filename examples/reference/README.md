@@ -57,7 +57,7 @@ a mutating tool that cannot succeed teaches the model to retry until the step bu
 
 ## Adding Composio
 
-Uncomment `tools.provider`, `providerConfig` and `pinned`, then:
+Uncomment the `composio:` block inside `tools.providers`, add its slugs to `pinned`, then:
 
 ```bash
 castellan tools ./agent.yaml --warm    # fetch the schemas into .castellan/tools.cache.json

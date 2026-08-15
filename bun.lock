@@ -21,6 +21,7 @@
         "@castellan/core": "workspace:*",
         "@castellan/tools-composio": "workspace:*",
         "@castellan/tools-system": "workspace:*",
+        "@castellan/tools-web": "workspace:*",
         "ink": "7.1.1",
         "react": "19.2.8",
       },
@@ -50,6 +51,13 @@
       "dependencies": {
         "@castellan/core": "workspace:*",
         "yaml": "^2.8.1",
+      },
+    },
+    "packages/tools-web": {
+      "name": "@castellan/tools-web",
+      "version": "0.1.0",
+      "dependencies": {
+        "@castellan/core": "workspace:*",
       },
     },
   },
@@ -83,6 +91,8 @@
     "@castellan/tools-composio": ["@castellan/tools-composio@workspace:packages/tools-composio"],
 
     "@castellan/tools-system": ["@castellan/tools-system@workspace:packages/tools-system"],
+
+    "@castellan/tools-web": ["@castellan/tools-web@workspace:packages/tools-web"],
 
     "@changesets/apply-release-plan": ["@changesets/apply-release-plan@7.1.1", "", { "dependencies": { "@changesets/config": "^3.1.4", "@changesets/get-version-range-type": "^0.4.0", "@changesets/git": "^3.0.4", "@changesets/should-skip-package": "^0.1.2", "@changesets/types": "^6.1.0", "@manypkg/get-packages": "^1.1.3", "detect-indent": "^6.0.0", "fs-extra": "^7.0.1", "lodash.startcase": "^4.4.0", "outdent": "^0.5.0", "prettier": "^2.7.1", "resolve-from": "^5.0.0", "semver": "^7.5.3" } }, "sha512-9qPCm/rLx/xoOFXIHGB229+4GOL76S4MC+7tyOuTsR6+1jYlfFDQORdvwR5hDA6y4FL2BPt3qpbcQIS+dW85LA=="],
 

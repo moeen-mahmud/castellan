@@ -163,17 +163,55 @@ tools:
     # Slots held for mutating tools so a large read surface cannot starve the writes.
     reserveWrite: 6
 
-  # ── The system provider: shell and file access ──
-  # `@castellan/tools-system`, registered by the `castellan` binary. Nothing is implied — selecting
-  # the provider AND pinning the tool are both required, the same way tools.local is opt-in.
+  # ── Providers: where tools come from ──
+  # A MAP, not a choice. `system`, `web` and `composio` are not alternatives — an agent that runs
+  # commands and reads the web wants both — and the scalar `tools.provider` this replaced could hold
+  # only one. That field still loads and warns; setting both is refused rather than merged, because
+  # the scalar has no position in the map and provider order decides a slug collision.
   #
-  # `exec` takes command, workdir, timeoutMs, pty and background. It takes no `env` argument on
-  # purpose: a per-call environment map is invisible to the policy rules, which match the command
-  # string, so `PATH=/tmp/evil` beside `git status` would pass a rule that never saw it. Written
-  # inline it is part of the command and the rule does not match. The ambient environment IS
-  # inherited, including this agent's .env — a pinned `exec` can read every secret the agent can.
+  # Nothing is implied by registering a provider: naming it here AND pinning the tool are both
+  # required, the same way tools.local is opt-in. Each block is that provider's own configuration and
+  # each refuses a key it does not read.
   #
-  # provider: system
+  # providers:
+  #
+  #   # @castellan/tools-system — shell and files.
+  #   #
+  #   # `exec` takes command, workdir, timeoutMs, pty and background. It takes no `env` argument on
+  #   # purpose: a per-call environment map is invisible to the policy rules, which match the command
+  #   # string, so `PATH=/tmp/evil` beside `git status` would pass a rule that never saw it. Written
+  #   # inline it is part of the command and the rule does not match. The ambient environment IS
+  #   # inherited, including this agent's .env — a pinned `exec` can read every secret the agent can.
+  #   system:
+  #     writeRoots:       # extra directories the file tools may write to
+  #       - ~/code/thing  #   absolute, or relative to this file
+  #     protect:          # extra paths they refuse. Widening only — nothing removes a protection
+  #       - "*.pem"
+  #
+  #   # @castellan/tools-web — the public internet, read-only.
+  #   #
+  #   # `web_search` returns results and needs a key; `web_fetch` returns one page as text and needs
+  #   # nothing. Both are trust: untrusted — their output is text a stranger wrote, so it is delimited
+  #   # as data and cannot silently drive a mutating tool in the same turn.
+  #   #
+  #   # Loopback, link-local, private and CGNAT addresses are refused outright, at every redirect hop,
+  #   # and there is deliberately NO setting that permits them: the one real use of such a flag is
+  #   # reaching the cloud metadata endpoint. An operator who wants an internal HTTP call has `exec`
+  #   # and `curl`, which is a grant made deliberately and narrowable by a policy rule.
+  #   web:
+  #     backend: tavily              # tavily | brave | exa
+  #     apiKeyEnv: TAVILY_API_KEY    # the variable's name, never the key
+  #     maxBytes: 2000000            # stop reading a page here, mid-response, before extraction
+  #
+  #   # @castellan/tools-composio — a remote catalogue, called over HTTP and never through MCP.
+  #   #
+  #   # Run `castellan tools ./agent.yaml --warm` once before starting: resolution happens during
+  #   # boot, where no network call is permitted, so a cold cache fails the load naming the slugs and
+  #   # that command.
+  #   composio:
+  #     apiKeyEnv: COMPOSIO_API_KEY
+  #     userId: me
+  #
   # pinned:
   #   - file_read      # untrusted: a file on disk may have been downloaded a minute ago
   #   - glob           # find files by name — * stays in one directory, ** crosses them
@@ -181,13 +219,13 @@ tools:
   #   - file_write     # trusted output: it reports what it wrote, never the content
   #   - file_edit      # exact unique match, never a line number; two matches is a failure
   #   - exec           # the last resort — its target is a string no rule can look inside
-  #   - config_read     # read this file and tell the person which setting to change
-  #   - config_set      # change this file when asked. Refuses the three edits that only ever
-  #                     #   remove a check: widening writeRoots, replacing policy.deny, and
-  #                     #   setting untrusted.onMutate to allow
-  # providerConfig:
-  #   writeRoots:       # extra directories the file tools may write to
-  #     - ~/code/thing  #   absolute, or relative to this file
+  #   - config_read    # read this file and tell the person which setting to change
+  #   - config_set     # change this file when asked. Refuses the three edits that only ever
+  #                    #   remove a check: widening writeRoots, replacing policy.deny, and
+  #                    #   setting untrusted.onMutate to allow
+  #   - web_search
+  #   - web_fetch
+  #   - GMAIL_FETCH_EMAILS
   #
   # Writes are confined to workspace/ — everything else is read-only until writeRoots says otherwise.
   # On top of that the file tools refuse this manifest, SOUL.md, AGENTS.md, POLICY.md, and anything
@@ -196,21 +234,8 @@ tools:
   #
   # NEITHER confinement binds `exec`: a shell carries its target inside a string no path check can
   # look inside. "Only inside workspace/" is a true statement only for an agent with no shell — which
-  # is what `castellan init --system write` generates.
-
-  # ── A remote provider ──
-  # Registered by the embedder — nothing installs at runtime. The `castellan` binary registers
-  # `composio` already. Run `castellan tools ./agent.yaml --warm` once before starting: resolution
-  # happens during boot, where no network call is permitted, so a cold cache fails the load naming
-  # the slugs and that command.
-  #
-  # provider: composio
-  # providerConfig:
-  #   apiKeyEnv: COMPOSIO_API_KEY   # the variable's name, never the key
-  #   userId: me
-  # pinned:
-  #   - GMAIL_FETCH_EMAILS
-  #   - GOOGLECALENDAR_EVENTS_LIST
+  # is what `castellan init --system write` generates. And no amount of SSRF checking in `web_fetch`
+  # changes what a policy that allows `exec` allows: `curl` is in there too.
 
   # ── tools.search is about finding a TOOL, not searching the web ──
   # This exposes a meta-tool that searches the *provider's catalogue* — 25,438 tools, in Composio's
@@ -218,26 +243,11 @@ tools:
   # enabled: search-then-execute is two-hop reasoning, which is exactly where small models fail. Pin
   # what the agent needs instead.
   #
-  # If you want the agent to search the *internet*, that is `web_search` below, or a pinned Composio
-  # tool such as COMPOSIO_SEARCH_SEARCH. Nothing to do with this field.
+  # If you want the agent to search the *internet*, that is `web_search` above. Nothing to do with
+  # this field.
   search:
     enabled: false
 
-  # ── Phase 3.6: web search and page fetching ──
-  # First-party, provider-agnostic. `web_search` returns results; `web_fetch` returns one page as
-  # text. Both are read-only, and both are marked `trust: untrusted` — their output is text a
-  # stranger wrote, so it is delimited as data and cannot silently drive a mutating tool in the same
-  # turn. See docs/05-PLAN.md Phase 3.6.
-  #
-  # web:
-  #   backend: tavily              # tavily | brave | exa
-  #   apiKeyEnv: TAVILY_API_KEY    # the variable's name, never the key
-  #   maxBytes: 2000000            # stop reading a page here, before extraction
-  #   timeoutMs: 15000
-  #   # Loopback, link-local and private ranges are refused outright. Only turn this off for a
-  #   # deliberately sandboxed network — it is the SSRF boundary.
-  #   allowPrivateHosts: false
-  #
   # ── Which calls run, which ask, and which are refused ──
   # A second layer under pinning, for tools too broad to authorise wholesale — `exec` above all.
   # Evaluation is deny → allow, first match, and specificity never reorders it, so a deny rule

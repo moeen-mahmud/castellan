@@ -4,15 +4,18 @@ Composio as a tool provider, over plain HTTP. No MCP transport, no SDK, no sidec
 
 ```yaml
 tools:
-  provider: composio
+  providers:
+    composio:
+      apiKeyEnv: COMPOSIO_API_KEY  # the variable's *name*, never the key
+      userId: moeen                # which connected account to act as
   pinned:
     - GMAIL_FETCH_EMAILS
     - GMAIL_SEND_EMAIL
     - GOOGLECALENDAR_EVENTS_LIST
-  providerConfig:
-    apiKeyEnv: COMPOSIO_API_KEY    # the variable's *name*, never the key
-    userId: moeen                  # which connected account to act as
 ```
+
+`tools.providers` is a map, so this coexists with `system` and `web`. The older
+`provider: composio` + `providerConfig:` spelling still loads and warns; setting both is refused.
 
 ```bash
 castellan tools ./agent.yaml --warm   # fetch schemas into the cache — do this first

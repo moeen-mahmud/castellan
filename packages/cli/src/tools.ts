@@ -14,7 +14,7 @@
  * the cache never runs. This command is how the cache gets its first contents.
  */
 
-import { loadManifest, Runtime } from "@castellan/core"
+import { loadManifest, Runtime, resolveProviders } from "@castellan/core"
 import { EXIT_FAILURE, EXIT_OK } from "#lib/const"
 import { PROVIDER_IDS, TOOL_PROVIDERS } from "#lib/providers"
 import { toolsReport, toolsView } from "#lib/session-commands"
@@ -39,71 +39,97 @@ export async function toolsCommand(options: ToolsOptions): Promise<number> {
 
 async function warm(options: ToolsOptions): Promise<number> {
     const loaded = loadManifest(options.manifestPath, { knownProviders: PROVIDER_IDS })
-    const id = loaded.manifest.tools.provider
+    const selections = resolveProviders(loaded.manifest.tools).selections
     const pinned = loaded.manifest.tools.pinned
 
-    if (id === undefined) {
+    if (selections.length === 0) {
         // Not an error worth exiting 1 for, but saying nothing would leave someone waiting for a
         // network call that was never going to happen.
         process.stdout.write(
-            "nothing to warm — this manifest names no tools.provider, so every tool it pins resolves locally.\n",
+            "nothing to warm — this manifest configures no tools.providers, so every tool it pins resolves locally.\n",
         )
         return EXIT_OK
     }
     if (pinned.length === 0) {
         process.stdout.write(
-            `nothing to warm — tools.provider is "${id}" but tools.pinned is empty, so there are no schemas to fetch.\n`,
+            `nothing to warm — ${selections.map((entry) => entry.id).join(", ")} configured but tools.pinned is empty, so there are no schemas to fetch.\n`,
         )
         return EXIT_OK
     }
 
-    // `loadManifest` already refused an unregistered id, so this is present.
-    const factory = TOOL_PROVIDERS[id]
-    if (factory === undefined) return EXIT_FAILURE
+    const results: WarmResult[] = []
+    /** Slugs some configured provider can serve after this run. Not per provider — see below. */
+    const covered = new Set<string>()
 
-    const provider = factory({
-        dir: loaded.dir,
-        env: loaded.env,
-        config: loaded.manifest.tools.providerConfig,
-        agentId: loaded.manifest.id,
-    })
+    // Every configured provider, not the first: with `system` listed before `composio` — which is the
+    // order anyone would write them in — warming only the first would print "nothing to warm" and
+    // leave the cold cache that fails the next boot.
+    for (const selection of selections) {
+        // `loadManifest` already refused an unregistered id, so this is present.
+        const factory = TOOL_PROVIDERS[selection.id]
+        if (factory === undefined) return EXIT_FAILURE
 
-    if (provider.refresh === undefined) {
-        process.stdout.write(
-            `nothing to warm — the "${id}" provider resolves without a cache, so there is nothing to fetch ahead of time.\n`,
-        )
-        return EXIT_OK
-    }
+        const provider = factory({
+            dir: loaded.dir,
+            env: loaded.env,
+            config: selection.config,
+            agentId: loaded.manifest.id,
+        })
 
-    const report = await provider.refresh(pinned)
-    const cachePath =
-        "cachePath" in report && typeof report.cachePath === "string" ? report.cachePath : ""
-    const result: WarmResult = {
-        provider: id,
-        fetched: report.fetched,
-        changed: [...report.changed],
-        missing: [...report.missing],
-        cachePath,
+        if (provider.refresh === undefined) {
+            // Nothing to fetch, but it still answers for its own slugs — and without asking, every
+            // `exec` and `file_read` in `pinned` would be reported missing by a command that only
+            // ever looked at the provider with a cache.
+            for (const tool of await provider.resolve(pinned)) covered.add(tool.spec.slug)
+            if (options.json !== true) {
+                process.stdout.write(
+                    `${selection.id}: nothing to warm — it resolves without a cache.\n`,
+                )
+            }
+            continue
+        }
+
+        const report = await provider.refresh(pinned)
+        for (const slug of pinned) {
+            if (!report.missing.includes(slug)) covered.add(slug)
+        }
+        results.push({
+            provider: selection.id,
+            fetched: report.fetched,
+            changed: [...report.changed],
+            missing: [...report.missing],
+            cachePath:
+                "cachePath" in report && typeof report.cachePath === "string"
+                    ? report.cachePath
+                    : "",
+        })
     }
 
     if (options.json === true) {
-        process.stdout.write(`${JSON.stringify(result, null, 2)}\n`)
+        process.stdout.write(`${JSON.stringify(results, null, 2)}\n`)
     } else {
-        process.stdout.write(
-            `${result.fetched} of ${pinned.length} pinned tools fetched from ${id}\n`,
-        )
-        if (result.changed.length > 0) {
-            process.stdout.write(`  changed: ${result.changed.join(", ")}\n`)
-        }
-        if (cachePath !== "") process.stdout.write(`  cache: ${cachePath}\n`)
-        for (const slug of result.missing) {
-            process.stdout.write(`  missing: ${slug} — ${id} has no tool with that slug\n`)
+        for (const result of results) {
+            process.stdout.write(
+                `${result.fetched} of ${pinned.length} pinned tools fetched from ${result.provider}\n`,
+            )
+            if (result.changed.length > 0) {
+                process.stdout.write(`  changed: ${result.changed.join(", ")}\n`)
+            }
+            if (result.cachePath !== "") process.stdout.write(`  cache: ${result.cachePath}\n`)
         }
     }
 
-    // A slug the provider does not have is a manifest error, and exiting 0 here would let it through
-    // to a load failure on the next start — after the person believed this had succeeded.
-    return result.missing.length > 0 ? EXIT_FAILURE : EXIT_OK
+    // A slug no provider has is a manifest error, and exiting 0 here would let it through to a load
+    // failure on the next start — after the person believed this had succeeded. Reported against the
+    // *set*: with two providers configured, a slug only one of them has is not missing at all, and
+    // the per-provider `missing` lists would each blame the other's tools.
+    const missing = pinned.filter((slug) => !covered.has(slug))
+    for (const slug of missing) {
+        process.stdout.write(
+            `  missing: ${slug} — no configured provider has a tool with that slug\n`,
+        )
+    }
+    return missing.length > 0 ? EXIT_FAILURE : EXIT_OK
 }
 
 async function show(options: ToolsOptions): Promise<number> {

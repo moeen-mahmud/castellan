@@ -13,8 +13,8 @@
  * voice, so the `workspace` command keeps warning until a person writes real exchanges.
  */
 
-import { fillTemplate, WORKSPACE_TEMPLATES } from "#lib/templates"
 import { BRAND } from "@castellan/core"
+import { fillTemplate, WORKSPACE_TEMPLATES } from "#lib/templates"
 
 /**
  * The local tools every generated agent starts with, and the one line of guidance each carries
@@ -464,77 +464,109 @@ export function validateAnswer(step: InitStep, raw: string): Answered {
 }
 
 /**
- * The `provider`/`pinned` half of the answer to "can it act on this computer?".
+ * The whole `providers` map and the `pinned` list under it.
  *
- * `none` still writes the block, commented, with the exact lines to uncomment. That is the whole
- * point of the change: the previous template mentioned neither the provider nor a single tool slug,
- * so the only way to reach shell access was to already know the field names — and a generated file
- * that hides its own options is not doing the job a generated file exists to do.
+ * One block rather than three, because there is one `providers:` key: system is the one the wizard
+ * asks about, and web and Composio sit beside it commented, at the indentation that makes them work.
+ * A generated file whose other options live somewhere the reader has to assemble is the failure this
+ * exists to prevent — the previous template mentioned neither the provider nor a single tool slug, so
+ * the only way to reach shell access was to already know the field names.
+ *
+ * `none` still writes the map, commented, with the exact lines to uncomment.
  */
 function systemBlock(system: string): readonly string[] {
     const choice = systemChoice(system) ?? SYSTEM_CHOICES[0]
-    if (choice === undefined || choice.pinned.length === 0) {
-        return [
-            `  # ── acting on this computer ──`,
-            `  # Nothing is enabled. Add tools here and permit them in the policy block below.`,
-            `  # provider: system`,
-            `  # pinned: [config_read, config_set]`,
-        ]
-    }
+    const shell = choice?.pinned.includes("exec") === true
+    const files = choice?.pinned.includes("file_read") === true
+    const writes = choice?.pinned.includes("file_write") === true
 
-    const shell = choice.pinned.includes("exec")
-    const files = choice.pinned.includes("file_read")
+    const intro: readonly string[] =
+        choice === undefined || choice.pinned.length === 0
+            ? [`  # Nothing is enabled. Add tools here and permit them in the policy block below.`]
+            : !files
+              ? [
+                    // The configuration-only level. Everything the agent lacks is still named to it, so
+                    // "I can't do that" becomes "I can't do that yet, and here is the line that would
+                    // let me" — and `config_set` is what writes that line when you say go ahead.
+                    `  # This agent cannot read, write or run anything. It CAN read this file and change it when`,
+                    `  # you ask — which is how you turn the rest on without editing YAML yourself.`,
+                    `  #`,
+                    `  # It is told which tools exist and are not enabled, so ask it for something it cannot do`,
+                    `  # and it will name the tool and offer to add it. A change takes effect on the next start.`,
+                    `  #`,
+                    `  # To enable them by hand instead, add to pinned:`,
+                    `  #   file_read, glob, grep      read and search files`,
+                    `  #   file_write, file_edit      change files, confined to workspace/`,
+                    `  #   exec                       run shell commands — the confinement does not bind it`,
+                ]
+              : shell
+                ? [
+                      `  # This agent can read and change files and run shell commands. What it may run is decided`,
+                      `  # by the policy block below — narrow it, and prefer the file tools over the shell, whose`,
+                      `  # target a rule cannot see inside a command string.`,
+                      `  #`,
+                      `  # Writes are confined to workspace/. To open another directory, give the system`,
+                      `  # provider a writeRoots list — the agent cannot add one to itself, by design.`,
+                      `  # That confinement binds the file tools and NOT exec, whose target lives inside a`,
+                      `  # shell string no path check can see.`,
+                  ]
+                : writes
+                  ? [
+                        // The level where "only inside workspace/" is a true sentence, and the only
+                        // one — which is the whole reason it exists. Saying so here is the point:
+                        // this text used to be the read-only paragraph, so a `--system write` agent
+                        // was generated with a comment claiming it could change nothing.
+                        `  # This agent can read files and change them, and cannot run commands. That combination`,
+                        `  # is the only one in which "confined to workspace/" is a true statement — a shell`,
+                        `  # carries its target inside a string no path check can look inside.`,
+                        `  #`,
+                        `  # To open another directory, give the system provider a writeRoots list. The agent`,
+                        `  # cannot add one to itself, by design.`,
+                    ]
+                  : [
+                        `  # This agent can read and search files and change nothing. Reading is still not nothing:`,
+                        `  # anything it reads can carry text a stranger wrote, which is why the write gate exists.`,
+                        `  #`,
+                        `  # Reading is not confined; changing things would be, but nothing here changes things.`,
+                    ]
 
-    // The configuration-only level. Everything the agent lacks is still named to it, so "I can't do
-    // that" becomes "I can't do that yet, and here is the line that would let me" — and `config_set`
-    // is what writes that line when you say go ahead.
-    if (!files) {
-        return [
-            `  # ── acting on this computer ──`,
-            `  # This agent cannot read, write or run anything. It CAN read this file and change it when`,
-            `  # you ask — which is how you turn the rest on without editing YAML yourself.`,
-            `  #`,
-            `  # It is told which tools exist and are not enabled, so ask it for something it cannot do`,
-            `  # and it will name the tool and offer to add it. A change takes effect on the next start.`,
-            `  #`,
-            `  # To enable them by hand instead, add to pinned:`,
-            `  #   file_read, glob, grep      read and search files`,
-            `  #   file_write, file_edit      change files, confined to workspace/`,
-            `  #   exec                       run shell commands — the confinement does not bind it`,
-            `  provider: system`,
-            `  pinned:`,
-            ...choice.pinned.map((slug) => `    - ${slug}`),
-        ]
-    }
+    // Every level pins something — `none` still gets `config_read`/`config_set`, which is the only
+    // route out of `none` — so the provider and the list are always written, never commented.
+    const pinned = choice?.pinned ?? []
+
     return [
-        `  # ── acting on this computer ──`,
-        shell
-            ? `  # This agent can read and change files and run shell commands. What it may run is decided`
-            : `  # This agent can read and search files and change nothing. Reading is still not nothing:`,
-        shell
-            ? `  # by the policy block below — narrow it, and prefer the file tools over the shell, whose`
-            : `  # anything it reads can carry text a stranger wrote, which is why the write gate exists.`,
-        ...(shell ? [`  # target a rule cannot see inside a command string.`] : []),
+        `  # ── providers: where tools come from ──`,
+        ...intro,
         `  #`,
+        `  # Several may be configured at once — this is a map, not a choice. Each block is that`,
+        `  # provider's own configuration and it refuses a key it does not read.`,
+        `  providers:`,
+        `    system: {}`,
         ...(shell
             ? [
-                  `  # Writes are confined to workspace/ — add tools.providerConfig.writeRoots below to`,
-                  `  # open another directory. That confinement binds the file tools and NOT exec, whose`,
-                  `  # target lives inside a shell string no path check can see.`,
-              ]
-            : [
-                  `  # Reading is not confined; changing things would be, but nothing here changes things.`,
-              ]),
-        `  provider: system`,
-        `  pinned:`,
-        ...choice.pinned.map((slug) => `    - ${slug}`),
-        ...(shell
-            ? [
-                  `  # providerConfig:`,
-                  `  #   writeRoots:`,
-                  `  #     - ~/code/my-project    # absolute, or relative to this file's directory`,
+                  `    #   system: { writeRoots: [~/code/my-project] }  # absolute, or relative to this file`,
               ]
             : []),
+        ``,
+        `    # The public web, read-only: web_search needs a key, web_fetch needs nothing. Addresses`,
+        `    # on this machine or this network are refused and no setting permits them.`,
+        `    # web:`,
+        `    #   backend: tavily              # tavily | brave | exa`,
+        `    #   apiKeyEnv: TAVILY_API_KEY    # the variable's name, never the key`,
+        ``,
+        `    # A remote catalogue. Run \`${BRAND.slug} tools . --warm\` once before starting: resolution`,
+        `    # happens during boot, where no network call is permitted, and a cold cache fails the load.`,
+        `    # composio:`,
+        `    #   apiKeyEnv: COMPOSIO_API_KEY`,
+        `    #   userId: me`,
+        ``,
+        `  # What the model is actually given, from any provider above. A slug no configured provider`,
+        `  # has fails the load naming it — nothing is ever dropped quietly.`,
+        `  pinned:`,
+        ...pinned.map((slug) => `    - ${slug}`),
+        `    # - web_search`,
+        `    # - web_fetch`,
+        `    # - GMAIL_FETCH_EMAILS`,
     ]
 }
 
@@ -843,18 +875,6 @@ function manifestFor(answers: InitAnswers): string {
         ``,
         ...systemBlock(answers.system),
         ``,
-        `  # ── a remote provider (Composio) ──`,
-        `  # Run \`${BRAND.slug} tools ./agent.yaml --warm\` once before starting: resolution happens`,
-        `  # during boot, where no network call is permitted, and a cold cache fails the load.`,
-        `  # One provider at a time until tools.providers lands; swapping means replacing the block above.`,
-        `  # provider: composio`,
-        `  # providerConfig:`,
-        `  #   apiKeyEnv: COMPOSIO_API_KEY   # the variable's name, never the key`,
-        `  #   userId: me`,
-        `  # pinned:`,
-        `  #   - GMAIL_FETCH_EMAILS`,
-        `  #   - GOOGLECALENDAR_EVENTS_LIST`,
-        ``,
         `  # tools.search finds a TOOL in the provider's catalogue — nothing to do with web search.`,
         `  # Off by design in v1: search-then-execute is two-hop reasoning, where small models fail.`,
         `  search:`,
@@ -868,11 +888,6 @@ function manifestFor(answers: InitAnswers): string {
         `  # or a live approval. "refuse" never prompts, which is what makes it right for a schedule.`,
         `  untrusted:`,
         `    onMutate: refuse            # refuse | confirm | allow`,
-        ``,
-        `  # ── web search and page fetching — arrives with the rest of Phase 3.6 ──`,
-        `  # web:`,
-        `  #   backend: tavily             # tavily | brave | exa`,
-        `  #   apiKeyEnv: TAVILY_API_KEY`,
         ``,
         rule("limits"),
         `limits:`,

@@ -50,7 +50,7 @@ describe("initCommand", () => {
             knownProviders: PROVIDER_IDS,
         })
         expect(loaded.manifest.id).toBe("milo")
-        expect(loaded.manifest.model.main.id).toBe("deepseek-v4-pro")
+        expect(loaded.manifest.model.main.id).toBe("deepseek-v4-flash")
 
         const { workspace, warnings } = resolveWorkspace(loaded, {
             delimiters: "markdown",

@@ -19,6 +19,7 @@ import type { EventBus } from "../events/bus.ts"
 import { newTurnId } from "../loop/ids.ts"
 import { runTurn, type ToolRuntime, type TurnResult } from "../loop/turn.ts"
 import type { LoadedManifest } from "../manifest/load.ts"
+import { resolveProviders } from "../manifest/providers.ts"
 import type { AgentManifest } from "../manifest/schema.ts"
 import type { PromptStyle } from "../model/prompt-style.ts"
 import type { ChatMessage } from "../model/provider.ts"
@@ -235,11 +236,17 @@ export class Agent {
                       style,
                   })
 
+        // Read here rather than threaded in from `Runtime.create`, which calls the same function for
+        // the selections it builds. A warning emitted during boot lands in an empty room — nothing has
+        // subscribed yet — so anything true for the whole session belongs on the agent, where a front
+        // end still finds it after the banner has scrolled away.
+        const providerWarnings = resolveProviders(loaded.manifest.tools).warnings
+
         return new Agent({
             loaded,
             roles,
             workspace,
-            warnings,
+            warnings: [...warnings, ...providerWarnings],
             bus,
             store,
             tools: options.tools ?? ToolRegistry.empty(),

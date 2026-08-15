@@ -131,14 +131,65 @@ test("a list is written as a list", async () => {
 
 test("enabling a tool and permitting it is exactly what this is for", async () => {
     const { set, file } = fixture()
-    await set({ path: "tools.provider", value: "system" }, toolContext({}))
+    await set({ path: "tools.providers", value: '{"system": {}}' }, toolContext({}))
     await set({ path: "tools.pinned", value: '["exec"]' }, toolContext({}))
     await set({ path: "tools.policy.allow", value: '["exec"]' }, toolContext({}))
     const written = readFileSync(file, "utf8")
-    expect(written).toContain("provider: system")
+    expect(written).toContain("system")
     // Written as plain YAML rather than quoted, which is the same value and the form a person would
     // have typed.
     expect(written).toContain("- exec")
+})
+
+test("a second provider is added beside the first, not instead of it", async () => {
+    // The whole point of the map: an agent that runs commands and reads the web is one agent, and
+    // the scalar this replaced made asking for both impossible.
+    const { set, file } = fixture()
+    await set({ path: "tools.providers", value: '{"system": {}}' }, toolContext({}))
+    await set(
+        {
+            path: "tools.providers",
+            value: '{"system": {}, "web": {"backend": "tavily", "apiKeyEnv": "TAVILY_API_KEY"}}',
+        },
+        toolContext({}),
+    )
+    const written = readFileSync(file, "utf8")
+    expect(written).toContain("system")
+    expect(written).toContain("tavily")
+})
+
+test("a writeRoots hidden inside a providers value is refused", async () => {
+    // The floor moved with the field. `writeRoots` used to live under tools.providerConfig, which
+    // was a path floor; it now lives inside a value the agent is allowed to write, so the floor has
+    // to look inside the value or it is a floor with a new way round it.
+    const { set, file } = fixture()
+    const before = readFileSync(file, "utf8")
+    await expect(
+        set(
+            { path: "tools.providers", value: '{"system": {"writeRoots": ["~"]}}' },
+            toolContext({}),
+        ),
+    ).rejects.toThrow(/widening where you may write is not yours to do/)
+    await expect(
+        set({ path: "tools.providers.system.writeRoots", value: '["~"]' }, toolContext({})),
+    ).rejects.toThrow(/widening where you may write is not yours to do/)
+    expect(readFileSync(file, "utf8")).toBe(before)
+})
+
+test("writing the map into a manifest that still has the scalar is refused before the write", async () => {
+    // The schema accepts both fields; the runtime refuses the pair. Without this check config_set
+    // would report success on an edit that stops the agent booting — which is the one failure this
+    // tool's validation exists to prevent.
+    const { set, file } = fixture()
+    await set({ path: "tools.providers", value: '{"web": {}}' }, toolContext({}))
+    writeFileSync(file, `${readFileSync(file, "utf8")}\n`, "utf8")
+    const doc = readFileSync(file, "utf8").replace("tools:", "tools:\n  provider: system")
+    writeFileSync(file, doc, "utf8")
+    const before = readFileSync(file, "utf8")
+    await expect(
+        set({ path: "tools.providers", value: '{"system": {}}' }, toolContext({})),
+    ).rejects.toThrow(/does not load/)
+    expect(readFileSync(file, "utf8")).toBe(before)
 })
 
 test("a value that would not validate is refused and nothing is written", async () => {

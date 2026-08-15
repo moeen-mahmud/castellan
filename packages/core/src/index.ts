@@ -65,6 +65,13 @@ export {
     loadManifest,
     loadManifestFromObject,
 } from "./manifest/load.ts"
+export {
+    type ProviderFields,
+    type ProviderPlan,
+    type ProviderSelection,
+    providerIds,
+    resolveProviders,
+} from "./manifest/providers.ts"
 export { resolveRefs, shallowMerge } from "./manifest/refs.ts"
 export type {
     AgentManifest,

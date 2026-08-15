@@ -355,11 +355,31 @@ export function nativeToolNameInvalid(slug: string, provider: string): ConfigErr
 export function toolProviderUnknown(id: string, known: readonly string[]): ConfigError {
     return new ConfigError({
         code: "tool_provider_unknown",
-        message: `tools.provider is "${id}", which this runtime has no factory for.${known.length === 0 ? " No providers are registered." : ` Registered: ${known.join(", ")}.`}`,
+        message: `tools.providers names "${id}", which this runtime has no factory for.${known.length === 0 ? " No providers are registered." : ` Registered: ${known.join(", ")}.`}`,
         hint:
             known.length === 0
-                ? "A provider is supplied by the embedder, not resolved by name at runtime — nothing is installed while the process runs. Pass it as Runtime.create({ toolProviders: { composio: (ctx) => new ComposioProvider(ctx) } }), or drop tools.provider and use tools.local."
+                ? "A provider is supplied by the embedder, not resolved by name at runtime — nothing is installed while the process runs. Pass it as Runtime.create({ toolProviders: { composio: (ctx) => new ComposioProvider(ctx) } }), or drop tools.providers and use tools.local."
                 : `Check the spelling against the registered ids, or register a factory for "${id}" in Runtime.create({ toolProviders }).`,
+        field: `tools.providers.${id}`,
+    })
+}
+
+/**
+ * Both the map and the scalar it replaced.
+ *
+ * A hard failure rather than a merge, and the reason is order: the alias has no position in the map,
+ * so "which provider is consulted first" would be decided by whichever branch happened to push its
+ * entry — a fact about this file rather than about the manifest. `context.files` made the same call
+ * against `context.static` for the same reason.
+ */
+export function toolsProviderAliasConflict(
+    ids: readonly string[],
+    legacy: string | undefined,
+): ConfigError {
+    return new ConfigError({
+        code: "tools_provider_alias_conflict",
+        message: `The manifest sets tools.providers (${ids.join(", ")}) and also the deprecated tools.provider${legacy === undefined ? "Config" : ` (${legacy})`}.`,
+        hint: `Keep tools.providers and delete the other two. Merging them would give the scalar a position in the map that nobody wrote, and provider order decides which one wins a slug collision${legacy === undefined ? "" : ` — move ${legacy}'s settings into tools.providers.${legacy}`}.`,
         field: "tools.provider",
     })
 }

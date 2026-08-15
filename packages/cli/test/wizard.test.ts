@@ -56,7 +56,7 @@ describe("the happy path", () => {
         const partial = partialOf(state)
         expect(partial.user).toBe("Moeen")
         expect(partial.preset).toBe("deepseek")
-        expect(partial.model).toBe("deepseek-v4-pro")
+        expect(partial.model).toBe("deepseek-v4-flash")
         expect(partial.dir).toBe("./milo")
 
         // Confirm: index 0 is yes.
@@ -118,7 +118,7 @@ describe("back navigation", () => {
             intent: { kind: "move", move: { kind: "jump", index: 2 } },
         })
         state = commit(state) // deepseek now
-        expect(currentQuestion(state)?.fallback).toBe("deepseek-v4-pro")
+        expect(currentQuestion(state)?.fallback).toBe("deepseek-v4-flash")
     })
 
     test("declining the confirm screen reopens the last question", () => {

@@ -264,7 +264,20 @@ export const ToolsSchema = z
     .object({
         /** Config only — never auto-detected, so behaviour cannot drift with the model. */
         dialect: z.enum(["nlt", "native"]).default("nlt"),
+        /**
+         * Provider id → that provider's own configuration.
+         *
+         * A map rather than a scalar because `system`, `web` and `composio` are not alternatives:
+         * an agent that runs commands and reads the web wants both, and the scalar field made that
+         * unexpressible. Insertion order is priority order, as everywhere else in this manifest.
+         *
+         * Each provider validates its own block — core cannot, since it may not import one — so an
+         * unknown key inside is refused by the provider package rather than here.
+         */
+        providers: z.record(slug, z.record(z.string(), z.unknown())).default({}),
+        /** @deprecated The single-provider alias for `providers`. Warns; conflicts are refused. */
         provider: slug.optional(),
+        /** @deprecated Goes with `provider`. */
         providerConfig: z.record(z.string(), z.unknown()).default({}),
         budget: ToolBudgetSchema.prefault({}),
         pinned: z.array(z.string().min(1)).default([]),

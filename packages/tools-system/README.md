@@ -10,7 +10,8 @@ statement, for the reason in *Where writes may go* below.
 
 ```yaml
 tools:
-  provider: system
+  providers:
+    system: {}          # a map: this coexists with `web` and `composio`
   pinned:
     - file_read
     - glob
@@ -76,7 +77,7 @@ write gated the *next* write.
 ### Where writes may go
 
 Confined to a root: `<agentDir>/workspace`, or the agent's own directory when there is no workspace.
-Everything outside is read-only. `tools.providerConfig.writeRoots` adds directories — absolute, or
+Everything outside is read-only. `tools.providers.system.writeRoots` adds directories — absolute, or
 relative to the agent directory — and **nothing said at runtime can add one**. That is not a
 limitation of the implementation; `config_set` refuses to write that field at all. Asked to create a
 file, an agent granted itself the whole home directory and wrote there, then described it afterwards
@@ -115,7 +116,7 @@ the agent, and credential material anywhere on disk (`.ssh`, `.aws`, `.kube`, `.
 Elsewhere this protects config. Here the workspace files **are the agent** — `SOUL.md` is who it is,
 `POLICY.md` is what it will not do — and a rule authorising a write to them would be a rule authorising
 its own replacement. `USER.md` and `MEMORY.md` stay writable: they are the tier `memory_write` appends
-to. `tools.providerConfig.protect` adds patterns; nothing removes any.
+to. `tools.providers.system.protect` adds patterns; nothing removes any.
 
 **It binds the file tools and not `exec`.** `echo x > SOUL.md` carries its target inside a shell string
 where no path check can see it. Pinning `exec` grants more than this protects, and saying so is cheaper

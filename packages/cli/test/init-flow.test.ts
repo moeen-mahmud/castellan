@@ -86,7 +86,7 @@ describe("nextQuestion", () => {
     test("model and base URL default from the chosen preset; custom offers nothing", () => {
         expect(
             nextQuestion({ user: "a", name: "b", purpose: "c", preset: "deepseek" })?.fallback,
-        ).toBe("deepseek-v4-pro")
+        ).toBe("deepseek-v4-flash")
         expect(
             nextQuestion({ user: "a", name: "b", purpose: "c", preset: "custom" })?.fallback,
         ).toBe("")
@@ -196,10 +196,14 @@ describe("planFiles", () => {
         expect(yaml).toContain("- memory_write")
         expect(yaml).toContain("- AGENTS.md") // operations file, listed in static
         expect(yaml.includes("- AGENT.md\n")).toBe(false) // the old identity file is gone
+        // The providers map is live with `system` in it, and the other two sit inside it commented
+        // at the indentation that makes them work — one key, three providers, which is the whole
+        // point of the map replacing the scalar.
+        expect(yaml).toContain("  providers:\n    system: {}")
         // Commented, with phases: uncommenting early must be a load refusal, not decoration.
         for (const line of [
-            "# provider: composio",
-            "# web:",
+            "    # composio:",
+            "    # web:",
             "# phases:",
             "# skills:",
             "# memory:",
@@ -257,7 +261,7 @@ describe("planFiles", () => {
 
     test("the chosen preset is the active block in .env.example", () => {
         const example = planFiles(ANSWERS).find((f) => f.relPath === ".env.example")
-        expect(example?.contents).toContain("\nMODEL_ID=deepseek-v4-pro")
+        expect(example?.contents).toContain("\nMODEL_ID=deepseek-v4-flash")
         expect(example?.contents).toContain("# MODEL_ID=gpt-5-6-sol")
     })
 

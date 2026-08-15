@@ -101,11 +101,27 @@ function trailingComment(line: string): string {
     return ""
 }
 
+/** A value that is neither a scalar nor an array — `tools.providers` and each block inside it. */
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
 function renderBlock(key: string, value: unknown, indent: number): string[] {
     const pad = " ".repeat(indent)
     if (Array.isArray(value)) {
         if (value.length === 0) return [`${pad}${key}: []`]
         return [`${pad}${key}:`, ...value.map((entry) => `${pad}  - ${renderScalar(entry)}`)]
+    }
+    // Maps became settable with `tools.providers`, and until they were handled here every value fell
+    // through to `String(value)` and wrote the literal text `[object Object]` — which the schema then
+    // rejected as "expected record, received array", a message pointing nowhere near the cause.
+    if (isPlainObject(value)) {
+        const entries = Object.entries(value)
+        if (entries.length === 0) return [`${pad}${key}: {}`]
+        return [
+            `${pad}${key}:`,
+            ...entries.flatMap(([nested, inner]) => renderBlock(nested, inner, indent + 2)),
+        ]
     }
     return [`${pad}${key}: ${renderScalar(value)}`]
 }
@@ -163,7 +179,10 @@ export function setInSource(
 
     if (existing !== undefined) {
         const line = lines[existing] ?? ""
-        const comment = Array.isArray(value) ? "" : trailingComment(line)
+        // Only a scalar keeps its trailing comment. A list or a map moves the value onto child lines,
+        // so `# refuse | confirm | allow` would end up annotating a key rather than the value it
+        // describes — and a comment attached to the wrong thing is worse than one that was dropped.
+        const comment = Array.isArray(value) || isPlainObject(value) ? "" : trailingComment(line)
         const end = endOfBlock(lines, existing, indent)
         const replacement = renderBlock(leaf, value, indent)
         if (comment !== "") replacement[0] = `${replacement[0]}${comment}`
