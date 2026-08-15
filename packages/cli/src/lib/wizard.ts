@@ -268,6 +268,9 @@ export function answeredRows(
         baseUrl: "Base URL",
         apiKeyEnv: "Key env var",
         apiKey: "API key",
+        web: "Internet",
+        webBackend: "Search backend",
+        webKey: "Search key",
         system: "System access",
         dir: "Directory",
     }

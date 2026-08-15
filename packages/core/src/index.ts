@@ -51,7 +51,9 @@ export {
     type TurnResult,
 } from "./loop/turn.ts"
 export {
+    type EnvOverride,
     type EnvSource,
+    envOverrides,
     envReferencesIn,
     expandEnvDeep,
     mergeEnv,

@@ -151,6 +151,8 @@ export interface InitOptions {
     readonly apiKeyEnv?: string
     /** `none`, `read`, or `full` — how much of this machine the agent may touch. */
     readonly system?: string
+    readonly web?: string
+    readonly webBackend?: string
     /** Take every default; never ask, even at a terminal. */
     readonly yes?: boolean
     readonly plain?: boolean

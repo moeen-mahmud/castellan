@@ -9,6 +9,7 @@
  * envelope and must not change once published.
  */
 
+import type { EnvOverride } from "./manifest/env.ts"
 import { nearest } from "./nearest.ts"
 
 export interface ErrorDetail {
@@ -623,4 +624,26 @@ export function notImplementedYet(feature: string, phase: string): ConfigError {
         message: `The manifest configures ${feature}, which this build does not implement.`,
         hint: `${feature} arrives in ${phase}. Remove the section for now — it is refused rather than ignored, because silently dropping configuration is how a runtime lies about what it is doing.`,
     })
+}
+
+/**
+ * The ambient environment beat the `.env` beside the manifest.
+ *
+ * A warning rather than a failure, because the layering is deliberate: an operator's explicit export
+ * has to win, or a container cannot configure the agent it runs. What is not acceptable is silence.
+ * The values are shown for ordinary variables and withheld for anything whose *name* looks like a
+ * secret — the useful half of the diff is which variable, and printing a key to explain a model id
+ * would be a poor trade.
+ */
+export function envOverridden(overrides: readonly EnvOverride[]): ErrorDetail {
+    const described = overrides
+        .map((entry) =>
+            entry.mine === undefined ? entry.key : `${entry.key} (${entry.mine} → ${entry.theirs})`,
+        )
+        .join(", ")
+    return {
+        code: "env_overridden",
+        message: `The environment overrode ${overrides.length === 1 ? "a variable" : `${overrides.length} variables`} set in this agent's own .env: ${described}.`,
+        hint: "The real environment always wins over a .env beside the manifest, so an operator's export beats a committed file. That is usually what you want and occasionally a surprise — most often a .env in the directory you launched from, which is why running from a project checkout can silently change the model. Unset the variable there, or run from elsewhere, if the agent's own .env is the one you meant.",
+    }
 }

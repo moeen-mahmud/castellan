@@ -14,7 +14,7 @@
 
 import { statSync } from "node:fs"
 import { isAbsolute, resolve } from "node:path"
-import { type ErrorDetail, toolGatedAfterFirstUse } from "../errors.ts"
+import { type ErrorDetail, envOverridden, toolGatedAfterFirstUse } from "../errors.ts"
 import type { EventBus } from "../events/bus.ts"
 import { newTurnId } from "../loop/ids.ts"
 import { runTurn, type ToolRuntime, type TurnResult } from "../loop/turn.ts"
@@ -242,11 +242,18 @@ export class Agent {
         // end still finds it after the banner has scrolled away.
         const providerWarnings = resolveProviders(loaded.manifest.tools).warnings
 
+        // The layering is right and it must not be silent. An agent whose own `.env` names one model
+        // ran on another for a whole session because a `.env` in the directory the binary was
+        // launched from said so — and the banner reported the model actually in use, correctly and
+        // uselessly, since the person had just written the other one.
+        const overrides =
+            loaded.envOverrides.length === 0 ? [] : [envOverridden(loaded.envOverrides)]
+
         return new Agent({
             loaded,
             roles,
             workspace,
-            warnings: [...warnings, ...providerWarnings],
+            warnings: [...warnings, ...providerWarnings, ...overrides],
             bus,
             store,
             tools: options.tools ?? ToolRegistry.empty(),

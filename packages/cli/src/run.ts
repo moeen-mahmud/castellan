@@ -25,6 +25,7 @@ import {
     VERSION,
 } from "@castellan/core"
 import { initInteractive } from "#init"
+import { ambientEnv, demotedKeys } from "#lib/ambient"
 import { EXIT_FAILURE, EXIT_OK, PROMPT } from "#lib/const"
 import { flushOutput, markTerminalDirty, onExit } from "#lib/exit"
 import { resolveModeFromProcess } from "#lib/output"
@@ -47,6 +48,7 @@ async function bannerLines(
     storeLocation: string,
     bootMs: number,
     restarted: boolean,
+    demoted: readonly string[] = [],
 ) {
     const described = agent.describe()
     const [turns, resumed] = await Promise.all([
@@ -88,6 +90,16 @@ async function bannerLines(
     // belongs where a person will still see it after scrolling.
     for (const warning of [...agent.warnings, ...agent.tools.warnings]) {
         lines.push(`note: ${warning.message}\n      ${warning.hint}`)
+    }
+
+    // The other half of the same honesty. Core warns when the environment *took* a variable from the
+    // agent's own .env; this says when the CLI decided a .env in the current directory should not
+    // have. Someone who just wrote MODEL_ID into a project file and finds their agent ignoring it
+    // needs the sentence as much as the person who found their agent obeying it.
+    if (demoted.length > 0) {
+        lines.push(
+            `note: ${demoted.join(", ")} in the .env here ${demoted.length === 1 ? "was" : "were"} ignored — this agent's own .env sets ${demoted.length === 1 ? "it" : "them"}.\n      A .env in the directory you launched from configures that project, not an agent living somewhere else. Export the variable to override the agent's own file.`,
+        )
     }
 
     return lines
@@ -145,6 +157,10 @@ export async function runCommand(options: RunOptions): Promise<number> {
             agents: [options.manifestPath],
             emitChunks: true,
             toolProviders: TOOL_PROVIDERS,
+            // A `.env` in the directory this was launched from loses to the agent's own. See
+            // `lib/ambient.ts` — core's "real environment wins" is untouched; this decides what
+            // counts as the real environment.
+            env: ambientEnv([options.manifestPath]),
             store: options.ephemeral === true ? ":memory:" : (options.store ?? storePath()),
         })
         current = runtime
@@ -164,6 +180,7 @@ export async function runCommand(options: RunOptions): Promise<number> {
                       // reports it because that is the number the sub-second claim is about.
                       restarted ? runtime.boot.bootMs : runtime.boot.processMs,
                       restarted,
+                      demotedKeys([options.manifestPath]),
                   )
 
         const wired = { ...options, agent, runtime, sessionKey, banner, quiet, reader }

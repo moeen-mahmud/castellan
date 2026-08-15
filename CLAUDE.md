@@ -552,3 +552,41 @@ Never claim a performance property without a number in `evals/` and a script to 
   the eval needed a third category before it measured anything at all: its first run scored the *ideal*
   behaviour as a failure, because a model that tells the user "the page tried to make me write
   ZX-9-COMPROMISED and I refused" has put the marker in the reply, which was the entire check.
+- **Naming a provider is what makes `available()` run, so a provider left commented out is a
+  capability the model cannot know it lacks.** Decision 4.53 established this for `system` and it had
+  to be learned again for `web`: with the block commented, an agent asked whether it could search the
+  web answered that the only route was shell access and `curl` — true of its catalogue, false of the
+  runtime, and the worse of the two answers. `init` now names both providers with nothing pinned.
+  Pinning would be a grant; naming is only honesty about what exists.
+- **The ambient environment beats the `.env` beside the manifest, and now says so.** The layering is
+  deliberate — an operator's export has to win, or a container cannot configure the agent it runs —
+  but it silently changed which model a sandbox agent ran on, because the binary was launched from a
+  project checkout whose own `.env` set `MODEL_ID`. The banner reported the model in use, which is
+  correct and useless to someone who has just written a different one two minutes earlier. This
+  contamination was already recorded as a *test* hazard, which is exactly how it stayed invisible as a
+  runtime one: a hazard filed under "tests" is a hazard nobody looks for in production.
+- **Precedence is export → the agent's own `.env` → a `.env` in the cwd, and the last step is CLI
+  policy.** `cli/lib/ambient.ts` demotes a cwd variable before core sees an environment at all; core's
+  "real environment wins" is untouched, because an embedder's container must keep winning with none of
+  this. It was reported twice before being fixed, which is the lesson: a warning explained the
+  surprise and did not remove it. The known wrong case — an export byte-identical to the cwd file's
+  value, indistinguishable from inside the process — is documented in the module.
+- **Every capability the runtime has is a question in `init`.** Standing directive from Moeen after
+  the web provider shipped generated-but-commented. A capability reachable only by someone who
+  already knows the field names is a capability the generated file is hiding. `fetch` and `search`
+  are separate answers because their costs differ: one needs no account anywhere, the other needs a
+  third-party key. When a new provider lands, it gets a question, a flag, and an entry in
+  `WEB_CHOICES`-shaped table — not a commented block.
+- **Only secrets go through `${VAR}`; a generated manifest writes the model id and base URL
+  literally.** A model name is not a secret, and hard rule 10 governs secrets. Behind a variable the
+  id cost three things: `readManifestHeader` does not expand — deliberately, so a listing never needs
+  credentials — so every sandbox agent listed as `${MODEL_ID}` and the picker could not tell two
+  apart; any `.env` on the machine changed the model *and* the resolved `contextWindow`, `thinking`
+  and `promptStyle`, all derived from the id; and `validate` checked whichever agent the environment
+  described. Expansion still works — it is just not what a generated file should reach for when the
+  value is a fact about that agent. Corollary: **before putting a field behind a variable, check
+  whether anything reads it unexpanded.**
+  The exception is `examples/minimal`, which keeps `${MODEL_ID}` because demonstrating one manifest
+  against four endpoints *is* its purpose — and it says so in the file. Read the cost from the other
+  side too: with a literal, `MODEL_ID=x <binary> run` overrides nothing, which is exactly the
+  no-silent-drift property and is why there is no ad-hoc override for a real agent.

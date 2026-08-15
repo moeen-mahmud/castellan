@@ -17,13 +17,19 @@ import {
     resolveWorkspace,
     ruleBudgetFailure,
 } from "@castellan/core"
+import { ambientEnv } from "#lib/ambient"
 import { EXIT_FAILURE, EXIT_OK } from "#lib/const"
 import { PROVIDER_IDS } from "#lib/providers"
 import type { ValidateOptions } from "#lib/schema"
 
 export function validateCommand(options: ValidateOptions): number {
     try {
-        const loaded = loadManifest(options.manifestPath, { knownProviders: PROVIDER_IDS })
+        const loaded = loadManifest(options.manifestPath, {
+            knownProviders: PROVIDER_IDS,
+            // The same environment `run` will use, or this validates a different agent — the
+            // failure that rule exists for is a validator that disagrees with the runtime.
+            env: ambientEnv([options.manifestPath]),
+        })
         const { manifest } = loaded
         const capabilities = resolveCapabilities(
             manifest.model.main.id,

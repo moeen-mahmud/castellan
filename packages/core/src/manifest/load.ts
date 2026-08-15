@@ -26,7 +26,15 @@ import {
     validationFailed,
 } from "../errors.ts"
 import { resolveCapabilities } from "../model/capabilities.ts"
-import { type EnvSource, expandEnvDeep, layeredEnv, mergeEnv, parseDotEnv } from "./env.ts"
+import {
+    type EnvOverride,
+    type EnvSource,
+    envOverrides,
+    expandEnvDeep,
+    layeredEnv,
+    mergeEnv,
+    parseDotEnv,
+} from "./env.ts"
 import { resolveRefs, shallowMerge } from "./refs.ts"
 import { type AgentManifest, AgentManifestSchema } from "./schema.ts"
 import { assertApiVersion, scanForLiteralSecrets, validateManifest } from "./validate.ts"
@@ -48,6 +56,14 @@ export interface LoadedManifest {
      * that disagrees with the runtime is worse than no validator.
      */
     readonly env: EnvSource
+    /**
+     * Variables the ambient environment took away from the `.env` beside this manifest.
+     *
+     * Carried rather than warned about here, because `loadManifest` is also what `validate --json`
+     * calls and a silent load has to stay silent. `Agent.create` turns it into an `agent.warning`,
+     * which is where a person still sees it after boot.
+     */
+    readonly envOverrides: readonly EnvOverride[]
 }
 
 export interface LoadOptions {
@@ -71,6 +87,8 @@ interface Resolved {
     env: EnvSource
     /** Live view, for anything read per request. */
     liveEnv: EnvSource
+    /** Where the two layers disagree. Empty on the `skipEnvFile` path, which has one layer. */
+    overrides: readonly EnvOverride[]
     readFile: (path: string) => string
 }
 
@@ -78,7 +96,9 @@ function resolveOptions(dir: string, options: LoadOptions): Resolved {
     const readFile = options.readFile ?? ((path: string) => readFileSync(path, "utf8"))
     const realEnv = options.env ?? process.env
 
-    if (options.skipEnvFile === true) return { env: realEnv, liveEnv: realEnv, readFile }
+    if (options.skipEnvFile === true) {
+        return { env: realEnv, liveEnv: realEnv, overrides: [], readFile }
+    }
 
     let dotEnv: Record<string, string> = {}
     try {
@@ -90,6 +110,7 @@ function resolveOptions(dir: string, options: LoadOptions): Resolved {
     return {
         env: mergeEnv(dotEnv, realEnv),
         liveEnv: layeredEnv(dotEnv, realEnv),
+        overrides: envOverrides(dotEnv, realEnv),
         readFile,
     }
 }
@@ -206,7 +227,7 @@ export function loadManifestFromObject(
     raw: Record<string, unknown>,
     options: LoadOptions & { dir: string; path?: string },
 ): LoadedManifest {
-    const { env, liveEnv } = resolveOptions(options.dir, options)
+    const { env, liveEnv, overrides } = resolveOptions(options.dir, options)
 
     assertApiVersion(raw)
 
@@ -245,6 +266,7 @@ export function loadManifestFromObject(
         dir: options.dir,
         window,
         env: liveEnv,
+        envOverrides: overrides,
     }
 }
 

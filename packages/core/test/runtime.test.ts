@@ -895,3 +895,69 @@ ${tools}
         )
     })
 })
+
+describe("a .env the environment overrides", () => {
+    test("a variable the ambient environment wins is named on the agent, with both values", async () => {
+        // The layering itself is deliberate and stays. What is not acceptable is silence: an agent
+        // whose own .env named deepseek-v4-flash ran a whole session on deepseek-v4-pro because a
+        // .env in the directory the binary was launched from said so, and the banner reported the
+        // model actually in use — correctly, and uselessly.
+        const dir = mkdtempSync(join(tmpdir(), "runtime-override-"))
+        writeFileSync(
+            join(dir, "agent.yaml"),
+            `apiVersion: ${BRAND.apiVersion}
+id: test
+model:
+  main:
+    id: \${MODEL_ID}
+    baseUrl: https://api.example.com/v1
+    apiKeyEnv: MODEL_API_KEY
+`,
+        )
+        writeFileSync(join(dir, ".env"), "MODEL_ID=mine\nMODEL_API_KEY=from-file\n")
+
+        const runtime = await Runtime.create({
+            agents: [join(dir, "agent.yaml")],
+            env: { MODEL_ID: "theirs", MODEL_API_KEY: "from-env" },
+            fetch: replyFetch,
+        })
+
+        const agent = runtime.agent("test")
+        expect(agent.manifest.model.main.id).toBe("theirs")
+
+        const warning = agent.warnings.find((entry) => entry.code === "env_overridden")
+        expect(warning?.message).toContain("MODEL_ID (mine → theirs)")
+        // The name is useful and the value is not worth printing to explain a model id.
+        expect(warning?.message).toContain("MODEL_API_KEY")
+        expect((warning?.message ?? "").includes("from-file")).toBe(false)
+        await runtime.stop()
+    })
+
+    test("agreement and env-only variables say nothing", async () => {
+        const dir = mkdtempSync(join(tmpdir(), "runtime-agree-"))
+        writeFileSync(
+            join(dir, "agent.yaml"),
+            `apiVersion: ${BRAND.apiVersion}
+id: test
+model:
+  main:
+    id: gpt-4o-mini
+    baseUrl: https://api.example.com/v1
+    apiKeyEnv: MODEL_API_KEY
+`,
+        )
+        writeFileSync(join(dir, ".env"), "MODEL_API_KEY=same\n")
+
+        const runtime = await Runtime.create({
+            agents: [join(dir, "agent.yaml")],
+            // Identical is not an override, and a variable only the environment supplies is the
+            // normal case — warning about either is how a real warning gets ignored.
+            env: { MODEL_API_KEY: "same", PATH: "/usr/bin" },
+            fetch: replyFetch,
+        })
+        expect(
+            runtime.agent("test").warnings.some((entry) => entry.code === "env_overridden"),
+        ).toBe(false)
+        await runtime.stop()
+    })
+})

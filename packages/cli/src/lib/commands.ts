@@ -95,6 +95,20 @@ export const COMMANDS: readonly CommandSpec[] = [
                 defaultHelp: "none",
             },
             {
+                name: "web",
+                kind: "string",
+                placeholder: "level",
+                help: "internet access: none | fetch | search",
+                defaultHelp: "none",
+            },
+            {
+                name: "web-backend",
+                kind: "string",
+                placeholder: "id",
+                help: "search backend when --web search: tavily | brave | exa",
+                defaultHelp: "tavily",
+            },
+            {
                 name: "yes",
                 kind: "boolean",
                 help: "take every default; never ask, even at a terminal",

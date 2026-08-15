@@ -15,7 +15,13 @@ bun run build
 node packages/cli/dist/index.js run examples/minimal/agent.yaml
 ```
 
-## The point of this example
+## The point of this example — and why it is written differently
+
+**This one file keeps `${MODEL_ID}` on purpose.** Everywhere else, including everything `init`
+generates, the model id and base URL are literals in `agent.yaml`: they are not secrets, and behind
+a variable they break the sandbox picker, let a stray `.env` change the resolved capabilities, and
+make `validate` check a different agent than the one you meant. Here the variables *are* the
+demonstration, so they stay.
 
 The manifest never changes between providers. Only the environment does:
 
@@ -55,7 +61,7 @@ castellan run ./agent.yaml --input "what can you do?"
 castellan validate ./agent.yaml --json
 
 # a reasoning model, with its chain of thought streamed separately from the reply
-MODEL_ID=deepseek-reasoner MODEL_BASE_URL=https://api.deepseek.com/v1 \
+MODEL_ID=deepseek-v4-pro MODEL_BASE_URL=https://api.deepseek.com/v1 \
   castellan run ./agent.yaml --show-reasoning --input "which is heavier, 1kg of steel or 1kg of feathers?"
 
 # a deliberately awkward local endpoint: split SSE frames, heartbeats, no trailing blank line

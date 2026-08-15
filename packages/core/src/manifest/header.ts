@@ -19,7 +19,13 @@ import { manifestNotYaml, manifestUnreadable } from "../errors.ts"
 export interface ManifestHeader {
     readonly id?: string
     readonly name?: string
-    /** Raw — may literally be an unexpanded `${MODEL_ID}` reference. */
+    /**
+     * Raw, and deliberately unexpanded — reading a header must never need credentials.
+     *
+     * Which is why a generated manifest carries the id **literally**: with `${MODEL_ID}` here, every
+     * agent in the sandbox listed as the string `${MODEL_ID}` and the picker could not tell two of
+     * them apart. A hand-written manifest may still use a variable, and then this is what it says.
+     */
     readonly modelId?: string
 }
 

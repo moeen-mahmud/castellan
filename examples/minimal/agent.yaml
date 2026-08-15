@@ -9,6 +9,16 @@ name: Vela (Minimal Assistant)
 
 model:
   main:
+    # ${VAR} here, and this example is the exception that shows when it is right.
+    #
+    # The general rule — and what `init` generates — is a literal id: a model name is not a secret,
+    # and behind a variable it breaks the sandbox picker (headers are read unexpanded), lets any
+    # .env on the machine change the resolved window and promptStyle, and makes `validate` check
+    # whichever agent the environment described. See examples/reference/agent.yaml.
+    #
+    # This file's entire purpose is the opposite claim: the SAME manifest against four endpoints,
+    # which is what the Phase 1 acceptance criteria check. So the variables stay, deliberately, and
+    # the endpoint table below is the reason.
     id: ${MODEL_ID}
     baseUrl: ${MODEL_BASE_URL}
     # The *name* of an env var. A literal key here fails validation.

@@ -15,6 +15,7 @@
  */
 
 import { loadManifest, Runtime, resolveProviders } from "@castellan/core"
+import { ambientEnv } from "#lib/ambient"
 import { EXIT_FAILURE, EXIT_OK } from "#lib/const"
 import { PROVIDER_IDS, TOOL_PROVIDERS } from "#lib/providers"
 import { toolsReport, toolsView } from "#lib/session-commands"
@@ -38,7 +39,10 @@ export async function toolsCommand(options: ToolsOptions): Promise<number> {
 }
 
 async function warm(options: ToolsOptions): Promise<number> {
-    const loaded = loadManifest(options.manifestPath, { knownProviders: PROVIDER_IDS })
+    const loaded = loadManifest(options.manifestPath, {
+        knownProviders: PROVIDER_IDS,
+        env: ambientEnv([options.manifestPath]),
+    })
     const selections = resolveProviders(loaded.manifest.tools).selections
     const pinned = loaded.manifest.tools.pinned
 
@@ -136,6 +140,7 @@ async function show(options: ToolsOptions): Promise<number> {
     const runtime = await Runtime.create({
         agents: [options.manifestPath],
         toolProviders: TOOL_PROVIDERS,
+        env: ambientEnv([options.manifestPath]),
     })
     try {
         const agent = runtime.list()[0]

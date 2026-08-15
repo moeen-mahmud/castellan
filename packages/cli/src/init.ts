@@ -36,6 +36,7 @@ import {
     presetById,
     type QuestionDefaults,
     validateAnswer,
+    webBackendByValue,
 } from "#lib/init-flow"
 import { resolveModeFromProcess } from "#lib/output"
 import { PROVIDER_IDS } from "#lib/providers"
@@ -55,6 +56,10 @@ const FLAG_FOR: Record<InitStep, string> = {
     // is written with an empty value and the next steps say where to put it.
     apiKey: "(asked at the prompt only)",
     system: "--system",
+    web: "--web",
+    webBackend: "--web-backend",
+    // No flag, same reason as the model key.
+    webKey: "(asked at the prompt only)",
     dir: "<dir>",
 }
 
@@ -62,6 +67,12 @@ export type InitResult =
     | { readonly kind: "ok"; readonly manifestPath: string }
     | { readonly kind: "aborted" }
     | { readonly kind: "failed"; readonly code: number }
+
+/** The variable `web_search` will read, or undefined when this agent does not search. */
+function searchKeyVar(answers: InitAnswers): string | undefined {
+    if (answers.web !== "search") return undefined
+    return webBackendByValue(answers.webBackend ?? "tavily")?.apiKeyEnv
+}
 
 export async function initCommand(options: InitOptions): Promise<number> {
     const result = await runInit(options)
@@ -193,6 +204,8 @@ function fromFlags(options: InitOptions): Partial<Record<InitStep, string>> {
         ["baseUrl", options.baseUrl],
         ["apiKeyEnv", options.apiKeyEnv],
         ["system", options.system],
+        ["web", options.web],
+        ["webBackend", options.webBackend],
         ["dir", options.dir],
     ]
     for (const [step, raw] of pairs) {
@@ -291,9 +304,16 @@ function complete(partial: Partial<Record<InitStep, string>>): InitAnswers {
     // `apiKeyEnv` and `apiKey` legitimately stay undefined — the first for a keyless endpoint, the
     // second for anyone exporting the variable another way. Everything else is present once
     // nextQuestion returns undefined.
-    const answers = partial as Record<Exclude<InitStep, "apiKeyEnv" | "apiKey">, string> & {
+    const answers = partial as Record<
+        Exclude<InitStep, "apiKeyEnv" | "apiKey" | "webBackend" | "webKey">,
+        string
+    > & {
         apiKeyEnv?: string
         apiKey?: string
+        // Both stay undefined unless the web answer was `search` — the flow skips their questions,
+        // so `nextQuestion` returning undefined does not mean they were answered.
+        webBackend?: string
+        webKey?: string
     }
     // Which variable holds the key is no longer asked — it comes from `--api-key-env`, or from the
     // preset. Defaulted HERE, at the one funnel both the wizard and the scripted path pass through:
@@ -310,6 +330,11 @@ function complete(partial: Partial<Record<InitStep, string>>): InitAnswers {
         model: answers.model,
         baseUrl: answers.baseUrl,
         system: answers.system,
+        web: answers.web,
+        ...(answers.webBackend === undefined ? {} : { webBackend: answers.webBackend }),
+        ...(answers.webKey === undefined || answers.webKey === ""
+            ? {}
+            : { webKey: answers.webKey }),
         ...(keyVar === undefined ? {} : { apiKeyEnv: keyVar }),
         ...(answers.apiKey === undefined || answers.apiKey === ""
             ? {}
@@ -334,6 +359,15 @@ function nextSteps(
     // typed in is the kind of instruction people learn to skip past.
     if (answers.apiKeyEnv !== undefined && answers.apiKey === undefined) {
         steps.push(`Add your key: edit ${join(targetDir, ".env")} and set ${answers.apiKeyEnv}=`)
+    }
+    // Same rule as the model key: only when there is genuinely nothing to search with. A search
+    // agent whose key is blank starts fine and fails at the first web_search naming the variable —
+    // which is the right failure and a poor first impression if nobody said so here.
+    const searchVar = searchKeyVar(answers)
+    if (searchVar !== undefined && answers.webKey === undefined) {
+        steps.push(
+            `Add your search key: edit ${join(targetDir, ".env")} and set ${searchVar}= — web_fetch works without it, web_search does not`,
+        )
     }
     steps.push(`${BRAND.slug} run ${runRef}`)
     steps.push(

@@ -965,6 +965,18 @@ makes B safe; B second because it is the capability actually wanted.
   with `tools.providers`, and the renderer handled scalars and arrays only — so the value fell through
   to `String(value)` and the schema rejected the result as "expected record, received array", a
   message pointing nowhere near the cause. Caught by the tests written for the new setting.
+- **The web provider shipped generated-but-commented, which made it invisible to the model.** Asked
+  whether it could search the web, a fresh agent answered that the only route was shell access and
+  `curl` — a correct reading of its own catalogue and a false statement about the runtime, and the
+  worse of the two answers. Naming a provider is what makes `available()` run; decision 4.53 had
+  established that for `system` and it had to be learned again. `init` now asks about the internet
+  the way it asks about the machine — `--web none|fetch|search`, with the backend and its key asked
+  only of someone who chose search (4.69, 4.71).
+- **A `.env` in the current directory was silently reconfiguring sandbox agents.** An agent whose own
+  `.env` named `deepseek-v4-flash` ran a whole session on `deepseek-v4-pro` because the binary was
+  launched from a checkout whose `.env` said so. Reported twice, which is what settled the fix:
+  the first pass warned, and a warning explained the surprise without removing it. Precedence is now
+  export → the agent's own file → the cwd file, decided in `cli/lib/ambient.ts` (4.70, 4.72).
 - **`config_set` now re-checks the providers block, not just the schema.** Writing `tools.providers`
   into a manifest still carrying `tools.provider` produces a document the schema accepts and the
   runtime refuses — an agent that boots today and not tomorrow, reported as success. It calls the same

@@ -21,10 +21,14 @@ name: Milo (Reference Assistant)
 # Three roles. `main` is required; `selector` and `compactor` fall back to it.
 model:
   main:
-    # Sent verbatim as the `model` parameter.
-    id: ${MODEL_ID}
+    # Sent verbatim as the `model` parameter. Literal, not ${MODEL_ID}: which model an agent runs
+    # on is not a secret, and putting it behind a variable cost more than it bought — the sandbox
+    # picker listed every agent as "${MODEL_ID}" (headers are read WITHOUT expansion, on purpose),
+    # any .env on the machine could change it, and with it the resolved window, thinking mode and
+    # promptStyle. ${VAR} still expands here for anyone who wants it; it is not the default.
+    id: deepseek-v4-pro
     # Must end at the version segment. The runtime appends `/chat/completions`.
-    baseUrl: ${MODEL_BASE_URL}
+    baseUrl: https://api.deepseek.com/v1
     # The *name* of an env var. A literal key here fails validation — rule 2.
     apiKeyEnv: MODEL_API_KEY
     temperature: 0.3

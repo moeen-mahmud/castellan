@@ -101,6 +101,41 @@ export function expandEnvDeep(value: unknown, env: EnvSource, path = ""): unknow
  * A snapshot, suitable for load-time checks. For anything read *later* — an API key on every
  * request — use `layeredEnv`, which stays live.
  */
+/** One variable the ambient environment took away from the agent's own `.env`. */
+export interface EnvOverride {
+    readonly key: string
+    /** What the `.env` beside the manifest said. Absent for a name that looks like a secret. */
+    readonly mine?: string
+    /** What the ambient environment said instead. Absent for the same reason. */
+    readonly theirs?: string
+}
+
+/** Names whose values never appear in a message, however useful the diff would be. */
+const SECRETISH = /KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL/i
+
+/**
+ * Variables where the agent's own `.env` and the ambient environment disagree.
+ *
+ * The layering is deliberate and stays: an operator's explicit export has to beat a committed file,
+ * or a container cannot configure the agent it is running. What is not acceptable is the layering
+ * being **silent**. A sandbox agent whose `.env` names `deepseek-v4-flash` ran on `deepseek-v4-pro`
+ * for a whole session because a `.env` in the directory the binary was launched from said so, and
+ * the banner reported the model it was actually using — correctly, and unhelpfully, since the person
+ * had just written the other one and had no reason to look.
+ *
+ * Only a genuine disagreement counts. A variable the ambient environment supplies and the `.env`
+ * does not is the normal case and says nothing; identical values are not an override.
+ */
+export function envOverrides(dotEnv: Record<string, string>, real: EnvSource): EnvOverride[] {
+    const out: EnvOverride[] = []
+    for (const [key, mine] of Object.entries(dotEnv)) {
+        const theirs = real[key]
+        if (theirs === undefined || theirs === mine) continue
+        out.push(SECRETISH.test(key) ? { key } : { key, mine, theirs })
+    }
+    return out
+}
+
 export function mergeEnv(dotEnv: Record<string, string>, real: EnvSource): EnvSource {
     const merged: EnvSource = { ...dotEnv }
     for (const [key, value] of Object.entries(real)) {

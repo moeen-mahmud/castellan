@@ -28,6 +28,7 @@ const ANSWERS: InitAnswers = {
     apiKeyEnv: "MODEL_API_KEY",
     apiKey: "sk-test-value",
     system: "none",
+    web: "none",
     dir: "./milo",
 }
 
@@ -53,6 +54,8 @@ describe("nextQuestion", () => {
             partial[question.step] =
                 question.step === "preset" ? "deepseek" : question.fallback || "x"
         }
+        // No webBackend or webKey: the fallback answer to the web question is "1" — none — and a
+        // backend nobody will use is a question that lies.
         expect(seen).toEqual([
             "user",
             "name",
@@ -62,6 +65,7 @@ describe("nextQuestion", () => {
             "baseUrl",
             "apiKey",
             "system",
+            "web",
             "dir",
         ])
     })
@@ -199,11 +203,15 @@ describe("planFiles", () => {
         // The providers map is live with `system` in it, and the other two sit inside it commented
         // at the indentation that makes them work — one key, three providers, which is the whole
         // point of the map replacing the scalar.
+        // Both first-party providers are named and neither is pinned. Naming is what lets the agent
+        // be *told* its tools exist: with `web` commented out, asked whether it could search the web
+        // it answered that the only route was shell access and curl — true of its catalogue, false of
+        // this runtime, and the worse answer of the two.
         expect(yaml).toContain("  providers:\n    system: {}")
+        expect(yaml).toContain("\n    web: {}")
         // Commented, with phases: uncommenting early must be a load refusal, not decoration.
         for (const line of [
             "    # composio:",
-            "    # web:",
             "# phases:",
             "# skills:",
             "# memory:",
@@ -232,7 +240,12 @@ describe("planFiles", () => {
         // field, so the assertion targets the uncommented model-block indent.
         expect(manifest?.contents.includes("\n    apiKeyEnv:")).toBe(false)
         expect(env?.contents.includes("MODEL_API_KEY")).toBe(false)
-        expect(env?.contents).toContain("MODEL_ID=qwen3.5:9b")
+        // The model and the endpoint are in the manifest, literally. A keyless local endpoint
+        // therefore has a .env with nothing in it but comments — which is the honest state of
+        // affairs, and used to be hidden behind two variables that were never secrets.
+        expect(manifest?.contents).toContain("\n    id: qwen3.5:9b")
+        expect(manifest?.contents).toContain("\n    baseUrl: http://localhost:11434/v1")
+        expect(env?.contents.includes("MODEL_ID=")).toBe(false)
     })
 
     test("the key the wizard collected lands in .env, so a fresh agent actually runs", () => {
@@ -259,10 +272,33 @@ describe("planFiles", () => {
         expect(gitignore?.contents).toBe(".env\n")
     })
 
-    test("the chosen preset is the active block in .env.example", () => {
+    test(".env.example names the variables and holds no values", () => {
+        // It stopped being a menu of endpoints when the endpoint moved into the manifest. What is
+        // left is what its name always claimed: which variables have to exist.
         const example = planFiles(ANSWERS).find((f) => f.relPath === ".env.example")
-        expect(example?.contents).toContain("\nMODEL_ID=deepseek-v4-flash")
-        expect(example?.contents).toContain("# MODEL_ID=gpt-5-6-sol")
+        expect(example?.contents).toContain("\nMODEL_API_KEY=\n")
+        expect(example?.contents.includes("MODEL_ID")).toBe(false)
+        expect(example?.contents.includes("deepseek")).toBe(false)
+    })
+
+    test("the manifest carries the model and the endpoint; the .env carries only the key", () => {
+        const files = planFiles(ANSWERS)
+        const manifest = files.find((f) => f.relPath === "agent.yaml")?.contents ?? ""
+        const env = files.find((f) => f.relPath === ".env")?.contents ?? ""
+
+        // The three things the indirection cost, in one test: a picker that could not tell two
+        // agents apart (headers are read without expansion), a stray .env changing the resolved
+        // capabilities, and a validate that checked whichever agent the environment described.
+        expect(manifest).toContain("\n    id: deepseek-v4-pro")
+        expect(manifest).toContain("\n    baseUrl: https://api.deepseek.com/v1")
+        expect(manifest.includes("${MODEL_ID}")).toBe(false)
+        expect(manifest.includes("${MODEL_BASE_URL}")).toBe(false)
+
+        // Hard rule 10 is untouched: the manifest names the key's variable and never holds it.
+        expect(manifest).toContain("apiKeyEnv: MODEL_API_KEY")
+        expect(manifest.includes("sk-test-value")).toBe(false)
+        expect(env).toContain("MODEL_API_KEY=sk-test-value")
+        expect(env.includes("MODEL_ID")).toBe(false)
     })
 
     test("no generated file guesses pronouns for the user", () => {
@@ -321,5 +357,83 @@ describe("rule budget pin", () => {
             "workspace/REMINDER.md",
         ])
         expect(counted).toBeLessThanOrEqual(2)
+    })
+})
+
+describe("the web question", () => {
+    function withWeb(over: Partial<InitAnswers>): string {
+        return (
+            planFiles({ ...ANSWERS, ...over }).find((f) => f.relPath === "agent.yaml")?.contents ??
+            ""
+        )
+    }
+
+    test("none still names the provider, so the agent can say the tools exist", () => {
+        // The bug this answers: with the block commented out, an agent asked whether it could search
+        // the web replied that the only route was shell access and curl — true of its catalogue and
+        // false of the runtime. Naming a provider is what makes available() run.
+        const yaml = withWeb({ web: "none" })
+        expect(yaml).toContain("\n    web: {}")
+        expect(yaml).toContain("    # - web_fetch")
+        expect(yaml.includes("\n    - web_fetch")).toBe(false)
+    })
+
+    test("fetch pins the keyless tool and only that one", () => {
+        const yaml = withWeb({ web: "fetch" })
+        expect(yaml).toContain("\n    - web_fetch")
+        expect(yaml).toContain("    # - web_search")
+    })
+
+    test("search writes the backend and the variable, never a key", () => {
+        const yaml = withWeb({ web: "search", webBackend: "brave", webKey: "brave-secret" })
+        expect(yaml).toContain("backend: brave")
+        expect(yaml).toContain("apiKeyEnv: BRAVE_API_KEY")
+        expect(yaml).toContain("\n    - web_search")
+        // Hard rule 10: the manifest names the variable and never holds the value.
+        expect(yaml.includes("brave-secret")).toBe(false)
+    })
+
+    test("the key lands in the gitignored .env, and only for a searching agent", () => {
+        const withKey = planFiles({
+            ...ANSWERS,
+            web: "search",
+            webBackend: "exa",
+            webKey: "exa-secret",
+        }).find((f) => f.relPath === ".env")?.contents
+        expect(withKey).toContain("EXA_API_KEY=exa-secret")
+
+        // A blank TAVILY_API_KEY in the .env of every agent that will never search is a variable
+        // nobody asked for, in front of everybody.
+        const without = planFiles({ ...ANSWERS, web: "fetch" }).find(
+            (f) => f.relPath === ".env",
+        )?.contents
+        expect((without ?? "").includes("API_KEY=") && !(without ?? "").includes("TAVILY")).toBe(
+            true,
+        )
+    })
+
+    test("the backend and its key are asked only of someone who chose search", () => {
+        const base = {
+            user: "M",
+            name: "W",
+            purpose: "x",
+            preset: "deepseek",
+            model: "m",
+            baseUrl: "https://x.example/v1",
+            apiKey: "",
+            system: "none",
+        }
+        // An answer the flow would discard is a question that lies.
+        expect(nextQuestion({ ...base, web: "fetch" })?.step).toBe("dir")
+        expect(nextQuestion({ ...base, web: "search" })?.step).toBe("webBackend")
+        expect(nextQuestion({ ...base, web: "search", webBackend: "exa" })?.step).toBe("webKey")
+    })
+
+    test("the web answers are validated by name or by number", () => {
+        expect(validateAnswer("web", "2")).toEqual({ ok: true, value: "fetch" })
+        expect(validateAnswer("web", "SEARCH")).toEqual({ ok: true, value: "search" })
+        expect(validateAnswer("web", "maybe").ok).toBe(false)
+        expect(validateAnswer("webBackend", "3")).toEqual({ ok: true, value: "exa" })
+        expect(validateAnswer("webBackend", "google").ok).toBe(false)
     })
 })

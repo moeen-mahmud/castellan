@@ -127,8 +127,81 @@ export interface InitAnswers {
      * block commented out so the shape is still there to uncomment.
      */
     readonly system: string
+    /**
+     * Whether it can reach the internet: `none`, `fetch`, or `search`.
+     *
+     * Asked for the same reason `system` is, and found the same way. The web provider was generated
+     * commented out, so asked whether it could search the web an agent answered that the only route
+     * was shell access and `curl` — a correct reading of its own catalogue and a false statement
+     * about the runtime. Every capability this runtime has is a question here now; a generated file
+     * that hides its own options is not doing the job a generated file exists for.
+     */
+    readonly web: string
+    /** Which search backend, when `web` is `search`. Ignored otherwise. */
+    readonly webBackend?: string
+    /**
+     * The search key itself, written to the gitignored `.env` beside the manifest. Same rule as the
+     * model key: the manifest names the variable, no flag accepts the value.
+     */
+    readonly webKey?: string
     /** Target directory, as given — the command resolves it against the cwd. */
     readonly dir: string
+}
+
+/**
+ * What web access an agent may be given, and what each answer pins.
+ *
+ * `none` still names the provider, exactly as `--system none` does — naming is what makes
+ * `available()` run, and `available()` is the only reason the model can say "web_search exists and is
+ * not enabled for me" rather than "I cannot search the web".
+ *
+ * `fetch` is separated from `search` because they have genuinely different costs: `web_fetch` needs
+ * no account anywhere, and `web_search` needs a key from a third party. Collapsing them would force
+ * anyone who wants to hand their agent a URL to go and sign up for something first.
+ */
+export const WEB_CHOICES: readonly {
+    readonly value: string
+    readonly label: string
+    readonly pinned: readonly string[]
+}[] = [
+    {
+        value: "none",
+        label: "No — but it will know the web tools exist and can ask you to enable them",
+        pinned: [],
+    },
+    {
+        value: "fetch",
+        label: "Read pages — it can open a URL you give it. No account or key needed",
+        pinned: ["web_fetch"],
+    },
+    {
+        value: "search",
+        label: "Search and read — needs an API key from a search provider",
+        pinned: ["web_search", "web_fetch"],
+    },
+]
+
+export function webChoice(value: string): (typeof WEB_CHOICES)[number] | undefined {
+    return WEB_CHOICES.find((choice) => choice.value === value)
+}
+
+/** The search backends, with the variable each conventionally reads. */
+export const WEB_BACKENDS: readonly {
+    readonly value: string
+    readonly label: string
+    readonly apiKeyEnv: string
+}[] = [
+    {
+        value: "tavily",
+        label: "Tavily — built for agents, generous free tier",
+        apiKeyEnv: "TAVILY_API_KEY",
+    },
+    { value: "brave", label: "Brave Search", apiKeyEnv: "BRAVE_API_KEY" },
+    { value: "exa", label: "Exa — neural search, returns page excerpts", apiKeyEnv: "EXA_API_KEY" },
+]
+
+export function webBackendByValue(value: string): (typeof WEB_BACKENDS)[number] | undefined {
+    return WEB_BACKENDS.find((backend) => backend.value === value)
 }
 
 /**
@@ -232,6 +305,9 @@ const STEP_ORDER: readonly InitStep[] = [
     "baseUrl",
     "apiKey",
     "system",
+    "web",
+    "webBackend",
+    "webKey",
     "dir",
 ]
 
@@ -241,7 +317,7 @@ const STEP_ORDER: readonly InitStep[] = [
  * The renderer reads this rather than special-casing a slug, so a second secret question later
  * cannot be added without the masking coming with it.
  */
-export const SECRET_STEPS: ReadonlySet<InitStep> = new Set<InitStep>(["apiKey"])
+export const SECRET_STEPS: ReadonlySet<InitStep> = new Set<InitStep>(["apiKey", "webKey"])
 
 export interface Question {
     readonly step: InitStep
@@ -313,6 +389,9 @@ export function nextQuestion(
         if (step === "apiKey" && preset !== undefined && preset.apiKeyEnv === undefined) {
             continue
         }
+        // The backend and its key are only questions for someone who asked for search. Skipped
+        // rather than asked-and-ignored: an answer the flow discards is a question that lies.
+        if ((step === "webBackend" || step === "webKey") && partial.web !== "search") continue
 
         switch (step) {
             case "user":
@@ -361,6 +440,36 @@ export function nextQuestion(
                         value: choice.value,
                         label: choice.label,
                     })),
+                }
+            case "web":
+                return {
+                    step,
+                    prompt: "Can it reach the internet?",
+                    fallback: "1",
+                    options: WEB_CHOICES.map((choice) => ({
+                        value: choice.value,
+                        label: choice.label,
+                    })),
+                }
+            case "webBackend":
+                return {
+                    step,
+                    prompt: "Search backend",
+                    fallback: "1",
+                    options: WEB_BACKENDS.map((backend) => ({
+                        value: backend.value,
+                        label: backend.label,
+                    })),
+                }
+            case "webKey":
+                return {
+                    step,
+                    prompt: `${webBackendByValue(partial.webBackend ?? "tavily")?.label.split(" —")[0] ?? "Search"} API key`,
+                    // Empty is a real answer, exactly as it is for the model key: the variable can be
+                    // exported another way, and the next steps say where it goes. No flag, for the
+                    // same reason — a key on the command line lands in shell history.
+                    fallback: "",
+                    optional: true,
                 }
             case "dir":
                 return {
@@ -413,6 +522,31 @@ export function validateAnswer(step: InitStep, raw: string): Answered {
                   }
                 : { ok: true, value: chosen.id }
         }
+
+        case "web": {
+            const byNumber = WEB_CHOICES[Number(value) - 1]
+            const chosen = byNumber ?? webChoice(value.toLowerCase())
+            return chosen === undefined
+                ? {
+                      ok: false,
+                      reason: `pick 1-${WEB_CHOICES.length}, or a name: ${WEB_CHOICES.map((c) => c.value).join(", ")}.`,
+                  }
+                : { ok: true, value: chosen.value }
+        }
+
+        case "webBackend": {
+            const byNumber = WEB_BACKENDS[Number(value) - 1]
+            const chosen = byNumber ?? webBackendByValue(value.toLowerCase())
+            return chosen === undefined
+                ? {
+                      ok: false,
+                      reason: `pick 1-${WEB_BACKENDS.length}, or a name: ${WEB_BACKENDS.map((b) => b.value).join(", ")}.`,
+                  }
+                : { ok: true, value: chosen.value }
+        }
+
+        case "webKey":
+            return { ok: true, value }
 
         case "baseUrl": {
             let url: URL
@@ -474,7 +608,8 @@ export function validateAnswer(step: InitStep, raw: string): Answered {
  *
  * `none` still writes the map, commented, with the exact lines to uncomment.
  */
-function systemBlock(system: string): readonly string[] {
+function systemBlock(answers: InitAnswers): readonly string[] {
+    const system = answers.system
     const choice = systemChoice(system) ?? SYSTEM_CHOICES[0]
     const shell = choice?.pinned.includes("exec") === true
     const files = choice?.pinned.includes("file_read") === true
@@ -533,6 +668,8 @@ function systemBlock(system: string): readonly string[] {
     // Every level pins something — `none` still gets `config_read`/`config_set`, which is the only
     // route out of `none` — so the provider and the list are always written, never commented.
     const pinned = choice?.pinned ?? []
+    const webPinned = webChoice(answers.web)?.pinned ?? []
+    const backend = searchBackend(answers)
 
     return [
         `  # ── providers: where tools come from ──`,
@@ -548,11 +685,35 @@ function systemBlock(system: string): readonly string[] {
               ]
             : []),
         ``,
-        `    # The public web, read-only: web_search needs a key, web_fetch needs nothing. Addresses`,
-        `    # on this machine or this network are refused and no setting permits them.`,
-        `    # web:`,
-        `    #   backend: tavily              # tavily | brave | exa`,
-        `    #   apiKeyEnv: TAVILY_API_KEY    # the variable's name, never the key`,
+        // Always named, whatever the answer — naming a provider is what lets the agent be TOLD its
+        // tools exist. Left commented out, asked whether it could search the web an agent answered
+        // that the only route was shell access and curl: true of its catalogue, false of this
+        // runtime, and the worse of the two answers.
+        ...(webPinned.length === 0
+            ? [
+                  `    # Named with nothing pinned. It cannot reach the internet, and it knows the two`,
+                  `    # tools exist and will tell you which one to enable rather than saying it can't.`,
+                  `    # web_fetch needs no key; web_search needs one, named here:`,
+                  `    #   web: { backend: tavily, apiKeyEnv: TAVILY_API_KEY }   # tavily | brave | exa`,
+                  `    web: {}`,
+              ]
+            : backend === undefined
+              ? [
+                    `    # Reading pages only. No key and no account: web_fetch takes a URL you or the`,
+                    `    # person gave it. To add search, pick a backend and name its variable:`,
+                    `    #   web: { backend: tavily, apiKeyEnv: TAVILY_API_KEY }   # tavily | brave | exa`,
+                    `    web: {}`,
+                ]
+              : [
+                    `    # Search and page reading. The key lives in the .env beside this file; this names`,
+                    `    # only the variable, and a literal key here fails validation.`,
+                    `    web:`,
+                    `      backend: ${backend.value}`,
+                    `      apiKeyEnv: ${backend.apiKeyEnv}`,
+                ]),
+        `    # Addresses on this machine or this network are refused and no setting permits them.`,
+        `    # Neither tool can change anything, but what they return is text a stranger wrote — so it`,
+        `    # is fenced as data, and a tool that CHANGES something needs an allow rule after one runs.`,
         ``,
         `    # A remote catalogue. Run \`${BRAND.slug} tools . --warm\` once before starting: resolution`,
         `    # happens during boot, where no network call is permitted, and a cold cache fails the load.`,
@@ -564,8 +725,9 @@ function systemBlock(system: string): readonly string[] {
         `  # has fails the load naming it — nothing is ever dropped quietly.`,
         `  pinned:`,
         ...pinned.map((slug) => `    - ${slug}`),
-        `    # - web_search`,
-        `    # - web_fetch`,
+        ...webPinned.map((slug) => `    - ${slug}`),
+        ...(webPinned.includes("web_search") ? [] : [`    # - web_search`]),
+        ...(webPinned.includes("web_fetch") ? [] : [`    # - web_fetch`]),
         `    # - GMAIL_FETCH_EMAILS`,
     ]
 }
@@ -788,10 +950,20 @@ function manifestFor(answers: InitAnswers): string {
         rule("model"),
         `model:`,
         `  main:`,
-        `    # The values live in .env beside this file, so switching endpoints never edits it.`,
-        `    id: \${MODEL_ID}`,
+        // Literal, not \${MODEL_ID}. Which model an agent runs on is not a secret, and hard rule 10
+        // governs secrets — so the indirection bought nothing and cost three things: the sandbox
+        // picker listed every agent as "\${MODEL_ID}" because `readManifestHeader` deliberately does
+        // not expand; a stray .env in the directory you launched from silently changed the model,
+        // and with it the resolved contextWindow, thinking mode and promptStyle; and `validate`
+        // checked whichever agent the ambient environment happened to describe.
+        //
+        // \${VAR} still expands everywhere. It is simply not what a generated file should reach for
+        // when the value is a fact about this agent.
+        `    id: ${answers.model}`,
         `    # Must end at the version segment; the runtime appends /chat/completions itself.`,
-        `    baseUrl: \${MODEL_BASE_URL}`,
+        `    baseUrl: ${answers.baseUrl}`,
+        `    # Both take \${VAR} if you would rather set them from the environment — a container, say.`,
+        `    # The KEY never goes here in either form; the manifest names its variable, below.`,
     ]
     if (answers.apiKeyEnv !== undefined) {
         lines.push(
@@ -816,8 +988,8 @@ function manifestFor(answers: InitAnswers): string {
         ``,
         `  # A cheap model for tool selection and summarisation. \`$ref\` reuses a role.`,
         `  # selector:`,
-        `  #   id: \${SELECTOR_MODEL_ID}`,
-        `  #   baseUrl: \${MODEL_BASE_URL}`,
+        `  #   id: a-cheaper-model`,
+        `  #   baseUrl: ${answers.baseUrl}`,
         `  # compactor: { $ref: model.selector }`,
         ``,
         rule("context"),
@@ -873,7 +1045,7 @@ function manifestFor(answers: InitAnswers): string {
         `    max: 24`,
         `    reserveWrite: 6   # slots held for mutating tools so reads cannot starve writes`,
         ``,
-        ...systemBlock(answers.system),
+        ...systemBlock(answers),
         ``,
         `  # tools.search finds a TOOL in the provider's catalogue — nothing to do with web search.`,
         `  # Off by design in v1: search-then-execute is two-hop reasoning, where small models fail.`,
@@ -942,10 +1114,12 @@ function manifestFor(answers: InitAnswers): string {
 }
 
 function envFor(answers: InitAnswers): string {
+    // Secrets and nothing else. The model id and the base URL are facts about this agent and live
+    // in agent.yaml where a person reads them; a file that also held them made the manifest
+    // unreadable on its own and let any other .env on the machine change which model ran.
     const lines = [
-        `# Values for the \${...} references in agent.yaml. Gitignored — real keys live here.`,
-        `MODEL_ID=${answers.model}`,
-        `MODEL_BASE_URL=${answers.baseUrl}`,
+        `# Secrets for this agent. Gitignored, and the only thing that belongs here.`,
+        `# Everything else — model, endpoint, tools, permissions — is in agent.yaml.`,
     ]
     if (answers.apiKeyEnv !== undefined) {
         // The value the wizard collected, or an empty line to fill in. This file is gitignored and
@@ -954,29 +1128,52 @@ function envFor(answers: InitAnswers): string {
         // into shell history — so the scripted path leaves this blank and the next steps say so.
         lines.push(`${answers.apiKeyEnv}=${answers.apiKey ?? ""}`)
     }
+    // Only when search was chosen. Writing an empty TAVILY_API_KEY into every agent's .env would put
+    // a variable nobody asked for in front of everybody, and `web_search` names the missing one at
+    // the moment it is called anyway.
+    const backend = searchBackend(answers)
+    if (backend !== undefined) {
+        lines.push("")
+        lines.push(`# ${backend.label.split(" —")[0] ?? backend.value}, for web_search.`)
+        lines.push(`${backend.apiKeyEnv}=${answers.webKey ?? ""}`)
+    }
     return `${lines.join("\n")}\n`
 }
 
-function envExampleFor(answers: InitAnswers): string {
-    const sections = PRESETS.filter((preset) => preset.id !== "custom").map((preset) => {
-        const active = preset.id === answers.preset
-        const mark = active ? "" : "# "
-        const key =
-            preset.apiKeyEnv === undefined
-                ? `${mark}# no key — apiKeyEnv is omitted from agent.yaml for this endpoint`
-                : `${mark}${answers.apiKeyEnv ?? preset.apiKeyEnv}=`
-        return [
-            `# ── ${preset.label} ${"─".repeat(Math.max(1, 60 - preset.label.length))}`,
-            `${mark}MODEL_ID=${preset.modelId}`,
-            `${mark}MODEL_BASE_URL=${preset.baseUrl}`,
-            key,
-        ].join("\n")
-    })
+/** The chosen search backend, or undefined when this agent does not search. */
+function searchBackend(answers: InitAnswers): (typeof WEB_BACKENDS)[number] | undefined {
+    if (answers.web !== "search") return undefined
+    return webBackendByValue(answers.webBackend ?? "tavily") ?? WEB_BACKENDS[0]
+}
 
-    return `${[
-        `# Copy to .env beside the manifest. The real environment always wins over this file.`,
-        `# Pick one preset — the manifest does not change between them.`,
+/**
+ * The committed template beside the gitignored real thing.
+ *
+ * Once the model id and the base URL moved into the manifest, this stopped being a menu of endpoints
+ * — switching endpoint is now `config_set model.main.id` or two lines in agent.yaml — and became
+ * what its name says: the list of variables that must exist, with no values in it.
+ */
+function envExampleFor(answers: InitAnswers): string {
+    const backend = searchBackend(answers)
+    const lines = [
+        `# Copy to .env beside the manifest and fill in the values. Never commit the copy.`,
+        `# Only secrets belong here. The model, the endpoint, the tools and the permissions are all`,
+        `# in agent.yaml, where you can read them without opening a second file.`,
         ``,
-        sections.join("\n\n"),
-    ].join("\n")}\n`
+    ]
+    if (answers.apiKeyEnv === undefined) {
+        lines.push(
+            `# This endpoint needs no key — agent.yaml omits apiKeyEnv entirely, so there is nothing`,
+            `# to put here yet. A hosted endpoint would name its variable there and you would set it`,
+            `# here, like:`,
+            `#   MODEL_API_KEY=`,
+        )
+    } else {
+        lines.push(`${answers.apiKeyEnv}=`)
+    }
+    if (backend !== undefined) {
+        lines.push(``, `# ${backend.label.split(" —")[0] ?? backend.value}, for web_search.`)
+        lines.push(`${backend.apiKeyEnv}=`)
+    }
+    return `${lines.join("\n")}\n`
 }

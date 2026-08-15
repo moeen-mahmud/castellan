@@ -411,6 +411,10 @@ confirm`, is settable.
 
 ### Tools that exist and were not enabled
 
+A provider named in `tools.providers` with nothing pinned from it is a **normal and deliberate**
+configuration: naming it is what makes `available()` run, and `available()` is the only reason the
+model knows a tool it was not given exists. `init` generates `system` and `web` that way.
+
 The model is told, in one line each, which of the provider's tools this manifest did not pin — and
 told to name the tool, say it is *not permitted yet* rather than that it is unable, and not to reach
 for another tool to work around it. Without this a pinned-down agent is silently less capable than its
@@ -629,4 +633,25 @@ Rule 2 exists because a manifest is a file people paste into issues.
 referenced in a required field fails the load naming the variable — it does not expand to
 an empty string and fail later as a confusing auth error.
 
-`.env` next to the manifest is loaded if present. Real environment always wins.
+**Use it for secrets, and prefer a literal for everything else.** `apiKeyEnv` names a variable
+because a key must never be in the file; `model.main.id` and `model.main.baseUrl` are facts about
+the agent and belong in the file a person reads to understand it. A generated manifest writes them
+literally. Behind a variable they cost three things: `readManifestHeader` does not expand (so every
+agent listed as `${MODEL_ID}` and the picker could not tell two apart), any `.env` on the machine
+could change which model ran — and with it the resolved `contextWindow`, `thinking` and
+`promptStyle`, since all three derive from the id — and `validate` checked whichever agent the
+ambient environment happened to describe. Expansion still works everywhere; it is not the default.
+
+`.env` next to the manifest is loaded if present. Real environment always wins — an operator's
+explicit export has to beat a committed file, or a container cannot configure the agent it runs.
+
+Precedence under the `castellan` binary is **export → the agent's own `.env` → a `.env` in the
+directory the command was run from**. The last of those is demoted by the CLI before core sees it: a
+`.env` file configures its own project, and an agent living in the home sandbox is not part of that
+project. An embedder gets core's plain rule, where a container's environment wins.
+
+**A variable where the two disagree is reported**, as an `env_overridden` warning on the agent,
+naming it and showing both values (values withheld when the name looks like a secret). The layering
+is right and the silence was not: an agent whose own `.env` named one model ran a whole session on
+another because the binary was launched from a directory whose `.env` said so, and the banner
+reported the model actually in use — correct, and useless to whoever had just written the other one.
