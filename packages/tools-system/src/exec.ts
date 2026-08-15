@@ -33,7 +33,7 @@ import type { Tool, ToolContext, ToolHandler, ToolProviderContext } from "@caste
 import { execCommandEmpty, execWorkdirMissing } from "./errors.ts"
 import { humanBytes, readOutput, stripLeadingEcho } from "./output.ts"
 import { SYSTEM_PROVIDER_ID, spillDir } from "./paths.ts"
-import type { Roots } from "./root.ts"
+import { locate, type Roots } from "./root.ts"
 import { runCommand } from "./run.ts"
 import type { ShellSessions } from "./session.ts"
 
@@ -304,7 +304,12 @@ function section(title: string, text: string): string {
 }
 
 export function execTool(options: ExecOptions): Tool {
-    return { spec: EXEC_SPEC, handler: execHandler(options) }
+    // `workdir` and the command itself both decide where a command acts, and the command decides it in
+    // a way nothing can check — so it is the one that most needs saying.
+    return {
+        spec: locate(EXEC_SPEC, options.roots, ["command", "workdir"], "shell"),
+        handler: execHandler(options),
+    }
 }
 
 /** The provider hands its own resolved environment through; nothing here reads `process.env`. */

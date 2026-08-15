@@ -50,7 +50,7 @@ describe("initCommand", () => {
             knownProviders: PROVIDER_IDS,
         })
         expect(loaded.manifest.id).toBe("milo")
-        expect(loaded.manifest.model.main.id).toBe("deepseek-chat")
+        expect(loaded.manifest.model.main.id).toBe("deepseek-v4-pro")
 
         const { workspace, warnings } = resolveWorkspace(loaded, {
             delimiters: "markdown",
@@ -58,11 +58,13 @@ describe("initCommand", () => {
             examplesIn: "system",
             skillsIn: "system",
         })
-        // deepseek-chat's 65k window fails the soul gate's >=200000, so the DISTILLED file is
-        // the identity that actually loads — the gate working, reported by its own warning.
-        expect(warnings.map((warning) => warning.code)).toContain("soul_distilled")
+        // The preset's window now clears the soul gate's 200k, so the FULL document is the identity
+        // that loads and nothing is distilled. The gate's other branch is asserted on the ollama
+        // preset below, which is the one with a small window — following the model id rather than
+        // restating a number, so a preset bump moves the coverage instead of silently removing it.
+        expect(warnings.map((warning) => warning.code)).not.toContain("soul_distilled")
         expect(workspace.files.map((file) => file.name)).toEqual([
-            "SOUL.compact.md",
+            "SOUL.md",
             "AGENTS.md",
             "POLICY.md",
             "USER.md",
@@ -84,7 +86,10 @@ describe("initCommand", () => {
         const placeholderFindings = findings.filter(
             (finding) => finding.code === "workspace_unfilled_placeholder",
         )
-        expect(placeholderFindings.map((finding) => finding.field)).toEqual(["SOUL.compact.md"])
+        // The identity that actually shipped, which is the full document now that the preset clears
+        // the gate. Following the file rather than naming one is the point: the nag has to fire on
+        // whichever soul the model gets, not on whichever one the test was written against.
+        expect(placeholderFindings.map((finding) => finding.field)).toEqual(["SOUL.md"])
         expect(placeholderFindings[0]?.message).toContain("{{INPUT_1}}")
     })
 
@@ -140,6 +145,18 @@ describe("initCommand", () => {
         })
         expect(loaded.manifest.model.main.baseUrl).toBe("http://localhost:11434/v1")
         expect(readFileSync(join(dir, ".env"), "utf8").includes("MODEL_API_KEY")).toBe(false)
+
+        // The soul gate's other branch, asserted on the preset that actually has a small window.
+        // It used to live on the deepseek test, which stopped exercising it the moment that preset
+        // moved to a frontier-class model — a passing test that had quietly stopped testing anything.
+        const { workspace, warnings } = resolveWorkspace(loaded, {
+            delimiters: "markdown",
+            intensity: "neutral",
+            examplesIn: "system",
+            skillsIn: "system",
+        })
+        expect(warnings.map((warning) => warning.code)).toContain("soul_distilled")
+        expect(workspace.files[0]?.name).toBe("SOUL.compact.md")
     })
 
     test("non-interactive without names refuses and lists the flags", async () => {

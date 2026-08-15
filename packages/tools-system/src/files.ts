@@ -47,7 +47,7 @@ import {
 } from "./errors.ts"
 import { SYSTEM_PROVIDER_ID } from "./paths.ts"
 import { protectedReason } from "./protect.ts"
-import { isWritable, type Roots, writable } from "./root.ts"
+import { expandTilde, isWritable, locate, type Roots, writable } from "./root.ts"
 import type { ShellSessions } from "./session.ts"
 
 /**
@@ -191,7 +191,7 @@ export function resolvePath(
     sessionKey: string,
     base: string,
 ): string {
-    const given = typeof raw === "string" ? raw.trim() : ""
+    const given = expandTilde(typeof raw === "string" ? raw.trim() : "")
     if (given === "") throw filePathEmpty()
     const from = sessions.lastCwd(sessionKey) ?? base
     return isAbsolute(given) ? resolve(given) : resolve(from, given)
@@ -322,9 +322,12 @@ export function fileEditHandler(options: FileOptions): ToolHandler {
 }
 
 export function fileTools(options: FileOptions): readonly Tool[] {
+    // The directory is named in the `path` argument of each, because that is the field the model is
+    // filling in when it decides where something goes.
+    const at = (spec: Tool["spec"]): Tool["spec"] => locate(spec, options.roots, ["path"])
     return [
-        { spec: FILE_READ_SPEC, handler: fileReadHandler(options) },
-        { spec: FILE_WRITE_SPEC, handler: fileWriteHandler(options) },
-        { spec: FILE_EDIT_SPEC, handler: fileEditHandler(options) },
+        { spec: at(FILE_READ_SPEC), handler: fileReadHandler(options) },
+        { spec: at(FILE_WRITE_SPEC), handler: fileWriteHandler(options) },
+        { spec: at(FILE_EDIT_SPEC), handler: fileEditHandler(options) },
     ]
 }

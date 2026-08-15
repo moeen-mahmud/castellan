@@ -23,7 +23,7 @@ const ANSWERS: InitAnswers = {
     name: "Milo",
     purpose: "keeps my week on track",
     preset: "deepseek",
-    model: "deepseek-chat",
+    model: "deepseek-v4-pro",
     baseUrl: "https://api.deepseek.com/v1",
     apiKeyEnv: "MODEL_API_KEY",
     apiKey: "sk-test-value",
@@ -86,7 +86,7 @@ describe("nextQuestion", () => {
     test("model and base URL default from the chosen preset; custom offers nothing", () => {
         expect(
             nextQuestion({ user: "a", name: "b", purpose: "c", preset: "deepseek" })?.fallback,
-        ).toBe("deepseek-chat")
+        ).toBe("deepseek-v4-pro")
         expect(
             nextQuestion({ user: "a", name: "b", purpose: "c", preset: "custom" })?.fallback,
         ).toBe("")
@@ -257,8 +257,8 @@ describe("planFiles", () => {
 
     test("the chosen preset is the active block in .env.example", () => {
         const example = planFiles(ANSWERS).find((f) => f.relPath === ".env.example")
-        expect(example?.contents).toContain("\nMODEL_ID=deepseek-chat")
-        expect(example?.contents).toContain("# MODEL_ID=gpt-4o-mini")
+        expect(example?.contents).toContain("\nMODEL_ID=deepseek-v4-pro")
+        expect(example?.contents).toContain("# MODEL_ID=gpt-5-6-sol")
     })
 
     test("no generated file guesses pronouns for the user", () => {

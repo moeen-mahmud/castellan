@@ -29,7 +29,7 @@ import { stripControl, type Tool, type ToolHandler } from "@castellan/core"
 import { grepPatternInvalid } from "./errors.ts"
 import { resolvePath } from "./files.ts"
 import { SYSTEM_PROVIDER_ID } from "./paths.ts"
-import type { Roots } from "./root.ts"
+import { locate, type Roots } from "./root.ts"
 import type { ShellSessions } from "./session.ts"
 import { globToRegExp, walk } from "./walk.ts"
 
@@ -223,8 +223,9 @@ export function grepHandler(options: SearchOptions): ToolHandler {
 }
 
 export function searchTools(options: SearchOptions): readonly Tool[] {
+    const at = (spec: Tool["spec"]): Tool["spec"] => locate(spec, options.roots, ["path"])
     return [
-        { spec: GLOB_SPEC, handler: globHandler(options) },
-        { spec: GREP_SPEC, handler: grepHandler(options) },
+        { spec: at(GLOB_SPEC), handler: globHandler(options) },
+        { spec: at(GREP_SPEC), handler: grepHandler(options) },
     ]
 }

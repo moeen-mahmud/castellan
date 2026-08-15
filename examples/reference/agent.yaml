@@ -182,7 +182,9 @@ tools:
   #   - file_edit      # exact unique match, never a line number; two matches is a failure
   #   - exec           # the last resort — its target is a string no rule can look inside
   #   - config_read     # read this file and tell the person which setting to change
-  #   - config_set      # change this file when asked. Refuses to weaken tools.policy.deny
+  #   - config_set      # change this file when asked. Refuses the three edits that only ever
+  #                     #   remove a check: widening writeRoots, replacing policy.deny, and
+  #                     #   setting untrusted.onMutate to allow
   # providerConfig:
   #   writeRoots:       # extra directories the file tools may write to
   #     - ~/code/thing  #   absolute, or relative to this file

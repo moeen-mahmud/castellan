@@ -68,7 +68,7 @@ export const PRESETS: readonly Preset[] = [
     {
         id: "deepseek",
         label: "DeepSeek",
-        modelId: "deepseek-v4-pro",
+        modelId: "deepseek-v4-flash",
         baseUrl: "https://api.deepseek.com/v1",
         apiKeyEnv: "MODEL_API_KEY",
     },

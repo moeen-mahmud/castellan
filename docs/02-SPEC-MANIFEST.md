@@ -399,6 +399,7 @@ put the security fields out of reach; and two edits are refused whatever the pol
 
 | refused edit | why |
 | --- | --- |
+| widening `tools.providerConfig.writeRoots` | where the agent may write is the person's decision. Asked to create a file, an agent granted itself the whole home directory and wrote there |
 | replacing `tools.policy.deny` | its only purpose is removing a restriction someone set deliberately |
 | `tools.untrusted.onMutate: allow` | it turns off the check on outside content driving a write |
 

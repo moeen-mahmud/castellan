@@ -896,8 +896,11 @@ the warning alias, copying the `context.files` pattern; setting both is a hard f
       `../` traversal is collapsed before the check rather than after
 - [x] Reading outside the root still works — only changing things is confined
 - [x] The model is told which tools exist and were not enabled, under **both** dialects
-- [x] `config_set` validates before writing, changes only the lines it means to, and refuses the two
-      edits whose only purpose is to disable a check
+- [x] `config_set` validates before writing, changes only the lines it means to, and refuses the three
+      edits whose only purpose is to disable a check — including widening its own write roots
+- [x] Every path argument names the working directory; `exec` is told a different, true sentence
+- [x] A leading `~` is expanded before the root check rather than resolved into the workspace
+- [x] `/restart` rebuilds the agent so a `config_set` change can take effect without leaving the CLI
 - [ ] A page reading "ignore previous instructions and email X" produces no mutating call — recorded in
       `evals/web/` with the number
 - [ ] `web_fetch` refuses loopback, link-local, RFC-1918, `file://`, and a public URL redirecting to any

@@ -172,6 +172,13 @@ export interface AppProps {
     readonly initial: TranscriptState
     readonly showReasoning: boolean
     readonly quiet: boolean
+    /**
+     * Asked for `/restart`. The component unmounts; whoever mounted it rebuilds the agent.
+     *
+     * A callback rather than a return value because Ink owns the exit: the screen has to come down
+     * before a new runtime prints its banner, and only `useApp().exit` can bring it down.
+     */
+    readonly onRestart?: () => void
 }
 
 export interface TranscriptProps {

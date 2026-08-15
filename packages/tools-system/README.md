@@ -77,8 +77,21 @@ write gated the *next* write.
 
 Confined to a root: `<agentDir>/workspace`, or the agent's own directory when there is no workspace.
 Everything outside is read-only. `tools.providerConfig.writeRoots` adds directories — absolute, or
-relative to the agent directory — and **nothing said at runtime can add one**, which is what makes the
-default worth having.
+relative to the agent directory — and **nothing said at runtime can add one**. That is not a
+limitation of the implementation; `config_set` refuses to write that field at all. Asked to create a
+file, an agent granted itself the whole home directory and wrote there, then described it afterwards
+as "that last part is broad". Enabling a tool answers *what may I do*; a write root answers *where*,
+and the second one is the person's by definition.
+
+Every path-taking argument names the directory, with its real absolute path, in the argument's own
+description — because enforcement alone produced exactly the confusion it was meant to prevent. The
+tools were confined and the model was never told where it worked, so it put things in `~`. `exec` gets
+a **different** sentence: it is told where every command starts and asked to stay there, and it is not
+told that leaving is refused, because that would be false and it would find out by succeeding.
+
+A leading `~` is expanded before the root is checked. Unexpanded it is not absolute, resolves against
+the workspace, and creates a directory literally named `~` — silently the wrong place, passing every
+check.
 
 A protected list must anticipate every path worth protecting; a root anticipates nothing. Both apply,
 and the protected set wins inside the root. Paths are resolved before comparison, so `../` out of the

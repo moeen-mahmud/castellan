@@ -329,3 +329,28 @@ test("the summary fits the observation budget, which the whole file did not", as
     expect(output).toContain("tools.local = [now]")
     expect(output).toContain("model.main.temperature = 0.3")
 })
+
+test("the agent cannot widen where it may write", async () => {
+    const { set } = fixture()
+    // From a real transcript: asked to create a file, the agent enabled `file_write`, granted itself
+    // `/Users/moeen` as a write root, and wrote there — announcing it afterwards as "that last part is
+    // broad". Enabling a tool answers "what may I do"; a write root answers "where", and that one is
+    // the person's by definition.
+    await expect(
+        set(
+            { path: "tools.providerConfig.writeRoots", value: '["/Users/moeen"]' },
+            toolContext({}),
+        ),
+    ).rejects.toThrow(/cannot be changed from inside a conversation/)
+})
+
+test("a floored path is refused with its reason, not as an unknown setting", async () => {
+    const { set } = fixture()
+    // The floor is checked before the settable list. Reversed, a floored path — which is deliberately
+    // absent from that list — comes back as "not a setting" and the reason that matters never prints.
+    // That ordering bug already happened once, with onMutate.
+    const failure = await Promise.resolve(
+        set({ path: "tools.providerConfig.writeRoots", value: "[]" }, toolContext({})),
+    ).catch((error: unknown) => error)
+    expect(String(failure)).toContain("not yours to do")
+})

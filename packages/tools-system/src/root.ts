@@ -37,7 +37,23 @@
  */
 
 import { existsSync } from "node:fs"
+import { homedir } from "node:os"
 import { isAbsolute, relative, resolve, sep } from "node:path"
+import type { JsonSchemaNode, ToolSpec } from "@castellan/core"
+
+/**
+ * Expand a leading `~` before anything compares the path to a root.
+ *
+ * Not a convenience. `~/sample/x.txt` is not absolute, so without this it resolved *against the
+ * workspace* and created a directory literally named `~` inside it — a silently wrong location that
+ * passes every confinement check. Expanded, it is the home directory, is outside the root, and is
+ * refused by name. A model that writes `~` means the home directory and should be told it cannot have
+ * it, not quietly given somewhere else.
+ */
+export function expandTilde(path: string): string {
+    if (path === "~") return homedir()
+    return path.startsWith("~/") ? resolve(homedir(), path.slice(2)) : path
+}
 
 /** The subdirectory a workspace lives in, relative to the agent's own directory. */
 export const WORKSPACE_DIR = "workspace"
@@ -82,4 +98,56 @@ export function writable(roots: Roots): readonly string[] {
 /** True when this path may be written. */
 export function isWritable(absolute: string, roots: Roots): boolean {
     return writable(roots).some((root) => within(absolute, root))
+}
+
+/**
+ * The sentence every path-taking argument carries, naming the actual directory.
+ *
+ * Enforcement without instruction is what produced the failure this exists to stop. The tools were
+ * confined and the model was never told where it worked — so asked to "create a sample folder" it
+ * chose the home directory, which is where a person would put one, and nothing in its context
+ * suggested otherwise. A refusal it did not expect is a worse experience than a default it knew.
+ *
+ * On every argument rather than stated once, because the reminder has to be next to the decision. A
+ * small model reads the field it is about to fill in, not the paragraph above the catalogue — the same
+ * reasoning that keeps `whenNotToUse` on each tool instead of in a preamble. It costs a few tokens per
+ * tool and it is fixed at load, so it stays inside the cache-stable prefix.
+ */
+export function whereYouWork(roots: Roots, mode: "write" | "read" | "shell"): string {
+    const extra = roots.extra.length === 0 ? "" : ` Also writable: ${roots.extra.join(", ")}.`
+    if (mode === "read") {
+        return ` Relative paths are resolved against ${roots.primary}. Reading elsewhere is allowed — give an absolute path for it.`
+    }
+    if (mode === "write") {
+        return ` You work in ${roots.primary}. A relative path lands there, and that is where anything you create belongs unless the person names somewhere else. Writing anywhere else is refused.${extra}`
+    }
+    // The shell gets a *different* sentence, and the difference is the point. Telling it that writing
+    // outside the workspace "is refused" would be a lie — a command carries its target inside a string
+    // no path check can look inside, and the model would discover that by succeeding. A prompt that
+    // claims a guarantee the runtime does not provide is worse than one that claims none.
+    return ` Every command starts in ${roots.primary}, and that is where anything you create belongs unless the person names somewhere else. Nothing stops a command from leaving it, so this one is on you: use a relative path, and do not reach for ~ or an absolute path outside it on your own initiative.${extra}`
+}
+
+/**
+ * Copy a spec with the working directory named in the arguments that take a path.
+ *
+ * The specs are module constants so they can be asserted without building a provider; the directory is
+ * only known per agent. Rewriting on construction keeps both.
+ */
+export function locate(
+    spec: ToolSpec,
+    roots: Roots,
+    fields: readonly string[],
+    mode: "write" | "read" | "shell" = spec.mutating ? "write" : "read",
+): ToolSpec {
+    const properties: Record<string, JsonSchemaNode> = { ...spec.parameters.properties }
+    for (const field of fields) {
+        const node = properties[field]
+        if (node === undefined) continue
+        properties[field] = {
+            ...node,
+            description: `${node.description ?? ""}${whereYouWork(roots, mode)}`,
+        }
+    }
+    return { ...spec, parameters: { ...spec.parameters, properties } }
 }

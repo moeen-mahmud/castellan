@@ -444,6 +444,20 @@ Never claim a performance property without a number in `evals/` and a script to 
   time and a real model read it three times in one turn, 8,040 output tokens to change one line. The
   summary form is 549 tokens and the same task took one read. When a tool's output is *reference
   material*, size it against the budget rather than against what looks complete.
+- **The agent must never widen its own containment.** `config_set` could write
+  `tools.providerConfig.writeRoots`, and asked to create a file an agent granted itself the whole home
+  directory and wrote there. Enabling a tool answers "what may I do"; a write root answers "where" —
+  the second is the person's by definition. It is on the floor, and the floor is checked **before** the
+  settable list or a floored path is refused as "not a setting" and the real reason never prints.
+- **Confinement without instruction reads as a bug.** The tools were confined and nothing told the
+  model where it worked, so it put things in `~`. Every path-taking argument now names the actual
+  directory in its own description — next to the field being filled in, not in a preamble, because
+  that is where a small model looks. And expand `~` *before* the root check: unexpanded it is not
+  absolute, resolves against the workspace, and creates a directory literally named `~`.
+- **`/restart` exists because an agent's settings are fixed for its lifetime.** The catalogue resolves
+  once and slot 1 renders once, on purpose — so `config_set` cannot take effect in the session that
+  called it, and `manifest_changed` says so. `runCommand` loops over `Runtime.create`; renderers return
+  a `RESTART` symbol rather than a magic exit code.
 - **A `ChatMessage` is no longer just `{role, content}`.** Under the `native` dialect it carries
   `toolCalls` or `toolCallId`, and every layer that copies a message must copy those too — the wire
   mapper in `chat-completions.ts`, the `message` field on `ContextBlock`, and the store's

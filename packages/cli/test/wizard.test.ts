@@ -56,7 +56,7 @@ describe("the happy path", () => {
         const partial = partialOf(state)
         expect(partial.user).toBe("Moeen")
         expect(partial.preset).toBe("deepseek")
-        expect(partial.model).toBe("deepseek-chat")
+        expect(partial.model).toBe("deepseek-v4-pro")
         expect(partial.dir).toBe("./milo")
 
         // Confirm: index 0 is yes.
@@ -111,14 +111,14 @@ describe("back navigation", () => {
     test("re-answering the preset re-derives the downstream defaults", () => {
         let state = startWizard({ user: "M", name: "Pip", purpose: "x" }, {})
         state = commit(state) // preset: default index 0 = openai
-        expect(currentQuestion(state)?.fallback).toBe("gpt-4o-mini")
+        expect(currentQuestion(state)?.fallback).toBe("gpt-5-6-sol")
         state = reduceWizard(state, { kind: "back" }) // back onto preset
         state = reduceWizard(state, {
             kind: "list",
             intent: { kind: "move", move: { kind: "jump", index: 2 } },
         })
         state = commit(state) // deepseek now
-        expect(currentQuestion(state)?.fallback).toBe("deepseek-chat")
+        expect(currentQuestion(state)?.fallback).toBe("deepseek-v4-pro")
     })
 
     test("declining the confirm screen reopens the last question", () => {
@@ -153,7 +153,7 @@ describe("flags answering everything", () => {
         name: "Milo",
         purpose: "x",
         preset: "deepseek",
-        model: "deepseek-chat",
+        model: "deepseek-v4-pro",
         baseUrl: "https://api.deepseek.com/v1",
         apiKeyEnv: "MODEL_API_KEY",
         system: "none",

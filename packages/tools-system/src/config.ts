@@ -92,10 +92,6 @@ const SETTABLE: readonly { readonly path: string; readonly means: string }[] = [
         path: "tools.untrusted.onMutate",
         means: 'refuse | confirm — what happens when a tool that changes something is asked for in a turn that has read outside content. Cannot be set to "allow"',
     },
-    {
-        path: "tools.providerConfig.writeRoots",
-        means: "extra directories the file tools may write to. Everything else is read-only",
-    },
     { path: "tools.dialect", means: "nlt | native — how tool calls are written" },
     { path: "model.main.id", means: "the model this agent runs on" },
     { path: "model.main.temperature", means: "0 to 2" },
@@ -110,16 +106,30 @@ const SETTABLE: readonly { readonly path: string; readonly means: string }[] = [
 /**
  * Edits refused whatever the policy says.
  *
- * Not a general blocklist — two entries, both in the direction of "stop checking". Every other field
- * above, including the ones that grant new powers, is settable, because granting is what a person asks
- * for and disabling a check is not.
+ * Three entries, all in the direction of "stop checking". Every other field above, including the ones
+ * that grant new powers, is settable — granting is what a person asks for; disabling a check is not.
+ *
+ * **Checked before the settable list, not after.** A floored path is deliberately absent from that
+ * list, so a settable-first order would refuse it as "not a setting" and the reason a person actually
+ * needs would never be printed. That ordering bug already happened once with `onMutate`, where the
+ * floor turned out to be unreachable and the one value that must be refused was refused by accident.
+ *
+ * `value` is optional because two of the three depend only on the path, and those have to fire before
+ * the value is even parsed.
  */
-function floorRefusal(path: string, value: unknown): string | undefined {
+function floorRefusal(path: string, value?: unknown): string | undefined {
     const key = path.toLowerCase()
+    if (key.startsWith("tools.providerconfig.writeroots")) {
+        return "widening where you may write is not yours to do. Asked to create a file, an agent granted itself the whole home directory and then wrote there — which is what this refusal exists to prevent"
+    }
     if (key === "tools.policy.deny") {
         return "removing or replacing the deny rules is the one edit whose only purpose is to remove a restriction someone deliberately set"
     }
-    if (key === "tools.untrusted.onmutate" && String(value).toLowerCase() === "allow") {
+    if (
+        value !== undefined &&
+        key === "tools.untrusted.onmutate" &&
+        String(value).toLowerCase() === "allow"
+    ) {
         return 'setting the write gate to "allow" turns off the check that stops text from outside the conversation driving a tool that changes things'
     }
     return undefined
@@ -254,7 +264,9 @@ export function configReadHandler(options: ConfigOptions): ToolHandler {
             "Settings config_set can change, with their current values:",
             rows,
             "",
-            "Anything not on this list is not settable from a conversation. A change takes effect when the agent next starts, not in the current conversation. Two edits are refused whatever the rules say: replacing tools.policy.deny, and setting tools.untrusted.onMutate to allow.",
+            "Anything not on this list is not settable from a conversation. A change takes effect when the agent next starts, not in the current conversation.",
+            "",
+            "Three edits are refused whatever the rules say, because each one only ever removes a check: widening tools.providerConfig.writeRoots, replacing tools.policy.deny, and setting tools.untrusted.onMutate to allow. Where you may write is the person's decision and not yours — if you need somewhere outside your workspace, say which directory and why, and let them add it.",
             "",
             `The whole file, comments and all, is at ${file} — read it with file_read if that tool is enabled, or ask the person to open it.`,
         ].join("\n")
@@ -267,6 +279,12 @@ export function configSetHandler(options: ConfigOptions): ToolHandler {
         const path = typeof args.path === "string" ? args.path.trim() : ""
         const raw = typeof args.value === "string" ? args.value : String(args.value ?? "")
 
+        // The floor first. Two of its three entries depend only on the path, and they name paths that
+        // are deliberately not in the settable list — so checking the list first would answer "not a
+        // setting" and swallow the reason that matters.
+        const pathFloor = floorRefusal(path)
+        if (pathFloor !== undefined) throw configRefused(path, pathFloor)
+
         if (!SETTABLE.some((entry) => entry.path === path)) {
             throw configPathUnknown(
                 path,
@@ -276,8 +294,8 @@ export function configSetHandler(options: ConfigOptions): ToolHandler {
 
         const value = parseValue(raw)
 
-        const floor = floorRefusal(path, value)
-        if (floor !== undefined) throw configRefused(path, floor)
+        const valueFloor = floorRefusal(path, value)
+        if (valueFloor !== undefined) throw configRefused(path, valueFloor)
 
         let source: string
         try {

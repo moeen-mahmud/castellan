@@ -178,7 +178,7 @@ export function configInvalid(path: string, raw: string, why: string): ToolError
 }
 
 /**
- * The floor under `config_set`. Two edits, both in the direction of "stop checking".
+ * The floor under `config_set`. Three edits, all in the direction of "stop checking".
  *
  * Everything that *grants* — pinning a tool, adding an allow rule, opening a write root — is settable,
  * because granting is what a person asks for. A guard the agent can switch off on request is not a
@@ -188,7 +188,7 @@ export function configRefused(path: string, why: string): ToolError {
     return new ToolError({
         code: "config_refused",
         message: `${path} cannot be changed from inside a conversation: ${why}.`,
-        hint: "No permission rule overrides this, and asking again will not change it. Every other setting can be changed — including enabling a tool or adding a permission rule, which is what this tool is for. Say what you would have changed and let the person edit it themselves.",
+        hint: "No permission rule overrides this, and asking again will not change it. Every other setting can be changed — including enabling a tool or adding a permission rule, which is what this tool is for. Name the exact line you would have added and let the person put it in themselves.",
         field: "path",
     })
 }

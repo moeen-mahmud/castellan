@@ -24,7 +24,7 @@ import {
 } from "../src/files.ts"
 import { PROTECTED_NAMES, protectedReason } from "../src/protect.ts"
 import { SystemProvider } from "../src/provider.ts"
-import { resolveRoots } from "../src/root.ts"
+import { resolveRoots, whereYouWork } from "../src/root.ts"
 import { GLOB_SPEC, GREP_SPEC, globHandler, grepHandler, MAX_GLOB_RESULTS } from "../src/search.ts"
 import { ShellSessions } from "../src/session.ts"
 import { globToRegExp, SKIPPED_DIRS, walk } from "../src/walk.ts"
@@ -557,4 +557,43 @@ test("file_write says it creates folders, so nobody enables a shell to run mkdir
     // Observed: asked to "create a sample file inside a sample folder", a real model said it needed
     // `exec` for the folder and `file_write` for the file, and enabled both. It needed one.
     expect(`${FILE_WRITE_SPEC.summary} ${FILE_WRITE_SPEC.whenToUse}`).toContain("folders")
+})
+
+// ─── telling the model where it works ────────────────────────────────────────────────────
+
+test("every path argument names the actual working directory", async () => {
+    const dir = tempDir()
+    mkdirSync(join(dir, "workspace"))
+    const provider = new SystemProvider({ env: {}, dir })
+    // Enforcement without instruction is what caused the confusion: the tools were confined and the
+    // model was never told where it worked, so asked for "a sample folder" it chose the home
+    // directory. The reminder sits on the field being filled in, not in a preamble.
+    for (const tool of await provider.resolve(["file_write", "file_read", "glob", "exec"])) {
+        const field = tool.spec.slug === "exec" ? "command" : "path"
+        expect(tool.spec.parameters.properties[field]?.description ?? "").toContain(
+            join(dir, "workspace"),
+        )
+    }
+})
+
+test("the shell is told something different, because the confinement does not bind it", () => {
+    const roots = resolveRoots("/agents/milo")
+    // Telling `exec` that writing outside is refused would be a lie, and the model would find out by
+    // succeeding. A prompt claiming a guarantee the runtime does not provide is worse than one
+    // claiming none.
+    expect(whereYouWork(roots, "write")).toContain("refused")
+    expect(whereYouWork(roots, "shell").includes("refused")).toBe(false)
+    expect(whereYouWork(roots, "shell")).toContain("Nothing stops a command from leaving it")
+    expect(whereYouWork(roots, "read")).toContain("Reading elsewhere is allowed")
+})
+
+test("a tilde is expanded before the root check, not resolved into the workspace", async () => {
+    const dir = tempDir()
+    mkdirSync(join(dir, "workspace"))
+    // Unexpanded, `~/sample/x.txt` is not absolute, resolves against the workspace, and creates a
+    // directory literally named `~` inside it — silently the wrong place, passing every check.
+    await expect(
+        tools(dir).write({ path: "~/sample/x.txt", content: "hi" }, toolContext({ dir })),
+    ).rejects.toThrow(/outside the directories this agent may change/)
+    expect(existsSync(join(dir, "workspace", "~"))).toBe(false)
 })

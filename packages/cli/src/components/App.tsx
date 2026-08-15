@@ -32,7 +32,16 @@ import {
 } from "#lib/session-commands"
 import { lastStats } from "#transcript"
 
-export function App({ agent, bus, sessionKey, model, initial, showReasoning, quiet }: AppProps) {
+export function App({
+    agent,
+    bus,
+    sessionKey,
+    model,
+    initial,
+    showReasoning,
+    quiet,
+    onRestart,
+}: AppProps) {
     const { exit } = useApp()
     const { columns } = useTerminalSize()
     const { state, busy, send, cancel, note } = useTurn({ agent, bus, sessionKey, initial })
@@ -47,6 +56,13 @@ export function App({ agent, bus, sessionKey, model, initial, showReasoning, qui
         if (command !== undefined) {
             switch (command.kind) {
                 case "exit":
+                    exit()
+                    return
+                case "restart":
+                    // The settings an agent booted with are fixed for its lifetime, so a
+                    // configuration change needs a new one. Nothing is lost: the conversation lives
+                    // in the store and the new agent resumes the same session key.
+                    onRestart?.()
                     exit()
                     return
                 case "help":

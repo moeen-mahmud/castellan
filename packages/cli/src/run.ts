@@ -46,6 +46,7 @@ async function bannerLines(
     sessionKey: string,
     storeLocation: string,
     bootMs: number,
+    restarted: boolean,
 ) {
     const described = agent.describe()
     const [turns, resumed] = await Promise.all([
@@ -60,6 +61,12 @@ async function bannerLines(
         // implements them, and a banner enumerating a subset is the drift this change removed.
         `ready in ${bootMs.toFixed(0)} ms · /help for commands and keys · /exit to leave`,
     ]
+
+    if (restarted) {
+        lines.push(
+            "restarted — the configuration on disk is now the one in force; the conversation continues from the store.",
+        )
+    }
 
     // Naming a reaped turn is the point of reaping it: the previous run died mid-generation, and the
     // person restarting is the one who needs to know.
@@ -114,28 +121,69 @@ export async function runCommand(options: RunOptions): Promise<number> {
             `note: a session store exists at ${legacy} from an earlier version — pass --store ${legacy} to keep using it; the default is now ${storePath()}\n`,
         )
     }
-    const runtime = await RuntimeClass.create({
-        agents: [options.manifestPath],
-        emitChunks: true,
-        toolProviders: TOOL_PROVIDERS,
-        store: options.ephemeral === true ? ":memory:" : (options.store ?? storePath()),
-    })
-    onExit(() => runtime.stop("cli-exit"))
+    // One teardown for however many runtimes this call goes through. Registering inside the loop
+    // would hold a reference to every dead one; `Runtime.stop` is already idempotent, so the live
+    // reference is the only thing that has to move.
+    let current: RuntimeClass | undefined
+    onExit(() => current?.stop("cli-exit"))
 
-    const agent = runtime.list()[0]
-    if (agent === undefined) throw new Error("The manifest produced no agent.")
+    // Outlives every runtime this call builds. See `Wired.reader`.
+    const reader: { current: Interface | undefined } = { current: undefined }
 
     const sessionKey = options.sessionKey ?? Agent.DEFAULT_SESSION
     const quiet = options.quiet === true
-    const banner =
-        quiet || oneShot
-            ? []
-            : await bannerLines(agent, sessionKey, runtime.store.location, runtime.boot.processMs)
+    let restarted = false
 
-    return mode === "rich"
-        ? await runRich({ ...options, agent, runtime, sessionKey, banner, quiet })
-        : await runPlain({ ...options, agent, runtime, sessionKey, banner, quiet })
+    // `/restart` rebuilds the agent in this process rather than replacing the process.
+    //
+    // The settings an agent booted with are fixed for its lifetime — the catalogue is resolved once,
+    // and slot 1 is rendered once, both deliberately — so a configuration change genuinely needs a new
+    // agent and there is no honest way to apply one in place. Re-execing would work and would throw
+    // away the terminal; this keeps the scrollback, and the conversation was never in memory anyway.
+    for (;;) {
+        const runtime = await RuntimeClass.create({
+            agents: [options.manifestPath],
+            emitChunks: true,
+            toolProviders: TOOL_PROVIDERS,
+            store: options.ephemeral === true ? ":memory:" : (options.store ?? storePath()),
+        })
+        current = runtime
+
+        const agent = runtime.list()[0]
+        if (agent === undefined) throw new Error("The manifest produced no agent.")
+
+        const banner =
+            quiet || oneShot
+                ? []
+                : await bannerLines(
+                      agent,
+                      sessionKey,
+                      runtime.store.location,
+                      // After a restart the process has been alive for however long the conversation
+                      // lasted, so time-since-process-start stops meaning anything. The first boot
+                      // reports it because that is the number the sub-second claim is about.
+                      restarted ? runtime.boot.bootMs : runtime.boot.processMs,
+                      restarted,
+                  )
+
+        const wired = { ...options, agent, runtime, sessionKey, banner, quiet, reader }
+        const outcome = mode === "rich" ? await runRich(wired) : await runPlain(wired)
+
+        await runtime.stop(outcome === RESTART ? "restart" : "cli-exit")
+        if (outcome !== RESTART) return outcome
+        restarted = true
+    }
 }
+
+/**
+ * What a renderer returns when the answer is "build it again", not "we are done".
+ *
+ * A symbol rather than a magic exit code: every other value this returns is a process exit status, and
+ * a status that secretly means something else is the kind of overload that survives until someone
+ * returns it by accident.
+ */
+const RESTART = Symbol("restart")
+type RunOutcome = number | typeof RESTART
 
 /**
  * Bare `run`: resolve the sandbox into either a manifest path to run or an exit code.
@@ -239,6 +287,16 @@ interface Wired extends RunOptions {
     readonly sessionKey: string
     readonly banner: readonly string[]
     readonly quiet: boolean
+    /**
+     * The line reader, owned by `runCommand` so it survives a `/restart`.
+     *
+     * Rebuilding it per runtime is the obvious thing and it breaks: a second `createInterface` over a
+     * pipe that the first one already read to EOF returns immediately, so everything after `/restart`
+     * is silently dropped. A terminal probably tolerates it — and "probably" is the problem, since it
+     * cannot be tested where there is no tty. Sharing one reader removes the difference rather than
+     * betting on it.
+     */
+    readonly reader: { current: Interface | undefined }
 }
 
 /**
@@ -248,7 +306,7 @@ interface Wired extends RunOptions {
  * process, which would silently undo the contract Phase 1 established and measured — Ctrl-C cancels
  * the turn, not the process — and the failure would look like "cancellation kills the session".
  */
-async function runRich(wired: Wired): Promise<number> {
+async function runRich(wired: Wired): Promise<RunOutcome> {
     const [{ render }, { createElement }, { App }] = await Promise.all([
         import("ink"),
         import("react"),
@@ -260,9 +318,13 @@ async function runRich(wired: Wired): Promise<number> {
     // trailing reset sequence.
     markTerminalDirty()
 
+    let restart = false
     const instance = render(
         createElement(App, {
             agent: wired.agent,
+            onRestart: () => {
+                restart = true
+            },
             bus: wired.runtime.bus,
             sessionKey: wired.sessionKey,
             model: wired.agent.describe().model,
@@ -275,11 +337,11 @@ async function runRich(wired: Wired): Promise<number> {
     onExit(() => instance.unmount())
 
     await instance.waitUntilExit()
-    return EXIT_OK
+    return restart ? RESTART : EXIT_OK
 }
 
 /** Line-oriented, and byte-identical whether stdout is a terminal or a pipe. */
-async function runPlain(wired: Wired): Promise<number> {
+async function runPlain(wired: Wired): Promise<RunOutcome> {
     const { agent, runtime, sessionKey, quiet } = wired
 
     let atLineStart = true
@@ -386,12 +448,16 @@ async function runPlain(wired: Wired): Promise<number> {
      * the banner advertised `/help` and this path had no case for it, so it went to the model as a
      * prompt — a billed call answering a question about the CLI it knows nothing about.
      */
-    const dispatch = async (trimmed: string): Promise<"exit" | "handled" | "prompt"> => {
+    const dispatch = async (
+        trimmed: string,
+    ): Promise<"exit" | "restart" | "handled" | "prompt"> => {
         const command = resolveSessionCommand(trimmed)
         if (command === undefined) return "prompt"
         switch (command.kind) {
             case "exit":
                 return "exit"
+            case "restart":
+                return "restart"
             case "help":
                 row(sessionHelpText())
                 return "handled"
@@ -410,10 +476,9 @@ async function runPlain(wired: Wired): Promise<number> {
 
     let controller: AbortController | undefined
     let cancelledAt = 0
-    let exitCode = EXIT_OK
-    let reader: Interface | undefined
+    let exitCode: RunOutcome = EXIT_OK
 
-    const onInterrupt = (rl = reader): void => {
+    const onInterrupt = (rl = wired.reader.current): void => {
         if (controller !== undefined && !controller.signal.aborted) {
             cancelledAt = performance.now()
             controller.abort()
@@ -480,8 +545,8 @@ async function runPlain(wired: Wired): Promise<number> {
         }
 
         if (process.stdin.isTTY !== true) {
-            const rl = createInterface({ input: process.stdin })
-            reader = rl
+            const rl = wired.reader.current ?? createInterface({ input: process.stdin })
+            wired.reader.current = rl
             for await (const line of rl) {
                 const trimmed = line.trim()
                 if (trimmed === "") continue
@@ -490,6 +555,10 @@ async function runPlain(wired: Wired): Promise<number> {
                 // disagreed with the terminal about what a typed line meant.
                 const outcome = await dispatch(trimmed)
                 if (outcome === "exit") break
+                if (outcome === "restart") {
+                    exitCode = RESTART
+                    break
+                }
                 if (outcome === "handled") continue
                 await runOne(trimmed)
             }
@@ -507,13 +576,15 @@ async function runPlain(wired: Wired): Promise<number> {
         // The cost is that readline no longer echoes or edits: the tty driver does both, because
         // nothing here puts stdin in raw mode. Typing, backspace and Ctrl-D behave as they do in any
         // line-buffered program. Arrow-key history is lost on this path — the rich path owns that.
-        const rl = createInterface({
-            input: process.stdin,
-            output: process.stdout,
-            prompt: PROMPT,
-            terminal: false,
-        })
-        reader = rl
+        const rl =
+            wired.reader.current ??
+            createInterface({
+                input: process.stdin,
+                output: process.stdout,
+                prompt: PROMPT,
+                terminal: false,
+            })
+        wired.reader.current = rl
         // Outside terminal mode readline never emits its own SIGINT, so the process-level handler
         // installed below is the only one that fires. It closes `reader`, which ends the loop.
         rl.prompt()
@@ -527,6 +598,10 @@ async function runPlain(wired: Wired): Promise<number> {
 
             const outcome = await dispatch(trimmed)
             if (outcome === "exit") break
+            if (outcome === "restart") {
+                exitCode = RESTART
+                break
+            }
             if (outcome === "handled") {
                 rl.prompt()
                 continue
@@ -535,7 +610,12 @@ async function runPlain(wired: Wired): Promise<number> {
             await runOne(trimmed)
             rl.prompt()
         }
-        rl.close()
+        // Closed only when this really is the end. A restart hands the same reader to the next
+        // runtime, and closing it here would end the session the restart was meant to continue.
+        if (exitCode !== RESTART) {
+            rl.close()
+            wired.reader.current = undefined
+        }
         return exitCode
     } finally {
         process.off("SIGINT", sigintHandler)
