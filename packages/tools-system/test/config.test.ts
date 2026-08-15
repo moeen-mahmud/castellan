@@ -316,3 +316,16 @@ test("a hash inside a quoted value is not mistaken for a comment", () => {
     const source = 'tools:\n  dialect: "a # b"\n'
     expect(setInSource(source, ["tools", "dialect"], "native")).toBe("tools:\n  dialect: native\n")
 })
+
+test("the summary fits the observation budget, which the whole file did not", async () => {
+    const { read } = fixture()
+    const output = await read({}, toolContext({}))
+    // Returning the manifest measured 2,766 tokens against a 2,000-token budget, so every call was
+    // middle-cut and a real model read it three times in one turn hunting for what the cut removed —
+    // eight thousand output tokens to change one line.
+    expect(output.length).toBeLessThan(4_000)
+    // What it needs is what can change and what it is now.
+    expect(output).toContain("tools.policy.allow = []")
+    expect(output).toContain("tools.local = [now]")
+    expect(output).toContain("model.main.temperature = 0.3")
+})

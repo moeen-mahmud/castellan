@@ -353,6 +353,13 @@ async function runPlain(wired: Wired): Promise<number> {
             )
         }),
 
+        // Exempt from `showRows`, like a gated call and for the same reason: a one-shot run whose
+        // agent just rewrote its own configuration must not be the only surface that does not say so.
+        runtime.bus.on("agent.warning", (event: AnyEvent) => {
+            if (event.type !== "agent.warning" || event.data.code !== "manifest_changed") return
+            row(`  · ${event.data.message}\n    ${event.data.hint}`)
+        }),
+
         runtime.bus.on("tool.repair", (event: AnyEvent) => {
             if (event.type !== "tool.repair" || !showRows) return
             // Worth a line of its own: a silent repair looks like a slow turn.

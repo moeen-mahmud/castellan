@@ -18,7 +18,7 @@
 
 import { nearest } from "@castellan/core"
 
-export type SessionCommandKind = "help" | "tools" | "reset" | "exit"
+export type SessionCommandKind = "help" | "restart" | "tools" | "reset" | "exit"
 
 export interface SessionCommandSpec {
     readonly kind: SessionCommandKind
@@ -30,6 +30,13 @@ export interface SessionCommandSpec {
 
 export const SESSION_COMMANDS: readonly SessionCommandSpec[] = [
     { kind: "help", word: "/help", aliases: [], summary: "this list" },
+    {
+        kind: "restart",
+        word: "/restart",
+        aliases: [],
+        summary:
+            "restart the agent, for any configuration changes to take effect (memory files on disk are untouched)",
+    },
     {
         kind: "tools",
         word: "/tools",

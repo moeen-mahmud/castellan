@@ -552,3 +552,9 @@ test("exec starts in the root rather than the agent directory", async () => {
     })({ command: "pwd" }, toolContext({ dir }))
     expect(String(output).endsWith("/workspace")).toBe(true)
 })
+
+test("file_write says it creates folders, so nobody enables a shell to run mkdir", () => {
+    // Observed: asked to "create a sample file inside a sample folder", a real model said it needed
+    // `exec` for the folder and `file_write` for the file, and enabled both. It needed one.
+    expect(`${FILE_WRITE_SPEC.summary} ${FILE_WRITE_SPEC.whenToUse}`).toContain("folders")
+})

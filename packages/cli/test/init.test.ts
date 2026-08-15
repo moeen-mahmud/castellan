@@ -19,6 +19,7 @@ import {
 } from "@castellan/core"
 import { initCommand } from "#init"
 import { EXIT_OK } from "#lib/const"
+import { PROVIDER_IDS } from "#lib/providers"
 
 function scratch(): string {
     return join(mkdtempSync(join(tmpdir(), "init-test-")), "agent")
@@ -44,7 +45,10 @@ describe("initCommand", () => {
         expect(await initCommand({ ...FLAGS, dir })).toBe(EXIT_OK)
 
         // Independent of the command's own validate: load it again from here.
-        const loaded = loadManifest(join(dir, "agent.yaml"), { env: STUB_ENV })
+        const loaded = loadManifest(join(dir, "agent.yaml"), {
+            env: STUB_ENV,
+            knownProviders: PROVIDER_IDS,
+        })
         expect(loaded.manifest.id).toBe("milo")
         expect(loaded.manifest.model.main.id).toBe("deepseek-chat")
 
@@ -96,6 +100,7 @@ describe("initCommand", () => {
             dir,
         })
         const loaded = loadManifest(join(dir, "agent.yaml"), {
+            knownProviders: PROVIDER_IDS,
             env: { ...STUB_ENV, MODEL_ID: "deepseek-v4-pro" },
         })
         const { workspace, warnings } = resolveWorkspace(loaded, {
@@ -129,7 +134,10 @@ describe("initCommand", () => {
         // No ACTIVE key line; the commented provider examples legitimately mention the field.
         expect(yaml.includes("\n    apiKeyEnv:")).toBe(false)
 
-        const loaded = loadManifest(join(dir, "agent.yaml"), { env: {} })
+        const loaded = loadManifest(join(dir, "agent.yaml"), {
+            env: {},
+            knownProviders: PROVIDER_IDS,
+        })
         expect(loaded.manifest.model.main.baseUrl).toBe("http://localhost:11434/v1")
         expect(readFileSync(join(dir, ".env"), "utf8").includes("MODEL_API_KEY")).toBe(false)
     })
@@ -181,7 +189,7 @@ describe("initCommand", () => {
             expect(await initCommand({ ...FLAGS })).toBe(EXIT_OK)
             const manifest = join(home, "agents", "milo", "agent.yaml")
             expect(existsSync(manifest)).toBe(true)
-            const loaded = loadManifest(manifest, { env: STUB_ENV })
+            const loaded = loadManifest(manifest, { env: STUB_ENV, knownProviders: PROVIDER_IDS })
             expect(loaded.manifest.id).toBe("milo")
         } finally {
             if (previous === undefined) delete process.env[homeVar]
@@ -205,7 +213,7 @@ describe("initCommand", () => {
 
         let error: HarnessError | undefined
         try {
-            loadManifest(path, { env: STUB_ENV })
+            loadManifest(path, { env: STUB_ENV, knownProviders: PROVIDER_IDS })
         } catch (thrown) {
             if (thrown instanceof HarnessError) error = thrown
         }

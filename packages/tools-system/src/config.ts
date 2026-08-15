@@ -226,16 +226,37 @@ export function configReadHandler(options: ConfigOptions): ToolHandler {
             return `${asked}:\n${stringify(isMap(value) || isSeq(value) ? value.toJS(doc) : value).trimEnd()}`
         }
 
-        const settable = SETTABLE.map((entry) => `- ${entry.path} — ${entry.means}`).join("\n")
+        // A summary with the current values, not the file.
+        //
+        // Returning the whole manifest was the obvious thing and measured at 2,766 tokens against a
+        // 2,000-token observation budget — so every call was middle-cut, and a real model read it
+        // three times in one turn trying to find what the cut had removed. Eight thousand output
+        // tokens to change one line. What it actually needs is "what can I change, and what is it
+        // now", which is a fifth the size and directly actionable.
+        const doc = parseDocument(source)
+        const rows = SETTABLE.map((entry) => {
+            const current = doc.getIn(entry.path.split("."), false)
+            // Lists inline as `[a, b]` rather than as block YAML flattened onto one line, which
+            // renders `- a - b` and reads as a subtraction.
+            const value = isMap(current) || isSeq(current) ? current.toJS(doc) : current
+            const shown =
+                value === undefined || value === null
+                    ? "(not set)"
+                    : Array.isArray(value)
+                      ? `[${value.map((entry) => String(entry)).join(", ")}]`
+                      : stringify(value).trim()
+            return `- ${entry.path} = ${shown}\n    ${entry.means}`
+        }).join("\n")
+
         return [
-            `This agent's configuration, at ${file}:`,
+            `This agent is ${doc.get("name") ?? doc.get("id")}, configured at ${file}.`,
             "",
-            source.trimEnd(),
+            "Settings config_set can change, with their current values:",
+            rows,
             "",
-            "Settings that can be changed with config_set:",
-            settable,
+            "Anything not on this list is not settable from a conversation. A change takes effect when the agent next starts, not in the current conversation. Two edits are refused whatever the rules say: replacing tools.policy.deny, and setting tools.untrusted.onMutate to allow.",
             "",
-            "A change takes effect when the agent next starts, not in the current conversation. Two edits are refused whatever the rules say: replacing tools.policy.deny, and setting tools.untrusted.onMutate to allow.",
+            `The whole file, comments and all, is at ${file} — read it with file_read if that tool is enabled, or ask the person to open it.`,
         ].join("\n")
     }
 }

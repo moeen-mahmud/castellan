@@ -13,8 +13,8 @@
  * voice, so the `workspace` command keeps warning until a person writes real exchanges.
  */
 
-import { BRAND } from "@castellan/core"
 import { fillTemplate, WORKSPACE_TEMPLATES } from "#lib/templates"
+import { BRAND } from "@castellan/core"
 
 /**
  * The local tools every generated agent starts with, and the one line of guidance each carries
@@ -54,21 +54,21 @@ export const PRESETS: readonly Preset[] = [
     {
         id: "openai",
         label: "OpenAI",
-        modelId: "gpt-4o-mini",
+        modelId: "gpt-5-6-sol",
         baseUrl: "https://api.openai.com/v1",
         apiKeyEnv: "MODEL_API_KEY",
     },
     {
         id: "anthropic",
         label: "Anthropic (OpenAI-compatible endpoint)",
-        modelId: "claude-sonnet-4-20250514",
+        modelId: "claude-sonnet-5",
         baseUrl: "https://api.anthropic.com/v1",
         apiKeyEnv: "MODEL_API_KEY",
     },
     {
         id: "deepseek",
         label: "DeepSeek",
-        modelId: "deepseek-chat",
+        modelId: "deepseek-v4-pro",
         baseUrl: "https://api.deepseek.com/v1",
         apiKeyEnv: "MODEL_API_KEY",
     },
@@ -80,7 +80,7 @@ export const PRESETS: readonly Preset[] = [
     },
     {
         id: "custom",
-        label: "custom OpenAI-compatible endpoint",
+        label: "custom OpenAI-compatible endpoint or OpenRouter",
         modelId: "",
         baseUrl: "",
         apiKeyEnv: "MODEL_API_KEY",
@@ -147,9 +147,21 @@ export const SYSTEM_CHOICES: readonly {
 }[] = [
     {
         value: "none",
-        label: "No — it can talk and remember, nothing else (safest)",
-        pinned: [],
-        allow: [],
+        label: "No — it can talk and remember, and change its own settings when you ask",
+        /**
+         * Not empty, and the emptiness was the bug.
+         *
+         * With nothing pinned there is no provider, so `available()` is never called and the agent is
+         * never told the file tools exist — asked to create a file it said "I don't have a tool that
+         * touches your file system", which is true and useless. Asked to enable one it said the tools
+         * are fixed at startup, which was also true and is the thing that was supposed to be fixed.
+         *
+         * So every level, including this one, can read its own configuration and change it when asked.
+         * That is the whole of "it should always be able to update its own configuration" — and this is
+         * the level where it matters most, because it is the only route out of it.
+         */
+        pinned: ["config_read", "config_set"],
+        allow: ["memory_write", "config_set"],
     },
     {
         value: "read",
@@ -157,10 +169,10 @@ export const SYSTEM_CHOICES: readonly {
         // `config_read` on every level above `none`: without it the agent cannot tell you which
         // setting to change when a request needs a tool it does not have, which is the whole point of
         // telling it that the tool exists.
-        pinned: ["file_read", "glob", "grep", "config_read"],
+        pinned: ["file_read", "glob", "grep", "config_read", "config_set"],
         // `memory_write` is mutating and a file read taints the turn, so without this the agent
         // could read one file and then never save a note again for the rest of that turn.
-        allow: ["memory_write"],
+        allow: ["memory_write", "config_set"],
     },
     {
         // The level that makes confinement *real*. `full` pins `exec`, and a shell carries its target
@@ -170,8 +182,16 @@ export const SYSTEM_CHOICES: readonly {
         // anywhere" and means it wants this level, and there was no way to ask for it.
         value: "write",
         label: "Read and write files — confined to its own workspace, no shell",
-        pinned: ["file_read", "file_write", "file_edit", "glob", "grep", "config_read"],
-        allow: ["memory_write", "file_write", "file_edit"],
+        pinned: [
+            "file_read",
+            "file_write",
+            "file_edit",
+            "glob",
+            "grep",
+            "config_read",
+            "config_set",
+        ],
+        allow: ["memory_write", "file_write", "file_edit", "config_set"],
     },
     {
         value: "full",
@@ -456,26 +476,36 @@ function systemBlock(system: string): readonly string[] {
     if (choice === undefined || choice.pinned.length === 0) {
         return [
             `  # ── acting on this computer ──`,
-            `  # Uncomment to let this agent read and search files. Add file_write, file_edit and exec`,
-            `  # for an agent that can change things and run commands — and see the policy block below,`,
-            `  # which is what keeps that from meaning "anything at all".`,
-            `  #`,
-            `  # Whatever is left out, the agent is told it exists and what it is for, so it can name the`,
-            `  # setting you would have to change instead of saying it cannot do something.`,
+            `  # Nothing is enabled. Add tools here and permit them in the policy block below.`,
             `  # provider: system`,
-            `  # pinned:`,
-            `  #   - file_read      # read a file`,
-            `  #   - glob           # find files by name`,
-            `  #   - grep           # find lines by pattern`,
-            `  #   - config_read    # let it read this file and tell you what to change`,
-            `  #   - file_write     # write a file — only inside workspace/ unless writeRoots says otherwise`,
-            `  #   - file_edit      # change part of a file`,
-            `  #   - exec           # run a shell command`,
-            `  #   - config_set     # let it change this file when you ask it to`,
+            `  # pinned: [config_read, config_set]`,
         ]
     }
 
     const shell = choice.pinned.includes("exec")
+    const files = choice.pinned.includes("file_read")
+
+    // The configuration-only level. Everything the agent lacks is still named to it, so "I can't do
+    // that" becomes "I can't do that yet, and here is the line that would let me" — and `config_set`
+    // is what writes that line when you say go ahead.
+    if (!files) {
+        return [
+            `  # ── acting on this computer ──`,
+            `  # This agent cannot read, write or run anything. It CAN read this file and change it when`,
+            `  # you ask — which is how you turn the rest on without editing YAML yourself.`,
+            `  #`,
+            `  # It is told which tools exist and are not enabled, so ask it for something it cannot do`,
+            `  # and it will name the tool and offer to add it. A change takes effect on the next start.`,
+            `  #`,
+            `  # To enable them by hand instead, add to pinned:`,
+            `  #   file_read, glob, grep      read and search files`,
+            `  #   file_write, file_edit      change files, confined to workspace/`,
+            `  #   exec                       run shell commands — the confinement does not bind it`,
+            `  provider: system`,
+            `  pinned:`,
+            ...choice.pinned.map((slug) => `    - ${slug}`),
+        ]
+    }
     return [
         `  # ── acting on this computer ──`,
         shell

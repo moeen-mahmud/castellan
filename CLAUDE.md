@@ -434,6 +434,16 @@ Never claim a performance property without a number in `evals/` and a script to 
   every boot of every system-provider agent, and a warning always present for a correct configuration
   is one nobody reads. With a reason it is silent and `tools` prints the reason; without one it still
   warns, which is the case worth catching.
+- **`--system none` still names the provider and pins the config pair.** With nothing pinned there is
+  no provider, so `available()` never runs and the agent cannot even tell you the file tools exist —
+  it says "I don't have a tool that touches your file system" and, asked to enable one, that its
+  tools are fixed at startup. Both true, both useless. `none` means no *file or shell* access, never
+  "cannot read or change its own settings".
+- **A tool observation has to fit `observationMaxTokens` or the model reads it again.** `config_read`
+  returned the whole manifest — 2,766 tokens against a 2,000 budget — so it was middle-cut every
+  time and a real model read it three times in one turn, 8,040 output tokens to change one line. The
+  summary form is 549 tokens and the same task took one read. When a tool's output is *reference
+  material*, size it against the budget rather than against what looks complete.
 - **A `ChatMessage` is no longer just `{role, content}`.** Under the `native` dialect it carries
   `toolCalls` or `toolCallId`, and every layer that copies a message must copy those too — the wire
   mapper in `chat-completions.ts`, the `message` field on `ContextBlock`, and the store's

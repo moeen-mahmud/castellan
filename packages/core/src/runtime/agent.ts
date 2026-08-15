@@ -12,6 +12,7 @@
  * to an in-memory SQLite database rather than to a different implementation.
  */
 
+import { statSync } from "node:fs"
 import { isAbsolute, resolve } from "node:path"
 import { type ErrorDetail, toolGatedAfterFirstUse } from "../errors.ts"
 import type { EventBus } from "../events/bus.ts"
@@ -40,6 +41,15 @@ import {
     writeTarget,
 } from "../workspace/load.ts"
 import { planSoul } from "../workspace/soul.ts"
+
+/** Boot-time mtime, or `undefined` for a manifest that never came from a file. */
+function mtimeOf(path: string): number | undefined {
+    try {
+        return statSync(path).mtimeMs
+    } catch {
+        return undefined
+    }
+}
 
 export interface AgentCreateOptions extends ResolveRolesOptions {
     /**
@@ -110,6 +120,11 @@ export class Agent {
 
     #bus: EventBus
     #toolRuntime: ToolRuntime | undefined
+    /** Absolute path, or `(object)` for the programmatic path — which has no file to watch. */
+    readonly #manifestPath: string
+    /** `undefined` when there is no file. Compared after each turn, never polled. */
+    #manifestMtime: number | undefined
+    #manifestChangeReported = false
 
     private constructor(init: {
         loaded: LoadedManifest
@@ -133,6 +148,9 @@ export class Agent {
         this.store = init.store
         this.tools = init.tools
         this.knowledge = init.knowledge
+
+        this.#manifestPath = init.loaded.path
+        this.#manifestMtime = mtimeOf(init.loaded.path)
 
         // Configuration, never inference. Reading the model id to pick a dialect would mean behaviour
         // changing silently when someone edits `model.main.id`, and a per-model difference nobody can
@@ -340,7 +358,44 @@ export class Agent {
             await this.store.messages.append(this.id, sessionKey, result.appended, turnId)
         }
 
+        this.#reportManifestChange()
         return result
+    }
+
+    /**
+     * Say so, once, when the manifest on disk stops matching the one this process is running.
+     *
+     * `config_set` writes `agent.yaml` and the change takes effect at the next start. The tool says so
+     * in its observation, and relying on that means relying on the model to relay it — which it did in
+     * testing and will not always. A configuration change that silently does not apply is precisely
+     * the shape rule 8 exists to prevent, so the runtime states it rather than delegating it.
+     *
+     * Here rather than in a front end because it is a fact about the agent, not about a terminal: a
+     * server or a scheduled run needs it just as much. Latched, because it is one piece of news and
+     * repeating it every turn is how a person learns to skim past it.
+     */
+    #reportManifestChange(): void {
+        if (this.#manifestMtime === undefined || this.#manifestChangeReported) return
+        let now: number
+        try {
+            now = statSync(this.#manifestPath).mtimeMs
+        } catch {
+            // Moved or deleted mid-session. Not this method's business to report — the next boot will
+            // fail loudly and name the path, which is the right place for it.
+            return
+        }
+        if (now === this.#manifestMtime) return
+        this.#manifestChangeReported = true
+        this.#bus.emit(
+            "agent.warning",
+            {
+                code: "manifest_changed",
+                message: `This agent's configuration has been edited since it started: ${this.#manifestPath}`,
+                hint: "The running agent still has the settings it booted with — a tool it was just given is not available in this conversation. Restart it to pick the change up.",
+                field: "agent.yaml",
+            },
+            { agentId: this.id },
+        )
     }
 
     /**

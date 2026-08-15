@@ -117,9 +117,9 @@ export const FILE_READ_SPEC: Tool["spec"] = {
 export const FILE_WRITE_SPEC: Tool["spec"] = {
     slug: "file_write",
     provider: SYSTEM_PROVIDER_ID,
-    summary: "Writes a file, replacing it entirely if it already exists.",
+    summary: "Writes a file, creating any folders it needs, and replaces it if it already exists.",
     whenToUse:
-        "you are creating a new file, or replacing one whose whole contents you are producing",
+        "you are creating a new file, or replacing one whose whole contents you are producing. Folders in the path are created for you, so this needs no separate step and no shell",
     whenNotToUse:
         "you are changing part of an existing file — that is file_edit, which cannot silently destroy the rest of it",
     mutating: true,
