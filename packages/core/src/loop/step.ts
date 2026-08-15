@@ -21,7 +21,7 @@ export interface StepInput {
     readonly role: ResolvedRole
     readonly provider: ModelProvider
     readonly messages: readonly ChatMessage[]
-    readonly params: { temperature?: number; topP?: number; maxTokens: number }
+    readonly params: { temperature?: number; topP?: number; maxTokens?: number }
     readonly promptTokens: number
     /** Wire-level tool definitions. Present under `native`, absent under a text dialect. */
     readonly tools?: readonly ToolDefinition[]

@@ -12,7 +12,7 @@
  */
 
 import type { ChatMessage } from "../model/provider.ts"
-import { type ContextBlock, SLOT } from "./blocks.ts"
+import { type ContextBlock, SLOT, VOLATILE_HEADER } from "./blocks.ts"
 import { estimateMessageTokens, estimateTokens } from "./tokens.ts"
 
 export interface AssembleInput {
@@ -120,7 +120,17 @@ export function assembleContext(input: AssembleInput): AssembledContext {
         pinned.push(block(SLOT.examples, "user", input.examples, true, "workspace-examples"))
     }
     if (input.volatile !== undefined && input.volatile.trim() !== "") {
-        pinned.push(block(SLOT.volatile, "system", input.volatile, true, "workspace-volatile"))
+        // Framed, never bare. See VOLATILE_HEADER: a small model asked "do you know me?" answered
+        // no, with the answer sitting unlabelled in this very block.
+        pinned.push(
+            block(
+                SLOT.volatile,
+                "system",
+                `${VOLATILE_HEADER}\n\n${input.volatile}`,
+                true,
+                "workspace-volatile",
+            ),
+        )
     }
     // In the budget like everything else, but `pinned: false`: Tier 3 is retrieved, never carried,
     // so compaction may drop it where it must never drop a workspace tier.

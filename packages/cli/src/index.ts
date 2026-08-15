@@ -122,6 +122,7 @@ async function dispatch(argv: readonly string[]): Promise<number> {
                 ephemeral: flags.bool("ephemeral"),
                 quiet: flags.bool("quiet"),
                 showReasoning: flags.bool("show-reasoning"),
+                noReasoning: flags.bool("no-reasoning"),
                 plain: flags.bool("plain"),
             })
         }

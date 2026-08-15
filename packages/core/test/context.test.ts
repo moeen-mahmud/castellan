@@ -8,7 +8,7 @@
  */
 
 import { assembleContext, slotReport } from "../src/context/assemble.ts"
-import { SLOT } from "../src/context/blocks.ts"
+import { SLOT, VOLATILE_HEADER } from "../src/context/blocks.ts"
 import { describe, expect, test } from "./_harness.ts"
 
 function assemble() {
@@ -215,5 +215,38 @@ describe("examples and knowledge slots", () => {
         const labels = assemble().blocks.map((b) => b.label)
         expect(labels.includes("workspace-examples")).toBe(false)
         expect(labels.some((label) => label.startsWith("knowledge:"))).toBe(false)
+    })
+})
+
+describe("the volatile tier is framed, not bare", () => {
+    test("the header says what the block is, in front of the authored text", () => {
+        // The bug: a fresh agent whose USER.md said "Moeen is the person I work for" answered "No,
+        // I can't read your name. Each session starts fresh." The fact was in its context, twice.
+        // Every other slot arrives framed; the one whose job is "what you know about the person"
+        // arrived as an unlabelled paragraph.
+        const assembled = assembleContext({
+            identity: "I am a test agent.",
+            volatile: "Moeen is the person I work for.",
+            input: "do you know me?",
+            history: [],
+            window: 8192,
+            reserveOutput: 512,
+        })
+        const block = assembled.blocks.find((entry) => entry.label === "workspace-volatile")
+        expect(block?.content.startsWith(VOLATILE_HEADER)).toBe(true)
+        // The authored text is untouched and still present — framing is not rewriting.
+        expect(block?.content).toContain("Moeen is the person I work for.")
+    })
+
+    test("an empty volatile tier gets no block and therefore no header", () => {
+        const assembled = assembleContext({
+            identity: "I am a test agent.",
+            volatile: "   ",
+            input: "hi",
+            history: [],
+            window: 8192,
+            reserveOutput: 512,
+        })
+        expect(assembled.blocks.some((entry) => entry.label === "workspace-volatile")).toBe(false)
     })
 })

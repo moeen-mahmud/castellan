@@ -119,6 +119,8 @@ export interface RunOptions {
     readonly ephemeral?: boolean
     readonly quiet?: boolean
     readonly showReasoning?: boolean
+    /** Turns off the reasoning stream that a thinking model shows by default. */
+    readonly noReasoning?: boolean
     readonly plain?: boolean
 }
 

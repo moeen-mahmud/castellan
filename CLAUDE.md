@@ -590,3 +590,22 @@ Never claim a performance property without a number in `evals/` and a script to 
   against four endpoints *is* its purpose — and it says so in the file. Read the cost from the other
   side too: with a literal, `MODEL_ID=x <binary> run` overrides nothing, which is exactly the
   no-silent-drift property and is why there is no ad-hoc override for a real agent.
+- **`context.reserveOutput` budgets the prompt; `model.<role>.maxTokens` caps the endpoint. They are
+  not the same number and must never be wired together again.** Reserve fed `max_tokens` for three
+  phases, so a budgeting figure became a hard truncation — and on a reasoning model the truncation
+  lands on the thinking, which is how qwen3.5:9b returned **empty content** against an 8,192 limit
+  nobody chose. `max_tokens` is now absent from the wire unless configured. When a reply comes back
+  empty at `finish_reason: length`, read the message: it names whether the limit was ours or the
+  endpoint's, and says "no usage reported" rather than printing a contradictory "0 spent".
+- **Reasoning streams to the screen by default when `capabilities.thinking !== "none"`.** Opt-in was
+  wrong: it made a reasoning model look hung for thirty seconds while the only available signal was
+  being generated and discarded. Resolved once in `run.ts` and narrowed to a required boolean on
+  `Wired`, so no renderer decides it a second time.
+- **Every context slot is framed except the one that was not, and that was the bug.** The static
+  tier reads as a document, slot 1 opens with `# Tools`, untrusted output arrives fenced and
+  labelled — and the volatile tier, whose whole job is *what you know about the person you work
+  for*, arrived as a bare paragraph. A fresh agent with "Moeen is the person I work for" in its
+  context answered "No, I can't read your name. Each session starts fresh." `VOLATILE_HEADER` fixes
+  it, and the general rule is the useful part: **a fact with no frame is a fact a small model will
+  not connect to a question.** Framing is structure and is allowed; rewriting an authored sentence
+  is decision 4.19 and is not.

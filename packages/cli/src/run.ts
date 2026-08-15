@@ -168,6 +168,16 @@ export async function runCommand(options: RunOptions): Promise<number> {
         const agent = runtime.list()[0]
         if (agent === undefined) throw new Error("The manifest produced no agent.")
 
+        // Reasoning is shown by default on a model that has any.
+        //
+        // It used to be opt-in behind --show-reasoning, which meant the normal experience of a
+        // reasoning model was a cursor sitting still for thirty seconds with nothing to look at,
+        // and no indication anything was happening. The thinking is the only signal there is
+        // during that time, and it is already being streamed and thrown away. `--no-reasoning`
+        // turns it off; `--show-reasoning` stays, and is now a no-op that harms nobody's scripts.
+        const reasons = agent.roles.main.capabilities.thinking !== "none"
+        const showReasoning = options.noReasoning === true ? false : reasons
+
         const banner =
             quiet || oneShot
                 ? []
@@ -183,7 +193,16 @@ export async function runCommand(options: RunOptions): Promise<number> {
                       demotedKeys([options.manifestPath]),
                   )
 
-        const wired = { ...options, agent, runtime, sessionKey, banner, quiet, reader }
+        const wired = {
+            ...options,
+            agent,
+            runtime,
+            sessionKey,
+            banner,
+            quiet,
+            reader,
+            showReasoning,
+        }
         const outcome = mode === "rich" ? await runRich(wired) : await runPlain(wired)
 
         await runtime.stop(outcome === RESTART ? "restart" : "cli-exit")
@@ -300,6 +319,11 @@ async function pickFromSandbox(
 
 interface Wired extends RunOptions {
     readonly agent: Agent
+    /**
+     * Resolved, not the raw flag: on by default for a model that reasons, off under
+     * `--no-reasoning`. Narrowed to a required boolean here so no renderer has to re-decide.
+     */
+    readonly showReasoning: boolean
     readonly runtime: Awaited<ReturnType<typeof RuntimeClass.create>>
     readonly sessionKey: string
     readonly banner: readonly string[]
@@ -346,7 +370,7 @@ async function runRich(wired: Wired): Promise<RunOutcome> {
             sessionKey: wired.sessionKey,
             model: wired.agent.describe().model,
             initial: seed(wired.banner),
-            showReasoning: wired.showReasoning === true,
+            showReasoning: wired.showReasoning,
             quiet: wired.quiet,
         }),
         { exitOnCtrlC: false },

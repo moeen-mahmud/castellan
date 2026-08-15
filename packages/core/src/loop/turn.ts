@@ -240,7 +240,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
 
             steps += 1
             const stepContext = { ...context, stepId: newStepId() }
-            const params = requestParamsFor(input.role, input.window, input.reserveOutput)
+            const params = requestParamsFor(input.role, input.window)
 
             const step = await runStep({
                 role: input.role,
@@ -289,14 +289,26 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
                 parsed.intents.length === 0
             ) {
                 reason = "error"
+                // `max_tokens` is only sent when configured, so the limit that was hit is either
+                // that number or the endpoint's own — and saying which is the whole value of the
+                // message. Reporting a cap this runtime never sent is what made the previous
+                // version read as "the harness truncated me" when it had not.
+                const cap =
+                    params.maxTokens === undefined
+                        ? "the endpoint's own output limit"
+                        : `the configured limit of ${params.maxTokens} tokens`
+                const spent =
+                    step.outputTokens > 0
+                        ? `${step.outputTokens} output tokens were reported`
+                        : "the endpoint reported no usage, so how much it actually generated is unknown"
                 const detail: ErrorDetail = {
                     code: "empty_reply_output_exhausted",
-                    message: `The model produced no text and stopped at the output limit (${params.maxTokens} tokens; ${step.outputTokens} spent${reasoning === "" ? "" : `, ${reasoning.length} characters of it on reasoning`}).`,
+                    message: `The model produced no text and stopped at ${cap} — ${spent}${reasoning === "" ? "" : `, and ${reasoning.length} characters arrived as reasoning`}.`,
                     hint:
-                        input.role.capabilities.thinking === "deepseek"
-                            ? "This model bills reasoning tokens to the output budget, so a small allowance leaves nothing for the answer. Raise context.reserveOutput — or model.<role>.maxTokens — above the reasoning length."
-                            : "Raise context.reserveOutput, or set model.<role>.maxTokens explicitly, so the reply has room.",
-                    field: "context.reserveOutput",
+                        input.role.capabilities.thinking === "none"
+                            ? "Set model.<role>.maxTokens to raise the ceiling, if one is configured. Otherwise this is the endpoint's own limit and the request needs to ask for less."
+                            : "This model bills its thinking to the output budget and thinks harder the more it is constrained, so a ceiling that fits a bare question may leave nothing for the answer under a longer prompt. Either raise model.<role>.maxTokens, or set model.<role>.reasoningEffort — `none` is the measured fix when the work is short and well specified.",
+                    field: "model.main.maxTokens",
                 }
                 error = detail
                 input.bus.emit("agent.warning", detail, context)

@@ -21,7 +21,13 @@ export {
     assembleContext,
     slotReport,
 } from "./context/assemble.ts"
-export { type ContextBlock, SLOT, type SlotName, type SlotNumber } from "./context/blocks.ts"
+export {
+    type ContextBlock,
+    SLOT,
+    type SlotName,
+    type SlotNumber,
+    VOLATILE_HEADER,
+} from "./context/blocks.ts"
 export { estimateMessageTokens, estimateTokens } from "./context/tokens.ts"
 export {
     AbortedError,

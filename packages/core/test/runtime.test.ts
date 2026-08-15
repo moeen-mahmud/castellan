@@ -567,7 +567,13 @@ describe("a reasoning model that exhausts its output budget", () => {
 
         expect(result.reason).toBe("error")
         expect(result.error?.code).toBe("empty_reply_output_exhausted")
-        expect(result.error?.field).toBe("context.reserveOutput")
+        // The field is the cap, not the budget. `context.reserveOutput` no longer feeds max_tokens
+        // — a budgeting number became a hard truncation, and the message blamed a limit this
+        // runtime had not sent.
+        expect(result.error?.field).toBe("model.main.maxTokens")
+        // No max_tokens was configured, so it was the endpoint that stopped it and the message says
+        // so rather than quoting a number nobody chose.
+        expect(result.error?.message).toContain("the endpoint's own output limit")
         await runtime.stop()
     })
 
@@ -594,7 +600,8 @@ context:
         })
 
         const result = await runtime.agent("test").send("hi")
-        expect(result.error?.hint).toContain("reasoning tokens")
+        expect(result.error?.hint).toContain("bills its thinking")
+        expect(result.error?.hint).toContain("reasoningEffort")
         await runtime.stop()
     })
 
@@ -959,5 +966,61 @@ model:
             runtime.agent("test").warnings.some((entry) => entry.code === "env_overridden"),
         ).toBe(false)
         await runtime.stop()
+    })
+})
+
+describe("max_tokens", () => {
+    function withModel(extra: string): string {
+        const dir = mkdtempSync(join(tmpdir(), "runtime-maxtokens-"))
+        writeFileSync(
+            join(dir, "agent.yaml"),
+            `apiVersion: ${BRAND.apiVersion}
+id: test
+model:
+  main:
+    id: gpt-4o-mini
+    baseUrl: https://api.example.com/v1
+    apiKeyEnv: MODEL_API_KEY
+${extra}context:
+  window: 8192
+  reserveOutput: 512
+`,
+        )
+        return dir
+    }
+
+    async function sentBody(dir: string): Promise<Record<string, unknown>> {
+        let body: Record<string, unknown> = {}
+        const runtime = await Runtime.create({
+            agents: [join(dir, "agent.yaml")],
+            env: ENV,
+            fetch: async (_url, init) => {
+                body = JSON.parse(String(init?.body)) as Record<string, unknown>
+                return sse([delta("ok"), "data: [DONE]\n\n"])
+            },
+        })
+        await runtime.agent("test").send("hi")
+        await runtime.stop()
+        return body
+    }
+
+    test("is not sent when nobody configured one", async () => {
+        // `context.reserveOutput` used to become max_tokens, which turned a context-budgeting
+        // number into a hard truncation — and on a reasoning model the truncation lands on the
+        // thinking, so the reply came back empty against a limit nobody chose.
+        expect("max_tokens" in (await sentBody(withModel("")))).toBe(false)
+    })
+
+    test("is sent, and bounded, when model.main.maxTokens says so", async () => {
+        expect((await sentBody(withModel("    maxTokens: 4096\n"))).max_tokens).toBe(4096)
+        // Never larger than the window: a cap that cannot be served is not a cap.
+        expect((await sentBody(withModel("    maxTokens: 999999\n"))).max_tokens).toBe(8191)
+    })
+
+    test("reserveOutput still does its own job — reserving prompt budget", async () => {
+        // Unchanged and deliberately so: it decides how much of the window the prompt may use.
+        const body = await sentBody(withModel(""))
+        expect("max_tokens" in body).toBe(false)
+        expect(Array.isArray(body.messages)).toBe(true)
     })
 })

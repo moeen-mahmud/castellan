@@ -98,3 +98,25 @@ export interface ContextBlock {
      */
     readonly message?: ChatMessage
 }
+
+/**
+ * The one line in front of the volatile tier, saying what it is.
+ *
+ * Every other slot arrives framed — the static tier reads as a document, slot 1 opens with
+ * "# Tools", untrusted output comes fenced and labelled. The tier whose entire job is "what you
+ * know about the person you work for" arrived as a bare paragraph, and a small model did not
+ * connect it to being asked. Verbatim, on a fresh agent whose USER.md said "Moeen is the person I
+ * work for": *"No, I can't read your name. Each session starts fresh."* The fact was in its
+ * context, twice, unlabelled.
+ *
+ * So this is framing, not instruction — the same kind of structure the tool preamble and the
+ * untrusted delimiters already are, and it does not touch a word the person authored. It sits with
+ * the block rather than in the templates because `memory_write` appends to these files without ever
+ * seeing a template, and because a frame the agent can overwrite is not a frame.
+ *
+ * Deliberately short: it is paid on every turn, after breakpoint A, forever.
+ */
+export const VOLATILE_HEADER =
+    "What I already know, carried from before this conversation and kept current. " +
+    "Not a transcript — these are standing facts about the person I work for and my own working notes. " +
+    "If they ask what I know or remember about them, this is the answer."

@@ -141,9 +141,22 @@ export const COMMANDS: readonly CommandSpec[] = [
             },
             { name: "quiet", kind: "boolean", help: "suppress the banner and per-turn stats" },
             {
+                name: "no-reasoning",
+                kind: "boolean",
+                help: "hide the thinking a reasoning model streams (shown by default)",
+            },
+            {
+                name: "no-reasoning",
+                kind: "boolean",
+                help: "hide the thinking a reasoning model streams (shown by default)",
+            },
+            {
+                // Kept so existing scripts keep working. Reasoning is on by default now, so this
+                // asks for what already happens — harmless, and cheaper than breaking a flag people
+                // have in their shell history.
                 name: "show-reasoning",
                 kind: "boolean",
-                help: "print reasoning blocks as they stream",
+                help: "no-op: reasoning is shown by default when the model has any",
             },
         ],
     },

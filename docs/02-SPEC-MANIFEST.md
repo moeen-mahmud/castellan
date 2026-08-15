@@ -151,7 +151,8 @@ Three roles. `main` required; `selector` and `compactor` fall back to `main`.
 | `id` | string | Sent verbatim as the `model` parameter. |
 | `baseUrl` | string | Must end at the version segment, e.g. `.../v1`. Requests go to `{baseUrl}/chat/completions`. |
 | `apiKeyEnv` | string | **Name of the env var**, never the key itself. A literal key in the manifest fails validation. |
-| `temperature`, `topP`, `maxTokens` | number | Optional passthrough. |
+| `temperature`, `topP` | number | Optional passthrough. |
+| `maxTokens` | number | The cap on what the endpoint may generate. **Omitted from the request entirely when unset** — not derived from `reserveOutput`, which answers a different question. Bounded by `capabilities.maxOutput` and by the window. |
 | `reasoningEffort` | `none \| minimal \| low \| medium \| high` | Sent as OpenAI's `reasoning_effort`; omitted entirely when unset. Worth setting to `none` on a reasoning model doing short, well-specified work — measured on `qwen3.5:9b`, six simultaneous rules with reasoning on burned 2,000 output tokens in 104 s and returned **empty content**, while `none` answered correctly in 2.1 s. It is the other half of the `reserveOutput` lever. Not universally honoured, and an endpoint that ignores it is silent about it. |
 | `headers` | map | Extra headers. Values may use `${ENV_VAR}`. |
 | `streamUsage` | bool | Ask for token usage in a streamed response. Off by default. |
@@ -219,8 +220,13 @@ deepseek-chat (`evals/prompt-style/`). Full rationale in `07-SPEC-WORKSPACE.md`.
 tokens are billed against the output budget.** A `max_tokens` too small to cover the model's
 thinking returns empty content with `finish_reason: "length"`. Measured against
 `deepseek-v4-pro` on 2026-08-12: `max_tokens: 16` produced 16 reasoning tokens and no reply.
-Set `context.reserveOutput` high enough for reasoning *plus* the answer — the runtime reports
-this case as a failed turn rather than an empty success, but it cannot fix the budget for you.
+**`max_tokens` is sent only when `model.<role>.maxTokens` is set.** It is not derived from
+`reserveOutput`, and wiring the two together is the mistake this note exists to prevent:
+`reserveOutput` decides how much of the window the *prompt* may use, and using it as an output cap
+turns a budgeting figure into a hard truncation that lands on the model's thinking. `qwen3.5:9b`
+returned empty content against an 8,192 cap nobody had chosen. Left unset, the endpoint applies its
+own default. The runtime reports the empty-at-`length` case as a failed turn rather than an empty
+success, and names whether the limit was yours or the endpoint's.
 
 `promptCache: none` means there are no breakpoints for the runtime to place. It does not mean
 the provider caches nothing: DeepSeek caches context automatically server-side and reports
@@ -231,7 +237,7 @@ the provider caches nothing: DeepSeek caches context automatically server-side a
 | Field | Default | Notes |
 | --- | --- | --- |
 | `window` | from capabilities | Total token budget. |
-| `reserveOutput` | 4096 | Held back for the response. |
+| `reserveOutput` | 4096 | How much of the window to keep free for the reply, so the prompt cannot crowd it out. A **prompt-budget** number: it never becomes `max_tokens`. |
 | `observationMaxTokens` | 2000 | Above this a single tool observation is trimmed to head+tail with an artifact pointer. |
 | `files` | `[]` | **Deprecated.** Alias for `static`, warning at load and naming the replacement. Keeps resolving against the *manifest* directory rather than `workspace`, which is what makes it an alias rather than a rename. Setting both `files` and `static` is a load failure, not a merge. |
 | `thresholds` | see architecture | Compaction ladder trigger fractions. Must be strictly ascending; validated. |

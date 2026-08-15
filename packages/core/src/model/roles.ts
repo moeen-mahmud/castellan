@@ -73,18 +73,32 @@ export function resolveRoles(
 export function requestParamsFor(
     role: ResolvedRole,
     window: number,
-    reserveOutput: number,
 ): {
     temperature?: number
     topP?: number
-    maxTokens: number
+    /** Absent unless `model.<role>.maxTokens` was configured. See below. */
+    maxTokens?: number
     reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high"
 } {
-    // Never derive max output from the window — a reasoning model given `window / 4` returns
-    // empty with `finishReason: length`, and that failure looks like a broken agent rather than
-    // a misconfigured limit.
-    const ceiling = Math.min(role.capabilities.maxOutput, Math.max(1, reserveOutput))
-    const maxTokens = Math.min(role.config.maxTokens ?? ceiling, window - 1)
+    // `max_tokens` is sent ONLY when someone asked for it.
+    //
+    // It used to be `min(capabilities.maxOutput, reserveOutput)`, and that conflated two different
+    // questions. `context.reserveOutput` answers "how much of the window do I keep free so the
+    // prompt cannot crowd out the reply" — a budgeting number, and it still does exactly that in
+    // `assembleContext`. `model.<role>.maxTokens` answers "what is the most the endpoint may
+    // generate". Feeding the first into the second turned a budget into a hard truncation, and on a
+    // reasoning model that truncation lands on the thinking: qwen3.5:9b hit the 8,192 the generated
+    // manifest happened to reserve and returned **empty content**, reported as
+    // `empty_reply_output_exhausted` on a limit nobody chose.
+    //
+    // Omitted, the endpoint applies its own default, which is what every other client does and what
+    // the endpoint is in a position to get right. `window - 1` still bounds an explicit value,
+    // because a cap larger than the window is a request that cannot be served.
+    const configured = role.config.maxTokens
+    const maxTokens =
+        configured === undefined
+            ? undefined
+            : Math.max(1, Math.min(configured, role.capabilities.maxOutput, window - 1))
 
     return {
         ...(role.config.temperature === undefined ? {} : { temperature: role.config.temperature }),
@@ -92,6 +106,6 @@ export function requestParamsFor(
         ...(role.config.reasoningEffort === undefined
             ? {}
             : { reasoningEffort: role.config.reasoningEffort }),
-        maxTokens: Math.max(1, maxTokens),
+        ...(maxTokens === undefined ? {} : { maxTokens }),
     }
 }
