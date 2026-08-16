@@ -653,6 +653,34 @@ Never claim a performance property without a number in `evals/` and a script to 
   is invisible to it. `composio_connect` carries `policyArg: "toolkit"` so `deny
   composio_connect(slack)` is expressible. The live session exposes six meta tools, not the four the
   docs list — the extra two are a remote bash and a schema fetcher.
+- **A test that backgrounds a process must kill it, and `exec` must reap what it backgrounds.** One
+  test left `while true; do :; done` running on every run; a day of runs put **33 orphaned shells**
+  on the machine at ~23% CPU each, a load average of **351**, and a `runtime.ready` of **132
+  seconds** — the boot budget, blown by the runtime's own litter, with nothing obviously wrong. The
+  runtime leak was the same bug: `unref()` is not reaping. There is now a registry, a cap of 8, and
+  `ToolProvider.stop()`, which `Runtime.stop` calls. Kill by process *group* — `sh -c "a | b | c"`
+  killed by pid orphans two of three.
+- **A slow boot is a symptom before it is a bug.** `ready in 132647 ms` and an earlier `ready in
+  100339 ms` were both the machine being saturated, not the runtime being slow. `bench:boot` passes
+  at 27 ms on an idle machine. Check `uptime` before profiling.
+- **Slot 2 reports runtime state, not the manifest.** An agent told "channels: tg (telegram)" while
+  running under `run` concluded the Telegram runtime had died and reported that nothing was
+  listening on 7420 — from inside the running process. Every statement was true of the manifest and
+  false of the moment. It is rendered lazily and frozen at first use, because channels start later
+  inside `Runtime.create` and the port binds after it returns; `reportRuntimeState` throws if called
+  after that, since slot 2 is in the cache-stable prefix.
+- **An NLT field name has no spaces.** The class used to be `[\w .-]`, so any continuation line of a
+  multi-line value containing a colon became a new field: `lsof -nP -iTCP:7420` parsed as the field
+  `lsof -nP -iTCP`. A shell script is the normal value for `exec` and colons are everywhere in one.
+- **The agent's own configuration is slot 2, injected — never left to `config_read`.** Knowing how
+  you are set up was two-hop reasoning, which is what decision 4.7 refuses for tool discovery, and
+  it fails harder here: a model that does not know a setting *exists* has no reason to look for it.
+  Measured — an agent asked to put itself on Telegram, with `config_set` pinned, `config_set` in
+  `policy.allow`, and a commented-out `channels` block in its own manifest, proposed Composio and
+  then **started writing a Telegram bridge**. Every piece worked; none was reachable. The block
+  names an absent capability as `none` rather than omitting it, because a missing row reads as "no
+  such concept" and a `none` row reads as a switch that is off. Anything the runtime can be
+  configured to do belongs in it — one row, not a new special case.
 - **Enabling a capability is the agent's; who and where are the person's.** `config_set` may write
   `channels`, `delivery`, `server.enabled` and `server.port` — skipping a question in `init` must
   not be a dead end. It may never write `allowFrom`, `server.host`, `server.tokenEnv` or a

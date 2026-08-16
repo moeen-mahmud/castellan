@@ -51,12 +51,15 @@ export {
 } from "./provider.ts"
 export {
     backgroundable,
+    backgroundedCommands,
     buildWrapper,
     commandLine,
+    MAX_BACKGROUNDED,
     type RunEnding,
     type RunRequest,
     type RunResult,
     readStatus,
+    reapBackgrounded,
     runCommand,
 } from "./run.ts"
 export { ShellSessions } from "./session.ts"

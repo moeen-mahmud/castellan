@@ -27,6 +27,22 @@ export const SLOT = {
     /** Tool dialect preamble and catalogue. Pinned, cache breakpoint A. Phase 3. */
     tools: 1,
     /**
+     * What this agent *is*: model, channels, server, providers, permissions. Pinned, breakpoint A.
+     *
+     * Injected rather than left to `config_read`, and that is the whole point. Reading your own
+     * settings is two-hop reasoning — realise you have a configuration, decide to look at it, then
+     * act — which is the shape decision 4.7 refuses everywhere else in this runtime. Left to the
+     * model it does not happen: asked to put itself on Telegram, an agent with `config_set` pinned
+     * and a `channels` block commented out in its own manifest proposed Composio, and then began
+     * *writing a Telegram bridge*. It had the tool, the permission, and no idea the setting existed.
+     *
+     * Immediately after the catalogue because the two answer consecutive questions: slot 1 says what
+     * you can do now and what you were not given, this says how that was decided and how to change
+     * it. Byte-stable for the lifetime of the process — configuration is fixed until restart — so it
+     * sits ahead of the cache breakpoint at no cost.
+     */
+    config: 2,
+    /**
      * Workspace example blocks as a user message, under `examplesIn: user`. Pinned. Phase 3.5.
      *
      * *Before* `volatile`, and the ordering is the point: extracted examples are byte-stable for
@@ -35,7 +51,7 @@ export const SLOT = {
      * write despite never changing. Empty under `examplesIn: system`, where the blocks stay
      * embedded in the static tier exactly as authored.
      */
-    examples: 2,
+    examples: 3,
     /**
      * Workspace `volatile` tier — the user model and working memory. Pinned. Phase 3.5.
      *
@@ -43,20 +59,20 @@ export const SLOT = {
      * the agent writes to memory, and content ahead of the breakpoint that changes invalidates the
      * cached prefix on every write. The cost rises and nothing anywhere reports it.
      */
-    volatile: 3,
+    volatile: 4,
     /** Active skill body. Cache breakpoint B. Phase 5. */
-    skill: 4,
+    skill: 5,
     /**
      * Activated knowledge entries. **Not pinned** — Tier 3 is retrieved, never carried, so
      * compaction may drop it where it must never drop a workspace tier. Phase 3.5.
      */
-    knowledge: 5,
+    knowledge: 6,
     /** Retrieved memory passages. Phase 6. */
-    memory: 6,
+    memory: 7,
     /** Rolling digest, the output of compaction. Phase 7. */
-    digest: 7,
+    digest: 8,
     /** Recent message window. */
-    history: 8,
+    history: 9,
     /**
      * Workspace `reminder` tier — one or two re-asserted rules. Pinned. Phase 3.5.
      *
@@ -65,11 +81,11 @@ export const SLOT = {
      * ends of the context than in the middle, and a rule stated once at the top of a thirty-turn
      * session is effectively in the middle.
      */
-    reminder: 9,
+    reminder: 10,
     /** Current input and current task line. Pinned. */
-    input: 10,
+    input: 11,
     /** Last error, if any. Pinned. */
-    error: 11,
+    error: 12,
 } as const
 
 export type SlotName = keyof typeof SLOT

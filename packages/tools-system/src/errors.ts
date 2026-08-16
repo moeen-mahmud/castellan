@@ -192,3 +192,24 @@ export function configRefused(path: string, why: string): ToolError {
         field: "path",
     })
 }
+
+/**
+ * Too many commands already left running in the background.
+ *
+ * A loud refusal rather than a thirty-fourth silent success. Backgrounding is deliberate — a long
+ * build should not be thrown away at the deadline — but nothing bounded it, and a day of that left
+ * 33 orphaned shells at ~23% CPU each on the author's machine: load average 351, and a
+ * `runtime.ready` that took 132 seconds. The message names what is already running, because "too
+ * many" without the list is a refusal nobody can act on.
+ */
+export function execTooManyBackground(running: readonly string[]): ToolError {
+    return new ToolError({
+        code: "exec_too_many_background",
+        message: `${running.length} commands are already running in the background, which is the limit.`,
+        hint: `Wait for one to finish, or stop one yourself. Already running: ${running
+            .map((command) => (command.length > 60 ? `${command.slice(0, 57)}...` : command))
+            .join(
+                "; ",
+            )}. A command that outruns its timeout is left running rather than discarded, so a loop that starts one per attempt reaches this quickly — which is the point of the limit.`,
+    })
+}

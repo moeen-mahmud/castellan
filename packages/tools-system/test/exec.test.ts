@@ -25,7 +25,14 @@ import {
 import { INLINE_CAP, readOutput, stripLeadingEcho } from "../src/output.ts"
 import { SystemProvider } from "../src/provider.ts"
 import { resolveRoots } from "../src/root.ts"
-import { backgroundable, buildWrapper, commandLine } from "../src/run.ts"
+import {
+    backgroundable,
+    backgroundedCommands,
+    buildWrapper,
+    commandLine,
+    MAX_BACKGROUNDED,
+    reapBackgrounded,
+} from "../src/run.ts"
 import { ShellSessions } from "../src/session.ts"
 
 function tempDir(): string {
@@ -240,7 +247,7 @@ test("sleep is killed at the deadline rather than backgrounded", async () => {
     expect(output.includes("Still running")).toBe(false)
 })
 
-test("a long build is backgrounded rather than thrown away", async () => {
+test("a long build is backgrounded rather than thrown away, and is then reaped", async () => {
     const dir = tempDir()
     const output = await handler(dir)(
         // Not on the never-background list, so it is left alone and its output keeps accumulating.
@@ -251,6 +258,35 @@ test("a long build is backgrounded rather than thrown away", async () => {
     expect(output.includes("starting")).toBe(true)
     // The path is the point: the model is handed somewhere to look rather than a truncated guess.
     expect(output.includes(".log")).toBe(true)
+
+    // The half this test used to be missing, and the omission was not academic: it backgrounded a
+    // busy loop on every run, and a day of runs left 33 orphaned shells at ~23% CPU each — load
+    // average 351, and a `runtime.ready` that took 132 seconds. A test that leaks a process is a
+    // test that manufactures the bug it is describing.
+    expect(backgroundedCommands().length).toBeGreaterThan(0)
+    const reaped = reapBackgrounded()
+    expect(reaped.length).toBeGreaterThan(0)
+    expect(backgroundedCommands().length).toBe(0)
+})
+
+test("the number that may run in the background at once is capped", async () => {
+    // A model in a retry loop can background one per step, and nothing bounded it. The refusal names
+    // what is already running, because "too many" on its own is not actionable.
+    const dir = tempDir()
+    try {
+        for (let i = 0; i < MAX_BACKGROUNDED + 1; i += 1) {
+            await handler(dir)(
+                { command: `echo ${i}; while true; do :; done`, timeoutMs: 200 },
+                toolContext({ dir, deadlineMs: 30_000 }),
+            )
+        }
+        throw new Error("expected the cap to refuse")
+    } catch (error) {
+        expect((error as { code?: string }).code).toBe("exec_too_many_background")
+        expect((error as { hint: string }).hint).toContain("while true")
+    } finally {
+        reapBackgrounded()
+    }
 })
 
 test("a compound is only backgroundable when every fragment is", () => {

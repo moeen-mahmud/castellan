@@ -38,9 +38,81 @@
 import { type ChildProcess, spawn } from "node:child_process"
 import { open, readFile } from "node:fs/promises"
 import { subcommands } from "@castellan/core"
-import { execPtyUnavailable, execSpawnFailed } from "./errors.ts"
+import { execPtyUnavailable, execSpawnFailed, execTooManyBackground } from "./errors.ts"
 
 export type RunEnding = "finished" | "backgrounded" | "killed"
+
+/**
+ * Every child left running past its deadline, so shutdown can reach it.
+ *
+ * Backgrounding is deliberate — a long build becomes something to check back on rather than work
+ * thrown away at 120 seconds — but "left running" was implemented as `unref()` and nothing else, so
+ * the child outlived not just the turn but the entire runtime, with its output going to a temp file
+ * nobody would ever open again.
+ *
+ * The cost was measured rather than imagined. One test backgrounded `while true; do :; done` and did
+ * not clean up; a day of test runs left **33 orphaned shells** at ~23% CPU each, a load average of
+ * **351**, and a `runtime.ready` that took **132 seconds** — the boot budget this project exists to
+ * defend, blown by the runtime's own litter, on a machine where nothing was obviously wrong.
+ *
+ * Module-level rather than per-provider because the spawn happens here and a registry the spawner
+ * cannot reach is a registry with a hole in it.
+ */
+const BACKGROUNDED = new Map<number, { command: string; since: number; outPath: string }>()
+
+/**
+ * How many may be running at once, per process.
+ *
+ * A cap rather than trust: a model in a retry loop can background a command per step, and the
+ * failure is invisible until the fans come on. Exceeding it is a loud refusal naming what is already
+ * running, which is far better than the thirty-third silent success.
+ */
+export const MAX_BACKGROUNDED = 8
+
+/** What is still running, newest first. For the refusal message and for `stop`. */
+export function backgroundedCommands(): readonly {
+    pid: number
+    command: string
+    since: number
+    outPath: string
+}[] {
+    return [...BACKGROUNDED.entries()]
+        .map(([pid, entry]) => ({ pid, ...entry }))
+        .sort((a, b) => b.since - a.since)
+}
+
+/**
+ * Kill every backgrounded child's process **group** and forget it. Returns what it reached.
+ *
+ * By group, not by pid: `sh -c "a | b | c"` killed by pid orphans two of the three. Called from the
+ * system provider's `stop`, which `Runtime.stop` calls — the seam that did not exist when the
+ * orphans accumulated.
+ */
+export function reapBackgrounded(): readonly string[] {
+    const reaped: string[] = []
+    for (const [pid, entry] of BACKGROUNDED) {
+        try {
+            process.kill(-pid, "SIGTERM")
+            reaped.push(`${pid} (${entry.command})`)
+        } catch {
+            // Already gone, which is the outcome being asked for. Still dropped from the map.
+        }
+    }
+    BACKGROUNDED.clear()
+    return reaped
+}
+
+/** Drop entries whose process has exited, so the cap counts what is actually running. */
+function forgetDead(): void {
+    for (const pid of [...BACKGROUNDED.keys()]) {
+        try {
+            // Signal 0 tests for existence without delivering anything.
+            process.kill(pid, 0)
+        } catch {
+            BACKGROUNDED.delete(pid)
+        }
+    }
+}
 
 export interface RunRequest {
     readonly command: string
@@ -189,6 +261,15 @@ export async function readStatus(path: string): Promise<{ code?: number; cwd?: s
 }
 
 export async function runCommand(request: RunRequest): Promise<RunResult> {
+    // Counted before spawning, and dead entries dropped first so the number is what is *running*
+    // rather than what was ever started. A model in a retry loop can background one per step, and
+    // that failure is invisible until the fans come on — thirty-three of them took one machine to a
+    // load average of 351.
+    forgetDead()
+    if (BACKGROUNDED.size >= MAX_BACKGROUNDED) {
+        throw execTooManyBackground(backgroundedCommands().map((entry) => entry.command))
+    }
+
     const wrapper = buildWrapper(request.command, request.statusPath)
     const { file, args, env } = commandLine(wrapper, request.pty)
 
@@ -233,6 +314,13 @@ export async function runCommand(request: RunRequest): Promise<RunResult> {
                 // told the path of — so a long build becomes something to check back on rather than
                 // something that was thrown away at 120 seconds.
                 child.unref()
+                if (child.pid !== undefined) {
+                    BACKGROUNDED.set(child.pid, {
+                        command: request.command,
+                        since: Date.now(),
+                        outPath: request.outPath,
+                    })
+                }
                 done({
                     ending: "backgrounded",
                     ...(child.pid === undefined ? {} : { pid: child.pid }),

@@ -9,6 +9,8 @@
 
 import { assembleContext, slotReport } from "../src/context/assemble.ts"
 import { SLOT, VOLATILE_HEADER } from "../src/context/blocks.ts"
+import { renderConfigSummary } from "../src/context/config-summary.ts"
+import { estimateTokens } from "../src/context/tokens.ts"
 import { describe, expect, test } from "./_harness.ts"
 
 function assemble() {
@@ -248,5 +250,107 @@ describe("the volatile tier is framed, not bare", () => {
             reserveOutput: 512,
         })
         expect(assembled.blocks.some((entry) => entry.label === "workspace-volatile")).toBe(false)
+    })
+})
+
+// ─── slot 2: the agent's own configuration ───────────────────────────────────────────────
+
+describe("the configuration block", () => {
+    const base = {
+        path: "/agents/milo/agent.yaml",
+        window: 65_536,
+        tools: ["now", "config_read", "config_set"],
+        providers: ["system", "web"],
+        channelsStarted: false,
+        serverListening: false,
+    }
+
+    function manifestFor(over: Record<string, unknown> = {}) {
+        return {
+            id: "milo",
+            name: "Milo",
+            model: { main: { id: "deepseek-v4-flash" } },
+            tools: {
+                dialect: "nlt",
+                policy: { mode: "allow", allow: ["exec"], deny: ["exec(rm *)"] },
+                untrusted: { onMutate: "refuse" },
+            },
+            channels: [],
+            server: { enabled: false, host: "127.0.0.1", port: 7420 },
+            ...over,
+        } as never
+    }
+
+    test("names the file, so the agent knows its settings are a file at all", () => {
+        // The failure: an agent asked to put itself on Telegram started writing a bridge. It had
+        // config_set pinned and no idea a `channels` setting existed.
+        const text = renderConfigSummary({ ...base, manifest: manifestFor() })
+        expect(text).toContain("/agents/milo/agent.yaml")
+        expect(text).toContain("configuration, not something to build")
+    })
+
+    test("an absent capability is a row saying none, never a missing row", () => {
+        // A missing row reads as "no such concept". A row saying `none` reads as a switch that is
+        // off — which is the difference between inventing a bridge and writing four lines of YAML.
+        const text = renderConfigSummary({ ...base, manifest: manifestFor() })
+        expect(text).toContain("channels")
+        expect(text).toContain("none — I am reached through the CLI and the HTTP API only")
+        expect(text).toContain("http api")
+    })
+
+    test("a configured channel is named with its id and type", () => {
+        const text = renderConfigSummary({
+            ...base,
+            channelsStarted: true,
+            serverListening: true,
+            manifest: manifestFor({
+                channels: [{ id: "tg", type: "telegram", enabled: true }],
+                server: { enabled: true, host: "127.0.0.1", port: 7420 },
+            }),
+        })
+        expect(text).toContain("tg (telegram)")
+        expect(text).toContain("connected in this session")
+        expect(text).toContain("on, 127.0.0.1:7420")
+    })
+
+    test("configured but not started says so — state, not configuration", () => {
+        // The failure: under `run`, slot 2 described the manifest, so the agent was told
+        // "channels: tg (telegram)", concluded the Telegram runtime had died, reported that nothing
+        // was listening on 7420 — from inside the running process — and offered a LaunchAgent.
+        const text = renderConfigSummary({
+            ...base,
+            channelsStarted: false,
+            serverListening: false,
+            manifest: manifestFor({
+                channels: [{ id: "tg", type: "telegram", enabled: true }],
+                server: { enabled: true, host: "127.0.0.1", port: 7420 },
+            }),
+        })
+        expect(text).toContain("NOT running in this session")
+        expect(text).toContain("`serve` starts channels")
+        expect(text).toContain("NOT listening in this session")
+    })
+
+    test("a disabled channel is not reported as reachable", () => {
+        const text = renderConfigSummary({
+            ...base,
+            manifest: manifestFor({ channels: [{ id: "tg", type: "telegram", enabled: false }] }),
+        })
+        expect(text).toContain("none — I am reached")
+    })
+
+    test("without config_set it says who to ask instead of how to change it", () => {
+        // Telling an agent to use a tool it does not have is this file's own failure, reversed.
+        const text = renderConfigSummary({ ...base, tools: ["now"], manifest: manifestFor() })
+        expect(text).toContain("no tool to change it")
+        expect(text.includes("I edit it with config_set")).toBe(false)
+    })
+
+    test("it stays small — this is paid on every turn of every session, forever", () => {
+        const text = renderConfigSummary({ ...base, manifest: manifestFor() })
+        // A guard against drift, not a precise budget: the whole manifest cost 2,766 tokens and
+        // was middle-cut on every read, and this is under a tenth of that. `estimateTokens` is
+        // biased about 10% high, so the real figure sits near 190.
+        expect(estimateTokens(text)).toBeLessThan(240)
     })
 })

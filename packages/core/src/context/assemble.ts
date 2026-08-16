@@ -38,6 +38,15 @@ export interface AssembleInput {
      */
     readonly examples?: string
     /**
+     * Slot 2: what this agent is — model, channels, server, providers, permissions.
+     *
+     * Injected rather than left to a tool call, because knowing your own configuration was
+     * otherwise a two-hop decision the model does not make. See `config-summary.ts` for the failure
+     * that produced it. Built once at agent load and byte-stable for the process's lifetime, which
+     * is what lets it sit ahead of the cache breakpoint.
+     */
+    readonly configSummary?: string
+    /**
      * Slot 5: activated knowledge entries, already selected and budgeted by the caller.
      *
      * **Not pinned.** Tier 3 is retrieved per turn, never carried, so compaction may drop it —
@@ -116,6 +125,9 @@ export function assembleContext(input: AssembleInput): AssembledContext {
         pinned.push(block(SLOT.identity, "system", input.identity, true, "identity"))
     }
     for (const toolBlock of input.toolBlocks ?? []) pinned.push(toolBlock)
+    if (input.configSummary !== undefined && input.configSummary.trim() !== "") {
+        pinned.push(block(SLOT.config, "system", input.configSummary, true, "configuration"))
+    }
     if (input.examples !== undefined && input.examples.trim() !== "") {
         pinned.push(block(SLOT.examples, "user", input.examples, true, "workspace-examples"))
     }
@@ -181,11 +193,12 @@ export function assembleContext(input: AssembleInput): AssembledContext {
         message,
     }))
 
-    // Slot order, not insertion order: 0–2 lead so the cached prefix is the same bytes every
-    // turn, 3 opens the uncached region, and the pinned tail follows the history it applies to.
+    // Slot order, not insertion order: 0–3 lead so the cached prefix is the same bytes every
+    // turn, 4 opens the uncached region, and the pinned tail follows the history it applies to.
     const blocks = [
         ...pinned.filter((b) => b.slot === SLOT.identity),
         ...pinned.filter((b) => b.slot === SLOT.tools),
+        ...pinned.filter((b) => b.slot === SLOT.config),
         ...pinned.filter((b) => b.slot === SLOT.examples),
         ...pinned.filter((b) => b.slot === SLOT.volatile),
         ...pinned.filter((b) => b.slot === SLOT.knowledge),

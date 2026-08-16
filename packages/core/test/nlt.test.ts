@@ -713,3 +713,32 @@ describe("a tool call in some other protocol's format", () => {
         expect(parseNlt("The port is 8080.").malformed).toBeUndefined()
     })
 })
+
+test("a multi-line shell value survives a colon in it", () => {
+    // Measured from a real session: `lsof -nP -iTCP:7420 -sTCP:LISTEN` on a continuation line was
+    // read as the field `lsof -nP -iTCP` with the value `7420 -sTCP:LISTEN`, because the field-name
+    // class admitted a space. The call was refused and the model spent a repair step rewriting a
+    // command that was already correct. A shell script is the normal value for `exec`, and colons
+    // are everywhere in one.
+    const parsed = parseNlt(
+        [
+            "ACTION: exec",
+            "command: ps aux | grep castellan",
+            'echo "--- ports ---"',
+            "lsof -nP -iTCP:7420 -sTCP:LISTEN",
+            "END",
+        ].join("\n"),
+    )
+    expect(parsed.intents.length).toBe(1)
+    const command = String(parsed.intents[0]?.args.command ?? "")
+    expect(command).toContain("lsof -nP -iTCP:7420 -sTCP:LISTEN")
+    // And no field was invented from the line.
+    expect(Object.keys(parsed.intents[0]?.args ?? {})).toEqual(["command"])
+})
+
+test("a well-formed second field is still a field", () => {
+    // The tightening must not swallow real arguments: a bare identifier before the colon still
+    // opens one, which is every argument name the catalogue actually uses.
+    const parsed = parseNlt(["ACTION: exec", "command: ls", "timeoutMs: 500", "END"].join("\n"))
+    expect(Object.keys(parsed.intents[0]?.args ?? {}).sort()).toEqual(["command", "timeoutMs"])
+})

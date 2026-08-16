@@ -52,6 +52,10 @@ export {
     type SlotNumber,
     VOLATILE_HEADER,
 } from "./context/blocks.ts"
+export {
+    type ConfigSummaryInput,
+    renderConfigSummary,
+} from "./context/config-summary.ts"
 export { estimateMessageTokens, estimateTokens } from "./context/tokens.ts"
 export {
     AbortedError,

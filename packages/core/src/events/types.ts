@@ -230,6 +230,15 @@ export interface EventDataMap {
         attempts: number
         idempotentSend: boolean
     }
+    /**
+     * A tool provider let go of something outside this process during shutdown.
+     *
+     * Emitted rather than logged because the thing being released is, by definition, something that
+     * would otherwise outlive the runtime unnoticed — which is exactly what happened: `exec`
+     * backgrounded commands that nothing ever reaped, and thirty-three of them took the machine to a
+     * load average of 351 and made `runtime.ready` take 132 seconds.
+     */
+    "runtime.released": { provider: string; released: string[] }
     "turn.end": {
         reason: TurnEndReason
         steps: number

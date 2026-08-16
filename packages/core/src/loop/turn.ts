@@ -91,6 +91,8 @@ export interface TurnInput {
     readonly input: string
     readonly history: readonly ChatMessage[]
     readonly identity: string
+    /** Slot 2: the agent's own configuration, rendered once at load. See `config-summary.ts`. */
+    readonly configSummary?: string
     /** Workspace example blocks as a user message, slot 2 — under `examplesIn: user`. */
     readonly examples?: string
     /** Workspace `volatile` tier, slot 3 — after the cache breakpoint. */
@@ -218,6 +220,9 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
             const assembled = assembleContext({
                 identity: input.identity,
                 ...(tools === undefined ? {} : { toolBlocks: tools.blocks }),
+                ...(input.configSummary === undefined
+                    ? {}
+                    : { configSummary: input.configSummary }),
                 ...(input.examples === undefined ? {} : { examples: input.examples }),
                 ...(input.volatile === undefined ? {} : { volatile: input.volatile }),
                 ...(input.knowledge === undefined || input.knowledge.length === 0

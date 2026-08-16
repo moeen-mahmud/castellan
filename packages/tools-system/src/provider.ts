@@ -40,6 +40,7 @@ import { execTool } from "./exec.ts"
 import { fileTools } from "./files.ts"
 import { SYSTEM_PROVIDER_ID } from "./paths.ts"
 import { resolveRoots } from "./root.ts"
+import { reapBackgrounded } from "./run.ts"
 import { searchTools } from "./search.ts"
 import { ShellSessions } from "./session.ts"
 
@@ -115,6 +116,21 @@ export class SystemProvider implements ToolProvider {
     resolve(slugs: readonly string[]): Promise<readonly Tool[]> {
         const wanted = new Set(slugs.map(normalise))
         return Promise.resolve(this.#tools.filter((tool) => wanted.has(normalise(tool.spec.slug))))
+    }
+
+    /**
+     * Kill anything `exec` left running in the background. Called once, from `Runtime.stop`.
+     *
+     * This provider is the reason `ToolProvider.stop` exists: it is the only one that owns an OS
+     * process. `exec` backgrounds a command that outruns its deadline rather than discarding its
+     * work — deliberate — and "left running" was `unref()` and nothing else, so the child outlived
+     * the whole runtime with its output going to a temp file nobody would open. A day of test runs
+     * left 33 orphaned shells, a load average of 351, and a 132-second `runtime.ready`.
+     *
+     * Killed by process *group*: `sh -c "a | b | c"` killed by pid orphans two of the three.
+     */
+    stop(): Promise<readonly string[]> {
+        return Promise.resolve(reapBackgrounded())
     }
 
     list(): Promise<readonly string[]> {

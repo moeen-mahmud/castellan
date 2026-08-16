@@ -219,18 +219,19 @@ and prompt caching is the largest available cost lever.
 ```
 slot  content                                    pinned  cache          phase
 ────  ─────────────────────────────────────────  ──────  ─────────────  ─────
- 0    system: workspace `static` tier              yes     ┐ breakpoint A
- 1    tool dialect preamble + tool catalogue       yes     ┘
- 2    user: examples, under `examplesIn: user`     yes     byte-stable
- 3    workspace `volatile` tier                    yes
- 4    active skill body (0 or 1)                   no      ─ breakpoint B  5
- 5    activated knowledge entries                  no
- 6    retrieved memory passages (k)                no                      6
- 7    rolling digest (compaction output)           no                      7
- 8    recent message window                        no
- 9    workspace `reminder` tier                    yes
-10    current input + current task line            yes
-11    last error, if any                           yes
+ 0    system: workspace `static` tier              yes     ┐
+ 1    tool dialect preamble + tool catalogue       yes     │ breakpoint A
+ 2    this agent's own configuration               yes     ┘                4
+ 3    user: examples, under `examplesIn: user`     yes     byte-stable
+ 4    workspace `volatile` tier                    yes
+ 5    active skill body (0 or 1)                   no      ─ breakpoint B  5
+ 6    activated knowledge entries                  no
+ 7    retrieved memory passages (k)                no                      6
+ 8    rolling digest (compaction output)           no                      7
+ 9    recent message window                        no
+10    workspace `reminder` tier                    yes
+11    current input + current task line            yes
+12    last error, if any                           yes
 ```
 
 **Slot number equals prompt position.** The two are kept equal so this table can be read in
@@ -238,11 +239,23 @@ order; inserting a slot means renumbering, which is cheap because every referenc
 is by name (`SLOT.input`, never `10`). Slots for the workspace tiers, and later for examples and
 knowledge, were inserted with no logic or test churn at all.
 
-Slot 2 sits *before* the volatile tier deliberately: extracted examples are byte-stable for the
+Slot 3 sits *before* the volatile tier deliberately: extracted examples are byte-stable for the
 lifetime of the agent, and OpenAI-compatible prefix caching is contiguous — behind the mutating
 volatile tier they would fall out of the cacheable region on every memory write despite never
-changing. Slot 5 is the one workspace-derived slot that is **not pinned**: knowledge is retrieved
+changing. Slot 6 is the one workspace-derived slot that is **not pinned**: knowledge is retrieved
 per turn and compaction may drop it, where it must never drop a tier.
+
+**Slot 2 is the agent's own configuration**, injected rather than left to `config_read`. Knowing how
+you are set up was otherwise a two-hop decision — realise you have a configuration, decide to read
+it, then act — which is the shape decision 4.7 refuses for tool discovery and which fails here for
+the same reason, only worse: a model that does not know a setting exists has no reason to go looking
+for it. Asked to put itself on Telegram, an agent with `config_set` pinned, `config_set` in
+`policy.allow`, and a commented-out `channels` block in its own manifest proposed a third-party
+integration and then began writing a Telegram bridge. It is a *summary* — model, channels, server,
+providers, permissions, roughly 200 tokens — and it names what is absent rather than omitting it,
+because a missing row reads as "no such concept" where `none` reads as a switch that is off. The
+full settable list with current values stays one `config_read` away: the fact is free, the detail is
+asked for. Byte-stable, because configuration is fixed until restart.
 
 Slot 0 is the workspace's `static` tier per `07-SPEC-WORKSPACE.md`. `SLOT.identity` is still its
 name in code, because that is what the slot *holds* — the tier name says where the text came from,

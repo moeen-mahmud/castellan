@@ -175,10 +175,13 @@ describe("the catalogue in context", () => {
     test("is a system message in slot 1, teaching the format", async () => {
         const { requests, runtime } = await run(["nothing to do"])
         const system = requests[0]?.messages.filter((message) => message.role === "system") ?? []
-        expect(system.length).toBe(2)
+        // Slot 0 identity, slot 1 catalogue, slot 2 configuration — asserted by content and in
+        // order, because the number alone says nothing about which one moved.
+        expect(system.length).toBe(3)
         expect(system[0]?.content).toContain("test fixture")
         expect(system[1]?.content).toContain("ACTION: weather_lookup")
         expect(system[1]?.content).toContain("### now")
+        expect(system[2]?.content).toContain("# Configuration")
         await runtime.stop()
     })
 
@@ -190,6 +193,9 @@ describe("the catalogue in context", () => {
         const second = requests[1]?.messages[1]?.content
         expect(first).toBe(second)
         expect(first).toContain("### memory_write")
+        // Slot 2 is in the cached prefix too, and its whole justification is that configuration is
+        // fixed until restart — content that varied here would cost the cache with no error.
+        expect(requests[0]?.messages[2]?.content).toBe(requests[1]?.messages[2]?.content)
         await runtime.stop()
     })
 
@@ -199,7 +205,13 @@ describe("the catalogue in context", () => {
             ["To use it you would write ACTION: now\nEND"],
             { toolsSection: "" },
         )
-        expect(requests[0]?.messages.filter((m) => m.role === "system").length).toBe(1)
+        // Identity and configuration, and no catalogue: slot 2 is not conditional on having tools,
+        // because an agent with none still has a model, a manifest, and no way to change either
+        // that it should be inventing.
+        const system = requests[0]?.messages.filter((m) => m.role === "system") ?? []
+        expect(system.length).toBe(2)
+        expect(system.some((m) => m.content.includes("ACTION:"))).toBe(false)
+        expect(system[1]?.content).toContain("# Configuration")
         expect(result.reason).toBe("final")
         expect(result.text).toContain("ACTION: now")
         expect(history.map((message) => message.role)).toEqual(["user", "assistant"])

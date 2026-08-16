@@ -110,6 +110,10 @@ export async function serveCommand(options: ServeOptions): Promise<number> {
     }
 
     const agents = runtime.list()
+    // The port is bound now, which `Runtime.create` could not know — it returns before `serve` runs.
+    // Told before the first turn, so slot 2 says "on" rather than "enabled but not listening".
+    for (const agent of agents) agent.reportRuntimeState({ serverListening: true })
+
     if (options.json === true) {
         process.stdout.write(
             `${JSON.stringify({

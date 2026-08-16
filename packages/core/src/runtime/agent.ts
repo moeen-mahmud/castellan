@@ -15,6 +15,7 @@
 import { statSync } from "node:fs"
 import { isAbsolute, resolve } from "node:path"
 import { assembleContext, slotReport } from "../context/assemble.ts"
+import { renderConfigSummary } from "../context/config-summary.ts"
 import { type ErrorDetail, envOverridden, toolGatedAfterFirstUse } from "../errors.ts"
 import type { EventBus } from "../events/bus.ts"
 import { newTurnId } from "../loop/ids.ts"
@@ -122,6 +123,22 @@ export class Agent {
 
     #bus: EventBus
     #toolRuntime: ToolRuntime | undefined
+    /**
+     * Slot 2, rendered **lazily and once**.
+     *
+     * Lazy because the block reports runtime *state* — whether channels are actually connected and
+     * the HTTP surface actually bound — and neither is known when the agent is constructed: channels
+     * start later in `Runtime.create`, and the server binds after it returns. Describing the manifest
+     * instead is what made an agent under `run` announce that the Telegram runtime had died, from
+     * inside the running process.
+     *
+     * Once because slot 2 is in the cache-stable prefix. Both setters run during startup, before any
+     * turn, and `reportRuntimeState` throws if that stops being true — a silently changed prefix has
+     * no symptom except the bill.
+     */
+    #configSummary: string | undefined
+    #channelsStarted = false
+    #serverListening = false
     /** Absolute path, or `(object)` for the programmatic path — which has no file to watch. */
     readonly #manifestPath: string
     /** `undefined` when there is no file. Compared after each turn, never polled. */
@@ -315,6 +332,7 @@ export class Agent {
             input,
             history,
             identity: this.identity,
+            configSummary: this.#configBlock(),
             // Read at load, like `static`. The tier's *position* is what Phase 3.5's first half
             // delivers — after the cache breakpoint, so that a write leaves slots 0 and 1
             // byte-identical. Re-reading it mid-session lands with the write path that changes it,
@@ -459,6 +477,7 @@ export class Agent {
         const assembled = assembleContext({
             identity: this.identity,
             ...(tools === undefined ? {} : { toolBlocks: tools.blocks }),
+            configSummary: this.#configBlock(),
             ...(this.workspace.examples === "" ? {} : { examples: this.workspace.examples }),
             ...(this.workspace.volatile === "" ? {} : { volatile: this.workspace.volatile }),
             ...(active.length === 0
@@ -482,6 +501,43 @@ export class Agent {
             window: this.window,
             reserveOutput: this.manifest.context.reserveOutput,
         }
+    }
+
+    /**
+     * Tell the agent what is actually running, before its first turn.
+     *
+     * Called by `Runtime.create` once channels have started, and by whatever binds the HTTP surface.
+     * Throws if slot 2 has already been rendered: after that point a change would alter the
+     * cache-stable prefix mid-session, which costs prompt caching and reports nothing.
+     */
+    reportRuntimeState(state: {
+        readonly channelsStarted?: boolean
+        readonly serverListening?: boolean
+    }): void {
+        if (this.#configSummary !== undefined) {
+            throw new Error(
+                `Runtime state for agent "${this.id}" was reported after its configuration block had already been rendered. ` +
+                    "hint: slot 2 is part of the cache-stable prefix, so it is frozen at first use. Report state during startup, before the first turn.",
+            )
+        }
+        if (state.channelsStarted !== undefined) this.#channelsStarted = state.channelsStarted
+        if (state.serverListening !== undefined) this.#serverListening = state.serverListening
+    }
+
+    /** Slot 2's text. Rendered on first use, then frozen — see `#configSummary`. */
+    #configBlock(): string {
+        if (this.#configSummary === undefined) {
+            this.#configSummary = renderConfigSummary({
+                manifest: this.manifest,
+                path: this.#manifestPath,
+                window: this.window,
+                tools: this.tools.specs().map((spec) => spec.slug),
+                providers: resolveProviders(this.manifest.tools).selections.map((s) => s.id),
+                channelsStarted: this.#channelsStarted,
+                serverListening: this.#serverListening,
+            })
+        }
+        return this.#configSummary
     }
 
     describe(): AgentDescription {

@@ -111,6 +111,15 @@ export class Runtime {
     /** Channel bindings and the delivery queue. Empty when no agent configures a channel. */
     readonly channels: ChannelHub
 
+    /**
+     * Every tool provider constructed, flattened. Held so `stop` can tell each one to let go.
+     *
+     * A provider can own an OS process — `exec` backgrounds a long command rather than discarding
+     * it — and before this there was nothing to tell it the runtime was leaving. See
+     * `ToolProvider.stop`.
+     */
+    #providers: readonly ToolProvider[] = []
+
     #agents = new Map<string, Agent>()
     #stopped = false
     /** False when the caller passed an already-open store, which stays theirs to close. */
@@ -249,6 +258,8 @@ export class Runtime {
             ownsStore,
         })
 
+        runtime.#providers = [...providersByAgent.values()].flat()
+
         mark("channels", () => {
             for (const [index, entry] of loaded.entries()) {
                 const agent = agents[index]
@@ -306,6 +317,14 @@ export class Runtime {
         // network for a long-poll and one `setWebhook` call for a webhook; a transport that cannot
         // start reports through the bus and leaves the rest of the runtime serving.
         if (options.startChannels === true) await hub.start()
+
+        // Slot 2 reports state, not configuration, so the agents are told what actually happened —
+        // before any turn, which is what keeps the block byte-stable. Without this an agent under
+        // `run` was told "channels: tg (telegram)" and concluded the Telegram runtime had died,
+        // while running inside the very process that would have been polling.
+        for (const agent of agents) {
+            agent.reportRuntimeState({ channelsStarted: hub.statusOf(agent.id).length > 0 })
+        }
 
         // The first legal network call of the process, and deliberately not awaited. Awaiting it here
         // would put a remote round trip back inside `Runtime.create` — the boot cost this project
@@ -388,6 +407,31 @@ export class Runtime {
         // Before the store closes, because stopping a transport can flush a final delivery and a
         // closed database would turn that into an exception during shutdown.
         await this.channels.stop()
+
+        // Providers let go of anything outside the process — for `system`, the child processes
+        // `exec` backgrounded rather than killed. Reported rather than silent: an orphan nobody
+        // mentions is one nobody looks for, and thirty-three of them took a machine to a load
+        // average of 351. One failing provider must not stop the others from cleaning up.
+        for (const provider of this.#providers) {
+            if (provider.stop === undefined) continue
+            try {
+                const released = await provider.stop()
+                if (released.length > 0) {
+                    this.bus.emit("runtime.released", {
+                        provider: provider.id,
+                        released: [...released],
+                    })
+                }
+            } catch (error) {
+                this.bus.emit("agent.warning", {
+                    code: "provider_stop_failed",
+                    message: `Provider "${provider.id}" failed to release its resources: ${
+                        error instanceof Error ? error.message : String(error)
+                    }`,
+                    hint: "Anything it owns outside this process may still be running. For the system provider that means a backgrounded command — check with `ps` if the machine seems busy after exit.",
+                })
+            }
+        }
 
         // Schedules arrive in Phase 8. A caller-supplied store is not closed here: it was open
         // before this runtime existed and may outlive it.

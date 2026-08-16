@@ -155,7 +155,8 @@ GET /v1/agents/:id/context   → the assembled context for the next turn, with t
 guessing at it is how days get lost.
 
 Slot numbers in the `slots` array are the ones in `01-ARCHITECTURE.md`, where slot number equals
-prompt position. They are **positional, not stable identifiers** — inserting a slot renumbers the
+prompt position. Slot 2 is the agent's own configuration, injected so that knowing it is not a
+decision the model has to make. They are **positional, not stable identifiers** — inserting a slot renumbers the
 ones after it, as slots 2 and 7 did when the workspace tiers were specified. Read a slot's meaning
 from its `label`, never from its number. This is not covered by the append-only rule below, which
 governs event *types*.

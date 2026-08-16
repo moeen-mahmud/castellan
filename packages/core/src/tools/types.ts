@@ -231,6 +231,21 @@ export interface ToolProvider {
      * sentence and the registry decides whether anyone needs to hear it.
      */
     explainUnresolved?(slugs: readonly string[]): ConfigError | undefined
+    /**
+     * Release anything this provider owns outside the process. Called once, from `Runtime.stop`.
+     *
+     * Added because a provider can own an **OS process**, and one that does had no way to be told
+     * the runtime was going away. `exec` backgrounds a command that outruns its deadline rather than
+     * discarding its work — deliberate — and then nothing ever reaped it. Thirty-three orphaned
+     * shells accumulated on the author's machine over one day, each spinning a busy loop, and the
+     * measured effect was a load average of 351 and a `runtime.ready` that took 132 seconds. The
+     * boot budget this project exists to defend was being blown by the runtime's own litter.
+     *
+     * Returns what it released, rather than logging it, for the same reason `TurnStore.reapRunning`
+     * does: the caller decides whether anyone needs to hear about it, and a cleanup nobody can see
+     * is indistinguishable from one that did not happen.
+     */
+    stop?(): Promise<readonly string[]>
 }
 
 export interface ToolProviderRefresh {

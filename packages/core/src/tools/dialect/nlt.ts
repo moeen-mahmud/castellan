@@ -39,7 +39,22 @@ const HEREDOC_CLOSE = ">>>"
 // shapes deepseek-v4-pro produced. See ATTEMPTED_CALL below for the other two and for why tolerance
 // alone cannot be the whole answer.
 const ACTION_LINE = /^\s*(?:[-*+]\s+|\d+[.)]\s+)?<?\s*action\s*:\s*(.+?)\s*>?\s*$/i
-const KEY_LINE = /^\s*(?:[-*+]\s+|\d+[.)]\s+)?([A-Za-z_][\w .-]*?)\s*:\s*(.*)$/
+/**
+ * A field name has **no spaces**, and that one character class is load-bearing.
+ *
+ * It used to be `[\w .-]`, which admits a space — so any continuation line of a multi-line value
+ * containing a colon was eaten as a new field. Measured, from a real session: an agent debugging a
+ * port ran a multi-line shell script, and `lsof -nP -iTCP:7420 -sTCP:LISTEN` was read as the field
+ * `lsof -nP -iTCP` with the value `7420 -sTCP:LISTEN`. The call was refused, the model was asked to
+ * repair, and it spent a step rewriting a command that was correct.
+ *
+ * A shell script is the *normal* value for `exec`, and colons are everywhere in one — `lsof -i`,
+ * `sed 's/a:b/c/'`, a URL, a timestamp. Tolerating a space in a key bought nothing measurable and
+ * cost that. With it gone, such a line is simply value text, which is the safe direction: the worst
+ * case is a stray line inside a value the tool then rejects with its own message, rather than a
+ * silently truncated argument.
+ */
+const KEY_LINE = /^\s*(?:[-*+]\s+|\d+[.)]\s+)?([A-Za-z_][\w.-]*?)\s*:\s*(.*)$/
 const FENCE_LINE = /^\s*`{3,}\s*[\w+-]*\s*$/
 const END_LINE = /^\s*end\s*$/i
 
