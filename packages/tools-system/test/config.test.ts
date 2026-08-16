@@ -405,3 +405,95 @@ test("a floored path is refused with its reason, not as an unknown setting", asy
     ).catch((error: unknown) => error)
     expect(String(failure)).toContain("not yours to do")
 })
+
+// ─── channels and the server: what the agent may set up for itself ───────────────────────
+
+test("the agent can put itself on Telegram, and the YAML is a real sequence of maps", async () => {
+    // An array of objects is the third shape this renderer met. The first two — a scalar and a map
+    // — each shipped writing the literal text `[object Object]` before being handled, and the
+    // schema then rejected the result with a message pointing nowhere near the cause.
+    const { set, file } = fixture()
+    await set(
+        {
+            path: "channels",
+            value: '[{"type":"telegram","id":"tg","tokenEnv":"TELEGRAM_BOT_TOKEN","mode":"longpoll"}]',
+        },
+        toolContext({}),
+    )
+    const written = readFileSync(file, "utf8")
+    expect(written).toContain("channels:\n  - type: telegram\n    id: tg\n")
+    expect(written).not.toContain("[object Object]")
+})
+
+test("writing a channel names the variable only a person can fill in", async () => {
+    // Otherwise the flow has a trap: the agent reports success, asks for a restart, and the restart
+    // fails to load because the factory reads that variable at boot. `.env` is a protected path, so
+    // the agent cannot fix it either.
+    const { set } = fixture()
+    const observation = String(
+        await set(
+            { path: "channels", value: '[{"type":"telegram","id":"tg","tokenEnv":"TG_TOKEN"}]' },
+            toolContext({}),
+        ),
+    )
+    expect(observation).toContain("TG_TOKEN")
+    expect(observation).toContain("will NOT start")
+})
+
+test("a change that cannot introduce a secret carries no note about one", async () => {
+    const { set } = fixture()
+    const observation = String(await set({ path: "limits.maxSteps", value: "8" }, toolContext({})))
+    expect(observation).not.toContain("will NOT start")
+})
+
+test("allowFrom is refused — the inbound gate is not the agent's to widen", async () => {
+    // The escalation this closes is direct: an agent that could widen its own allowlist could be
+    // talked into widening it by the very message it is reading.
+    const { set } = fixture()
+    await expect(
+        set({ path: "channels[0].allowFrom", value: '["@attacker"]' }, toolContext({})),
+    ).rejects.toThrow(/not yours to decide/)
+})
+
+test("allowFrom hidden inside a channels write is refused too", async () => {
+    // Same two shapes as writeRoots: the path itself, and the key riding along in a value.
+    const { set } = fixture()
+    await expect(
+        set(
+            {
+                path: "channels",
+                value: '[{"type":"telegram","id":"tg","allowFrom":["@attacker"]}]',
+            },
+            toolContext({}),
+        ),
+    ).rejects.toThrow(/not yours to decide/)
+})
+
+test("the agent may enable the API on loopback but not move it", async () => {
+    const { set, file } = fixture()
+    await set({ path: "server.enabled", value: "true" }, toolContext({}))
+    await set({ path: "server.port", value: "7500" }, toolContext({}))
+    expect(readFileSync(file, "utf8")).toContain("enabled: true")
+
+    // Where it listens and what authenticates it stay the person's — the same rule as writeRoots.
+    await expect(set({ path: "server.host", value: "0.0.0.0" }, toolContext({}))).rejects.toThrow(
+        /not yours to decide/,
+    )
+    await expect(set({ path: "server.tokenEnv", value: "NOPE" }, toolContext({}))).rejects.toThrow(
+        /not yours to decide/,
+    )
+})
+
+test("config_read lists the new settings and renders a channel list readably", async () => {
+    const { set, read } = fixture()
+    await set(
+        { path: "channels", value: '[{"type":"telegram","id":"tg","tokenEnv":"TG_TOKEN"}]' },
+        toolContext({}),
+    )
+    const summary = String(await read({}, toolContext({})))
+    expect(summary).toContain("channels =")
+    expect(summary).toContain("server.enabled")
+    // Not `[object Object]`, which is what String() on an entry produces.
+    expect(summary).toContain("telegram")
+    expect(summary).not.toContain("[object Object]")
+})

@@ -101,13 +101,30 @@ const SETTABLE: readonly { readonly path: string; readonly means: string }[] = [
         path: "context.observationMaxTokens",
         means: "how much of a tool's output reaches the model",
     },
+    {
+        path: "channels",
+        means: "how people reach this agent, as a list — [{type: telegram, id: tg, tokenEnv: TELEGRAM_BOT_TOKEN, mode: longpoll}]. The token itself goes in the .env, which only a person can write. allowFrom is refused here: who may talk to you is not yours to decide",
+    },
+    {
+        path: "delivery",
+        means: "where a reply goes when a turn has no origin — {default: tg}. Names a channel id, not a channel type",
+    },
+    {
+        path: "server.enabled",
+        means: "true | false — serve the HTTP API on 127.0.0.1. host and tokenEnv are refused: binding anywhere reachable is not yours to decide",
+    },
+    { path: "server.port", means: "port for the HTTP API" },
 ]
 
 /**
  * Edits refused whatever the policy says.
  *
- * Three entries, all in the direction of "stop checking". Every other field above, including the ones
- * that grant new powers, is settable — granting is what a person asks for; disabling a check is not.
+ * All in the direction of "stop checking", or of widening reach. Every other field above, including
+ * the ones that grant new powers, is settable — granting a capability is what a person asks for;
+ * disabling a check is not, and neither is deciding who may reach the agent or from where. That
+ * second category is `writeRoots`' rule generalised: enabling a tool answers *what may I do*, and a
+ * write root, an allowlist and a bind address all answer *who and where* — the person's by
+ * definition.
  *
  * **Checked before the settable list, not after.** A floored path is deliberately absent from that
  * list, so a settable-first order would refuse it as "not a setting" and the reason a person actually
@@ -119,6 +136,10 @@ const SETTABLE: readonly { readonly path: string; readonly means: string }[] = [
  */
 function floorRefusal(path: string, value?: unknown): string | undefined {
     const key = path.toLowerCase()
+    const ALLOW_FROM =
+        "who is allowed to talk to you is not yours to decide. It is the inbound gate, so an agent that could widen it could be talked into widening it by the very message it is reading — put the handle in agent.yaml yourself; a refused message prints the exact line"
+    const SERVER_REACH =
+        "where the API listens, and what authenticates it, is not yours to decide — the same reason writeRoots is refused. Enabling it on 127.0.0.1 is settable; binding anywhere reachable is a person's call"
     const WRITE_ROOTS =
         "widening where you may write is not yours to do. Asked to create a file, an agent granted itself the whole home directory and then wrote there — which is what this refusal exists to prevent"
 
@@ -130,6 +151,17 @@ function floorRefusal(path: string, value?: unknown): string | undefined {
     // And not through the parent, either: `tools.providers` is settable so the agent can turn on the
     // web provider when asked, which means the *value* is a place a writeRoots list could hide.
     if (key.startsWith("tools.providers") && containsKey(value, "writeroots")) return WRITE_ROOTS
+    // Same two shapes as `writeRoots`: the path itself, and the key hidden inside a value. `channels`
+    // is settable so the agent can set up a bot when asked, which makes its value a place an
+    // allowFrom could ride along in.
+    if (key.split(".").includes("allowfrom")) return ALLOW_FROM
+    if (key === "channels" && containsKey(value, "allowfrom")) return ALLOW_FROM
+    // `server` is not settable as a whole — only `enabled` and `port` — but the floor names the two
+    // fields rather than relying on that, so moving one into a settable parent later cannot open it.
+    if (key === "server.host" || key === "server.tokenenv") return SERVER_REACH
+    if (key === "server" && (containsKey(value, "host") || containsKey(value, "tokenenv"))) {
+        return SERVER_REACH
+    }
     if (key === "tools.policy.deny") {
         return "removing or replacing the deny rules is the one edit whose only purpose is to remove a restriction someone deliberately set"
     }
@@ -270,7 +302,14 @@ export function configReadHandler(options: ConfigOptions): ToolHandler {
                 value === undefined || value === null
                     ? "(not set)"
                     : Array.isArray(value)
-                      ? `[${value.map((entry) => String(entry)).join(", ")}]`
+                      ? // `String(entry)` on an object writes `[object Object]` — the same defect
+                        // this file's YAML writer had for a map value and then again for a sequence
+                        // of maps. `channels` is a list of objects, so it landed here third.
+                        //
+                        // JSON for those, not flattened YAML: collapsing a block's newlines produced
+                        // `[type: telegram id: tg tokenEnv: …]`, which reads as one run-on string
+                        // rather than as fields. JSON is what the model writes back anyway.
+                        `[${value.map((entry) => (typeof entry === "object" && entry !== null ? JSON.stringify(entry) : String(entry))).join(", ")}]`
                       : stringify(value).trim()
             return `- ${entry.path} = ${shown}\n    ${entry.means}`
         }).join("\n")
@@ -283,7 +322,7 @@ export function configReadHandler(options: ConfigOptions): ToolHandler {
             "",
             "Anything not on this list is not settable from a conversation. A change takes effect when the agent next starts, not in the current conversation.",
             "",
-            "Three edits are refused whatever the rules say, because each one only ever removes a check: a writeRoots list anywhere, replacing tools.policy.deny, and setting tools.untrusted.onMutate to allow. Where you may write is the person's decision and not yours — if you need somewhere outside your workspace, say which directory and why, and let them add it.",
+            "Some edits are refused whatever the rules say. Removing a check: replacing tools.policy.deny, or setting tools.untrusted.onMutate to allow. Deciding reach: a writeRoots list anywhere, a channel's allowFrom, and server.host or server.tokenEnv. Enabling a capability is what a person asks you for; where you may write, who may talk to you, and what address you listen on are theirs — name what you need and why, and let them add it.",
             "",
             `The whole file, comments and all, is at ${file} — read it with file_read if that tool is enabled, or ask the person to open it.`,
         ].join("\n")
@@ -378,8 +417,39 @@ export function configSetHandler(options: ConfigOptions): ToolHandler {
             `It is now: ${stringify(value).trim()}`,
             "",
             "The configuration still validates. This takes effect when the agent next starts — nothing in the current conversation changes, so do not try the new tool yet.",
+            ...pendingSecrets(parsed.data, value),
         ].join("\n")
     }
+}
+
+/**
+ * The env variables a change has just made load-bearing, and that only a person can supply.
+ *
+ * Without this the flow has a trap in it: an agent asked to set up Telegram writes a channel naming
+ * `TELEGRAM_BOT_TOKEN`, reports success, asks for a restart — and the restart *fails to load*,
+ * because the factory reads that variable at boot. The agent cannot fix it either: `.env` is a
+ * protected path, deliberately, since it holds every secret the agent has.
+ *
+ * So the write is allowed and the debt is named in the same breath. Allowed rather than refused
+ * because the alternative is a chicken and egg — a person is not going to put a token in a `.env`
+ * for a channel nobody has declared yet.
+ */
+function pendingSecrets(manifest: { channels?: readonly unknown[] }, written: unknown): string[] {
+    // Only for a write that could have introduced one. A note about bot tokens on every
+    // `limits.maxSteps` change is a note nobody reads.
+    if (!containsKey(written, "tokenenv") && !containsKey(written, "apikeyenv")) return []
+
+    const names = new Set<string>()
+    for (const channel of manifest.channels ?? []) {
+        const env = (channel as { tokenEnv?: unknown }).tokenEnv
+        if (typeof env === "string" && env !== "") names.add(env)
+    }
+    if (names.size === 0) return []
+
+    return [
+        "",
+        `This will NOT start until ${[...names].join(" and ")} ${names.size === 1 ? "is" : "are"} set in the .env beside the manifest — the value is read at boot, and a missing one fails the load rather than the first message. You cannot write that file; it is protected because it holds every secret here. Tell the person the variable name and where it goes.`,
+    ]
 }
 
 export function configTools(options: ConfigOptions): readonly Tool[] {

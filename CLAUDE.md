@@ -653,6 +653,22 @@ Never claim a performance property without a number in `evals/` and a script to 
   is invisible to it. `composio_connect` carries `policyArg: "toolkit"` so `deny
   composio_connect(slack)` is expressible. The live session exposes six meta tools, not the four the
   docs list — the extra two are a remote bash and a schema fetcher.
+- **Enabling a capability is the agent's; who and where are the person's.** `config_set` may write
+  `channels`, `delivery`, `server.enabled` and `server.port` — skipping a question in `init` must
+  not be a dead end. It may never write `allowFrom`, `server.host`, `server.tokenEnv` or a
+  `writeRoots` anywhere. `allowFrom` is the sharpest: it is the inbound gate, so an agent that could
+  widen it could be talked into widening it by the message it is reading — and `config_set` is in
+  `policy.allow` on a real manifest, so the write gate would not stop that. Floored by path *and* by
+  the key hidden inside a value, both shapes.
+- **A settable path with a new value *shape* silently writes `[object Object]`.** It happened for a
+  map when `tools.providers` became settable, and again for a sequence of maps when `channels` did —
+  and a third time in `config_read`'s summary, which stringifies list entries separately. The schema
+  then rejects the result with a message pointing nowhere near the cause. Check the renderer whenever
+  a new path's value is not a scalar.
+- **`.env` is a protected path, so the agent cannot supply its own secrets — and must say so.** A
+  `config_set` that names a new `tokenEnv` reports that the agent will not start until the variable
+  is filled in. Without that the agent writes a channel, reports success, asks for a restart, and
+  the restart fails to load.
 - **A commented block's heading must not end in a colon.** `# Phase 4 — channels, delivery, and the
   HTTP server:` became a YAML key the moment someone uncommented the block, and the load failed
   complaining about a heading. The generated manifest's whole premise is that uncommenting works.

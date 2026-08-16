@@ -173,11 +173,6 @@ export const COMMANDS: readonly CommandSpec[] = [
                 help: "hide the thinking a reasoning model streams (shown by default)",
             },
             {
-                name: "no-reasoning",
-                kind: "boolean",
-                help: "hide the thinking a reasoning model streams (shown by default)",
-            },
-            {
                 // Kept so existing scripts keep working. Reasoning is on by default now, so this
                 // asks for what already happens — harmless, and cheaper than breaking a flag people
                 // have in their shell history.

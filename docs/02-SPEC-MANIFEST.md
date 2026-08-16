@@ -551,6 +551,13 @@ WhatsApp: `authDir`, `printQr`.
 
 Channel connection failures never block readiness; they surface as `agent.channel.error`.
 
+`channels` and `delivery` are writable by the agent through `config_set`, so skipping the question in
+`init` is not a dead end. **`allowFrom` is not**, and neither are `server.host` and `server.tokenEnv`:
+enabling a capability is what a person asks an agent for, but who may reach it and from where are the
+person's by definition — the same rule that floors `writeRoots`. A `config_set` that names a new
+`tokenEnv` reports that the agent will not start until that variable is set in the `.env`, which only
+a person can write.
+
 ### `delivery`
 
 ```yaml

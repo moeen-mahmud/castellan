@@ -110,7 +110,10 @@ function renderBlock(key: string, value: unknown, indent: number): string[] {
     const pad = " ".repeat(indent)
     if (Array.isArray(value)) {
         if (value.length === 0) return [`${pad}${key}: []`]
-        return [`${pad}${key}:`, ...value.map((entry) => `${pad}  - ${renderScalar(entry)}`)]
+        return [
+            `${pad}${key}:`,
+            ...value.flatMap((entry) => renderSequenceEntry(entry, indent + 2)),
+        ]
     }
     // Maps became settable with `tools.providers`, and until they were handled here every value fell
     // through to `String(value)` and wrote the literal text `[object Object]` — which the schema then
@@ -124,6 +127,30 @@ function renderBlock(key: string, value: unknown, indent: number): string[] {
         ]
     }
     return [`${pad}${key}: ${renderScalar(value)}`]
+}
+
+/**
+ * One entry of a sequence, which may be a scalar or a map.
+ *
+ * The map case is the third appearance of one bug: an entry that is not a scalar used to go through
+ * `renderScalar` and write the literal text `[object Object]`. It was fixed for a *value* when
+ * `tools.providers` became settable and had to be fixed again here when `channels` did — an array of
+ * maps is neither of the two shapes that were handled. The lesson is the general one: whenever a new
+ * settable path has a shape this renderer has not seen, the failure is silent YAML that the schema
+ * then rejects with a message pointing nowhere near the cause.
+ */
+function renderSequenceEntry(entry: unknown, indent: number): string[] {
+    const pad = " ".repeat(indent)
+    if (!isPlainObject(entry)) return [`${pad}- ${renderScalar(entry)}`]
+
+    const entries = Object.entries(entry)
+    if (entries.length === 0) return [`${pad}- {}`]
+
+    // Children are rendered at this indent, then the first line's padding is replaced by the dash —
+    // which is what puts every key of the entry in the same column, including a nested block's.
+    const rendered = entries.flatMap(([key, nested]) => renderBlock(key, nested, indent + 2))
+    const [first, ...rest] = rendered
+    return [`${pad}- ${(first ?? "").trimStart()}`, ...rest]
 }
 
 /**
