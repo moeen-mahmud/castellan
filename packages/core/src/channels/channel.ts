@@ -162,6 +162,38 @@ export interface ChannelTransport {
     start(host: ChannelHost): Promise<void>
     stop(): Promise<void>
     send(message: OutboundMessage, signal?: AbortSignal): Promise<SendResult>
+    /**
+     * Show a "typing" indicator, if the provider has one. Optional, and never awaited by the caller.
+     *
+     * Fire-and-forget because it is cosmetic and the turn must not wait on it — nor fail with it.
+     * Telegram's indicator expires after about five seconds, so the hub re-sends it on a timer while
+     * a turn runs; a provider without one simply does not implement this.
+     */
+    typing?(recipient: string, thread?: string): Promise<void>
+    /**
+     * Handle one webhook delivery. Present only on transports with a webhook mode.
+     *
+     * **Verifying the request is the transport's job**, because only it knows what the provider
+     * signs and how. Core does what is common to all of them and nothing more: it caps the body
+     * size and routes by channel id, so a plugin never has to defend against a 500 MB POST. A
+     * transport that cannot verify a delivery returns 401 and receives nothing — the messages
+     * inside an unverified body are exactly the ones an attacker chose.
+     */
+    webhook?(delivery: WebhookDelivery): Promise<WebhookOutcome>
+}
+
+export interface WebhookDelivery {
+    /** Parsed JSON, or the raw string when the body was not JSON. */
+    readonly body: unknown
+    /** Lowercased header names. Providers disagree about case and none of them should have to care. */
+    readonly headers: Readonly<Record<string, string>>
+}
+
+export interface WebhookOutcome {
+    /** What to answer the provider. 200 for accepted; 401 for a delivery that failed verification. */
+    readonly status: number
+    /** Optional plain-text body. Telegram ignores it; a human debugging with `curl` does not. */
+    readonly detail?: string
 }
 
 /**

@@ -52,6 +52,8 @@ describe("the happy path", () => {
         state = commit(state) // system: select step, default "no system access"
         state = commit(state) // web: select step, default "no internet"
         state = commit(state) // composio: select step, default "no other apps"
+        state = commit(state) // telegram: select step, default "not on Telegram"
+        state = commit(state) // server: select step, default "no HTTP API"
         state = commit(state) // dir: derived from name
         expect(state.phase).toBe("confirm")
 
@@ -80,6 +82,8 @@ describe("the happy path", () => {
         state = commit(state) // system default
         state = commit(state) // web default
         state = commit(state) // composio default
+        state = commit(state) // telegram default
+        state = commit(state) // server default
         state = commit(state) // dir — apiKeyEnv was skipped
         expect(state.phase).toBe("confirm")
         expect(partialOf(state).apiKeyEnv).toBe(undefined)
@@ -132,6 +136,8 @@ describe("back navigation", () => {
         state = commit(state) // system
         state = commit(state) // web
         state = commit(state) // composio
+        state = commit(state) // telegram
+        state = commit(state) // server
         state = commit(state) // dir
         expect(state.phase).toBe("confirm")
         state = reduceWizard(state, {
@@ -165,6 +171,8 @@ describe("flags answering everything", () => {
         system: "none",
         web: "none",
         composio: "none",
+        telegram: "none",
+        server: "none",
         dir: "./milo",
     }
 

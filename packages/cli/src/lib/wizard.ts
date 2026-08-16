@@ -273,6 +273,11 @@ export function answeredRows(
         webKey: "Search key",
         system: "System access",
         composio: "Other apps",
+        telegram: "Telegram",
+        telegramAllow: "Telegram handle",
+        telegramToken: "Bot token",
+        server: "HTTP API",
+        serverToken: "API token",
         composioKey: "Composio key",
         dir: "Directory",
     }

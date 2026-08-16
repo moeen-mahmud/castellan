@@ -52,6 +52,12 @@ POST /v1/agents/:id/reload
 It does **not** restart channels unless their config changed, and it never drops in-flight
 turns. Returns a diff of what changed.
 
+**This build answers `501 reload_not_supported`.** An agent's catalogue resolves once and slot 1
+renders once, so a session's cached prompt prefix depends on the configuration staying fixed for the
+lifetime of the process — which is also why the CLI has `/restart`. A partial reload that silently
+did not apply would be worse than a refusal, so the endpoint stays specified and declines, naming
+the reason. Decision 11.20.
+
 ### Turns
 
 ```
@@ -296,6 +302,13 @@ GET /v1/ws?agentId=&token=
 
 Client frames: `{ type: "message" | "stop" | "subscribe" | "ping" }`.
 Server frames: the same event objects as SSE.
+
+**Served under Bun only.** Bun has an upgrade path in `Bun.serve`; Node has none without a
+dependency, and adding one for an endpoint this section itself calls secondary is the wrong trade.
+Under Node the route answers `501 websocket_unavailable` naming the reason — better than a
+connection failure a client reads as a network problem. Authentication is `?token=` because a
+browser's `WebSocket` constructor cannot set headers; the token therefore reaches proxy access logs,
+which is stated rather than hidden. Decision 11.21.
 
 Everything achievable over HTTP + SSE stays there. WS exists for interactive clients, not
 as the primary API. VelaOps' web chat is the intended consumer.

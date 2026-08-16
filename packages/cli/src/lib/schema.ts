@@ -157,6 +157,12 @@ export interface InitOptions {
     readonly webBackend?: string
     /** `none` or `connected` — whether the agent reaches other apps through Composio. */
     readonly composio?: string
+    /** `none` or `connected` — whether people can message it on Telegram. */
+    readonly telegram?: string
+    /** One Telegram handle, or empty for an allowlist that permits nobody. */
+    readonly telegramAllow?: string
+    /** `none` or `local` — whether to serve the HTTP API on loopback. */
+    readonly server?: string
     /** Take every default; never ask, even at a terminal. */
     readonly yes?: boolean
     readonly plain?: boolean

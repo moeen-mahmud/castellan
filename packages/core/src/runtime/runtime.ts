@@ -14,7 +14,8 @@
 import { mkdirSync } from "node:fs"
 import { dirname, isAbsolute, resolve } from "node:path"
 import { BRAND } from "../brand.ts"
-import { HarnessError, toolProviderUnknown } from "../errors.ts"
+import type { ChannelBinding } from "../channels/channel.ts"
+import { channelTypeUnknown, HarnessError, toolProviderUnknown } from "../errors.ts"
 import { EventBus } from "../events/bus.ts"
 import type { EnvSource } from "../manifest/env.ts"
 import { type LoadedManifest, loadManifest, loadManifestFromObject } from "../manifest/load.ts"
@@ -26,6 +27,7 @@ import type { Store } from "../store/store.ts"
 import { ToolRegistry } from "../tools/registry.ts"
 import type { ToolProvider, ToolProviderFactory } from "../tools/types.ts"
 import { Agent } from "./agent.ts"
+import { type ChannelFactory, ChannelHub } from "./channels.ts"
 
 export type AgentSource = string | Record<string, unknown>
 
@@ -67,6 +69,23 @@ export interface RuntimeOptions {
      * nothing and blaming the slugs.
      */
     readonly toolProviders?: Readonly<Record<string, ToolProviderFactory>>
+    /**
+     * Channel transport factories, by the `type` a manifest's `channels[]` entry names.
+     *
+     * Same shape and same reasoning as `toolProviders`: core may not import `channel-telegram`, and
+     * a transport needs the agent's directory and resolved environment. A manifest naming an
+     * unregistered type fails at load, beside the entry that named it, rather than looking like a
+     * channel that simply never receives anything.
+     */
+    readonly channels?: Readonly<Record<string, ChannelFactory>>
+    /**
+     * Start channels as part of `create`, after `runtime.ready` has fired.
+     *
+     * Off by default: constructing a `Runtime` in a test or a one-shot CLI command must not open a
+     * long-poll to Telegram. `serve` passes true; `run` does not. Either way nothing connects
+     * before readiness — the flag decides whether it happens at all, never whether it happens early.
+     */
+    readonly startChannels?: boolean
 }
 
 export interface BootReport {
@@ -89,6 +108,8 @@ export class Runtime {
     readonly store: Store
     /** Per-turn event buffers, for reattaching a client to a turn already in flight. */
     readonly streams: TurnStreams
+    /** Channel bindings and the delivery queue. Empty when no agent configures a channel. */
+    readonly channels: ChannelHub
 
     #agents = new Map<string, Agent>()
     #stopped = false
@@ -101,6 +122,7 @@ export class Runtime {
         boot: BootReport
         store: Store
         streams: TurnStreams
+        channels: ChannelHub
         ownsStore: boolean
     }) {
         this.runtimeId = init.runtimeId
@@ -108,6 +130,7 @@ export class Runtime {
         this.boot = init.boot
         this.store = init.store
         this.streams = init.streams
+        this.channels = init.channels
         this.#ownsStore = init.ownsStore
     }
 
@@ -212,13 +235,27 @@ export class Runtime {
             ),
         )
 
+        // 5. Channels: construct transports. Allocating one opens no socket — `start()` does, and
+        //    that is called after readiness, below.
+        const hub = new ChannelHub({ bus, outboxStore: store.outbox })
+
         const runtime = new Runtime({
             runtimeId,
             bus,
             boot: { bootMs: 0, processMs: 0, phases },
             store,
             streams,
+            channels: hub,
             ownsStore,
+        })
+
+        mark("channels", () => {
+            for (const [index, entry] of loaded.entries()) {
+                const agent = agents[index]
+                if (agent === undefined) continue
+                const bindings = buildChannels(entry, options)
+                if (bindings.length > 0) hub.register(agent, bindings)
+            }
         })
 
         for (const agent of agents) {
@@ -263,6 +300,12 @@ export class Runtime {
             phases: report.phases,
             agents: agents.length,
         })
+
+        // Channels connect here — after `runtime.ready`, never before. Awaited rather than detached
+        // because `start()` is specified to return once a transport is *running*, which involves no
+        // network for a long-poll and one `setWebhook` call for a webhook; a transport that cannot
+        // start reports through the bus and leaves the rest of the runtime serving.
+        if (options.startChannels === true) await hub.start()
 
         // The first legal network call of the process, and deliberately not awaited. Awaiting it here
         // would put a remote round trip back inside `Runtime.create` — the boot cost this project
@@ -342,9 +385,12 @@ export class Runtime {
         // Their rows stay `running` and the next boot reaps them, which is the honest record of
         // what happened: the process went away mid-generation.
         this.streams.close()
+        // Before the store closes, because stopping a transport can flush a final delivery and a
+        // closed database would turn that into an exception during shutdown.
+        await this.channels.stop()
 
-        // Channels and schedules arrive in later phases. A caller-supplied store is not closed
-        // here: it was open before this runtime existed and may outlive it.
+        // Schedules arrive in Phase 8. A caller-supplied store is not closed here: it was open
+        // before this runtime existed and may outlive it.
         if (this.#ownsStore) await this.store.close()
     }
 }
@@ -352,13 +398,16 @@ export class Runtime {
 function envOptions(options: RuntimeOptions): {
     env?: EnvSource
     knownProviders?: readonly string[]
+    knownChannels?: readonly string[]
 } {
     const known = Object.keys(options.toolProviders ?? {})
+    const channels = Object.keys(options.channels ?? {})
     return {
         ...(options.env === undefined ? {} : { env: options.env }),
         // Passed even when empty, so the load-time check reports against what this runtime can
         // actually supply rather than against nothing at all.
         ...(known.length === 0 ? {} : { knownProviders: known }),
+        ...(channels.length === 0 ? {} : { knownChannels: channels }),
     }
 }
 
@@ -390,6 +439,72 @@ function buildProviders(entry: LoadedManifest, options: RuntimeOptions): readonl
             agentId: entry.manifest.id,
         })
     })
+}
+
+/**
+ * Construct the agent's channel transports, in manifest order.
+ *
+ * The `type`-specific fields were deliberately not stripped by `ChannelSchema` — it is
+ * `passthrough` — so the whole entry minus the four fields core owns is handed to the factory as
+ * its config. A `type` with no registered factory fails here, during boot, next to the manifest
+ * that named it: the alternative is a channel that constructs fine and silently never receives.
+ *
+ * **Exported because `validate` calls it too.** A channel factory reads its own config — a missing
+ * `tokenEnv`, an invalid `mode` — and those are configuration mistakes knowable without a packet.
+ * Left to boot alone, `validate` reported ok on a manifest `serve` refused, which is precisely the
+ * asymmetry `ruleBudgetFailure` was split up to prevent. Constructing a transport allocates an
+ * object and opens no socket, so a dry run costs nothing and the two callers cannot disagree.
+ */
+export function buildChannels(
+    entry: LoadedManifest,
+    options: { readonly channels?: Readonly<Record<string, ChannelFactory>> },
+): readonly ChannelBinding[] {
+    const factories = options.channels ?? {}
+    const seen = new Set<string>()
+
+    const bindings: ChannelBinding[] = []
+    for (const channel of entry.manifest.channels) {
+        if (seen.has(channel.id)) {
+            throw new HarnessError({
+                code: "channel_id_duplicate",
+                message: `Agent "${entry.manifest.id}" declares two channels with id "${channel.id}".`,
+                hint: "Channel ids become the channel segment of a session key and the path segment of a webhook URL, so they must be unique within an agent.",
+                field: `channels[${channel.id}]`,
+            })
+        }
+        seen.add(channel.id)
+
+        // A disabled channel is not constructed. Its factory would read config it will never use,
+        // and a factory that refuses — a `tokenEnv` naming an unset variable — would make it
+        // impossible to switch a broken channel off, which is the one thing `enabled: false` is
+        // for. Its `type` is still checked above, because a typo there is a typo either way.
+        const factory = factories[channel.type]
+        if (factory === undefined) throw channelTypeUnknown(channel.type, Object.keys(factories))
+        if (!channel.enabled) continue
+
+        const {
+            type: _type,
+            id: _id,
+            allowFrom: _allowFrom,
+            enabled: _enabled,
+            ...config
+        } = channel
+        const transport = factory({
+            agentId: entry.manifest.id,
+            dir: entry.dir,
+            env: entry.env,
+            config,
+            id: channel.id,
+        })
+
+        bindings.push({
+            transport,
+            ...(channel.allowFrom === undefined ? {} : { allowFrom: channel.allowFrom }),
+            enabled: channel.enabled,
+        })
+    }
+
+    return bindings
 }
 
 /**

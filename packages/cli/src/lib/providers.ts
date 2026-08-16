@@ -13,7 +13,8 @@
  * a rendering import costs more than the whole command.
  */
 
-import type { ToolProviderFactory } from "@castellan/core"
+import { telegramChannel } from "@castellan/channel-telegram"
+import type { ChannelFactory, ToolProviderFactory } from "@castellan/core"
 import { composioFromConfig } from "@castellan/tools-composio"
 import { systemFromConfig } from "@castellan/tools-system"
 import { webFromConfig } from "@castellan/tools-web"
@@ -33,3 +34,16 @@ export const TOOL_PROVIDERS: Readonly<Record<string, ToolProviderFactory>> = {
 
 /** For an error that has to say what *is* available. */
 export const PROVIDER_IDS: readonly string[] = Object.keys(TOOL_PROVIDERS)
+
+/**
+ * Which channel types this binary can supply, keyed by the `type` a manifest names.
+ *
+ * Registered by every command that loads a manifest, not only by `serve`. A `channels:` entry has to
+ * validate the same way everywhere or `validate` would refuse a manifest `serve` runs happily —
+ * the asymmetry the tool-provider table already exists to prevent.
+ */
+export const CHANNELS: Readonly<Record<string, ChannelFactory>> = {
+    telegram: telegramChannel,
+}
+
+export const CHANNEL_IDS: readonly string[] = Object.keys(CHANNELS)

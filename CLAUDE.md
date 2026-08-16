@@ -653,6 +653,55 @@ Never claim a performance property without a number in `evals/` and a script to 
   is invisible to it. `composio_connect` carries `policyArg: "toolkit"` so `deny
   composio_connect(slack)` is expressible. The live session exposes six meta tools, not the four the
   docs list — the extra two are a remote bash and a schema fetcher.
+- **A commented block's heading must not end in a colon.** `# Phase 4 — channels, delivery, and the
+  HTTP server:` became a YAML key the moment someone uncommented the block, and the load failed
+  complaining about a heading. The generated manifest's whole premise is that uncommenting works.
+- **`serve` reads its token from `loaded.env`, never from `ambientEnv`.** `ambientEnv` returns the
+  *process* environment; the agent's own `.env` is layered in by `loadManifest`. Reading the wrong
+  one made a token sitting beside the manifest invisible, and the banner said "unauthenticated"
+  while the file plainly had it. Every credential in this runtime comes from the manifest's live env.
+- **Channels start inside `Runtime.create`, so `serve` passes its own bus in.** A listener attached
+  to `runtime.bus` afterwards misses every status they emitted on the way up — the boot-warnings
+  trap again. `RuntimeOptions.bus` exists for exactly this.
+- **A long-poll holds for 30 seconds, so "connected" comes from `getMe`.** Reporting from the first
+  `getUpdates` return left a working bot silent for half a minute, which is indistinguishable from
+  a broken one. And do not key "announce once" on `offset === 0`: that stays true until the first
+  message *ever* arrives, so an idle bot re-announced every 30 s forever.
+- **A disabled channel is never constructed.** `enabled: false` is the one thing that has to work on
+  a broken channel; a factory that ran anyway and refused for a missing token would make switching
+  one off impossible. Its `type` is still checked.
+- **`bun run build` before testing a workspace package from `src`.** Running `packages/cli/src/index.ts`
+  still resolves `@castellan/channel-telegram` to its `dist`, so a transport change is invisible until
+  that package is rebuilt. Recorded for `core` and the tool packages already; it is a property of
+  every workspace dependency, and it cost a confused debugging round here.
+- **`Bun.serve`'s `idleTimeout` defaults to 10 seconds and will kill your SSE streams.** The
+  heartbeat is 15 s, so the server closed its own event streams before the first keep-alive frame —
+  printing `[Bun.serve]: request timed out after 10 seconds` and closing *cleanly*, which a client
+  reads as "the turn ended". No test saw it, because a test reads a stream to completion in
+  milliseconds. `serve.ts` derives the timeout from `HEARTBEAT_MS` so the two cannot drift, and
+  there is now a test that holds an idle stream past the old cutoff. **Run the binary.**
+- **`serve` is the only command that starts channels, and `startChannels` decides *whether*, never
+  *when*.** `run` builds the same runtime without them: a REPL that quietly began answering Telegram
+  while you typed at it would be a surprise, and a one-shot `run --input` that opened a long-poll
+  would hang on exit. Nothing connects before `runtime.ready` on either path.
+- **A channel `start()` returns once *running*, not once connected.** Awaiting a first successful
+  poll would make a Telegram outage an unbootable runtime, and an orchestrator watching `/v1/ready`
+  would restart the process into the same outage. `/ready` deliberately flips before channels
+  connect; channel state lives on the agent resource. Verified live with an invalid bot token.
+- **The Telegram poll loop must never exit on its own.** A loop that throws and returns leaves a
+  process that is running, reports nothing, and receives nothing forever. It catches everything,
+  backs off, reports on the first failure and every eighth, and only `stop()` ends it. The offset
+  advances *before* handling and unconditionally — durability is the outbox's job, not the cursor's.
+- **Inbound turns are serialised per session key, and `ChannelHost.receive` never awaits one.** Two
+  messages during a turn would otherwise race the same history and append over each other; and a
+  poll loop that awaited a 90-second turn is a bot that is deaf for 90 seconds.
+- **`TurnStreams.attach` does not create a buffer, and must not learn to.** A caller that starts a
+  turn and attaches in the next statement arrives before the first event, so it calls `open(turnId)`
+  first. Creating one inside `attach` would make a typo'd turn id indistinguishable from a real one
+  and leave the client tailing an empty stream forever.
+- **`GET /v1/agents/:id/context` calls `Agent.previewContext`, which calls `assembleContext` with
+  the same arguments `send` does.** A server that rebuilt the argument list would answer a question
+  about a prompt nothing uses, and would drift the first time a slot moved.
 - **A delivery's identity is derived, never generated, and the recipient is part of it.** A UUID at
   enqueue dedupes the outbox against itself — a problem it does not have. The duplicate that happens
   is the *enqueuer* running twice, and only a key both runs can recompute collides. Chunking

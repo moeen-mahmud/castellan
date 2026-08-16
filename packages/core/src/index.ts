@@ -25,6 +25,8 @@ export type {
     OutboundMessage,
     RawInbound,
     SendResult,
+    WebhookDelivery,
+    WebhookOutcome,
 } from "./channels/channel.ts"
 export { type InboundDecision, Inbox, type InboxOptions, isAllowed } from "./channels/inbox.ts"
 export {
@@ -181,8 +183,15 @@ export {
     resolveWorkspace,
 } from "./runtime/agent.ts"
 export {
+    type ChannelFactory,
+    type ChannelFactoryContext,
+    ChannelHub,
+    type ChannelHubOptions,
+} from "./runtime/channels.ts"
+export {
     type AgentSource,
     type BootReport,
+    buildChannels,
     defaultStorePath,
     Runtime,
     type RuntimeOptions,

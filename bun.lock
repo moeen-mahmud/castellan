@@ -11,6 +11,13 @@
         "typescript": "^5.9.3",
       },
     },
+    "packages/channel-telegram": {
+      "name": "@castellan/channel-telegram",
+      "version": "0.1.0",
+      "dependencies": {
+        "@castellan/core": "workspace:*",
+      },
+    },
     "packages/cli": {
       "name": "@castellan/cli",
       "version": "0.1.0",
@@ -18,7 +25,9 @@
         "castellan": "./dist/index.js",
       },
       "dependencies": {
+        "@castellan/channel-telegram": "workspace:*",
         "@castellan/core": "workspace:*",
+        "@castellan/server": "workspace:*",
         "@castellan/tools-composio": "workspace:*",
         "@castellan/tools-system": "workspace:*",
         "@castellan/tools-web": "workspace:*",
@@ -36,6 +45,13 @@
       "dependencies": {
         "yaml": "^2.8.1",
         "zod": "^4.1.12",
+      },
+    },
+    "packages/server": {
+      "name": "@castellan/server",
+      "version": "0.1.0",
+      "dependencies": {
+        "@castellan/core": "workspace:*",
       },
     },
     "packages/tools-composio": {
@@ -84,9 +100,13 @@
 
     "@biomejs/cli-win32-x64": ["@biomejs/cli-win32-x64@2.5.8", "", { "os": "win32", "cpu": "x64" }, "sha512-I2czzXTY61f3nFJxXoMDq80t7MivxDEnCjE+8sDKoFfcKMaoQdkqhIFQ3KyY0XLzeSpUBYeNAXgD+iOV/BU0VA=="],
 
+    "@castellan/channel-telegram": ["@castellan/channel-telegram@workspace:packages/channel-telegram"],
+
     "@castellan/cli": ["@castellan/cli@workspace:packages/cli"],
 
     "@castellan/core": ["@castellan/core@workspace:packages/core"],
+
+    "@castellan/server": ["@castellan/server@workspace:packages/server"],
 
     "@castellan/tools-composio": ["@castellan/tools-composio@workspace:packages/tools-composio"],
 

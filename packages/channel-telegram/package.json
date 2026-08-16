@@ -1,0 +1,33 @@
+{
+    "name": "@castellan/channel-telegram",
+    "version": "0.1.0",
+    "description": "Telegram channel — raw Bot API over fetch, long-poll and webhook.",
+    "license": "Apache-2.0",
+    "author": "Moeen Mahmud",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/moeen-mahmud/castellan.git",
+        "directory": "packages/channel-telegram"
+    },
+    "type": "module",
+    "files": [
+        "dist",
+        "README.md"
+    ],
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+        }
+    },
+    "scripts": {
+        "build": "bun build ./src/index.ts --outdir dist --target node --format esm --sourcemap=linked --packages=external && tsc -p tsconfig.build.json",
+        "typecheck": "tsc -p tsconfig.json"
+    },
+    "publishConfig": {
+        "access": "public"
+    },
+    "dependencies": {
+        "@castellan/core": "workspace:*"
+    }
+}

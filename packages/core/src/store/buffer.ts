@@ -111,6 +111,29 @@ export class TurnStreams {
         return off
     }
 
+    /**
+     * Open an empty buffer for a turn that has not emitted yet. Idempotent.
+     *
+     * Needed because a caller that starts a turn and immediately attaches — which is exactly what
+     * `POST /messages` with `stream: true` does — gets there before the first event: `Agent.send`
+     * awaits the session write before emitting anything. Without this the stream reported "no
+     * buffer" for a turn that was about to run, and the client saw the reply nowhere.
+     *
+     * **`attach` deliberately does not do this itself.** Creating a buffer on demand would make a
+     * typo'd turn id indistinguishable from a real one, and the client would tail an empty stream
+     * forever instead of being told the id is unknown. Only whoever starts a turn knows it exists.
+     */
+    open(turnId: string): void {
+        if (this.#buffers.has(turnId)) return
+        this.#buffers.set(turnId, {
+            turnId,
+            events: [],
+            state: "running",
+            listeners: new Set(),
+            truncated: false,
+        })
+    }
+
     /** Called for every event. Opens a buffer on first sight of a turn id. */
     record(event: AnyEvent): void {
         const turnId = event.turnId

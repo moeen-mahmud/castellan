@@ -9,6 +9,7 @@
  * envelope and must not change once published.
  */
 
+import { BRAND } from "./brand.ts"
 import type { EnvOverride } from "./manifest/env.ts"
 import { nearest } from "./nearest.ts"
 
@@ -429,6 +430,31 @@ export function toolRepairFailed(errors: readonly ErrorDetail[]): ToolError {
         message: `The model's tool call could not be used, and the corrected attempt failed the same way: ${errors.map((error) => error.message).join(" ")}`,
         hint: "Usually the catalogue rather than the model: check that the tool's field descriptions say what a valid value looks like, and that its 'do not use when' line rules out the case being asked for. One repair is attempted, never two.",
         details: [...errors],
+    })
+}
+
+// ─── Channels ────────────────────────────────────────────────────────────────────────────
+
+/**
+ * A `channels[].type` no factory is registered for.
+ *
+ * Refused at boot rather than skipped. A channel entry that constructs nothing is a channel that
+ * never receives, and the only symptom is a bot that does not answer — indistinguishable from a
+ * network problem, a wrong token, or an `allowFrom` refusal.
+ */
+export function channelTypeUnknown(type: string, known: readonly string[]): ConfigError {
+    return new ConfigError({
+        code: "channel_type_unknown",
+        message: `A channels entry declares type "${type}", which this runtime has no factory for.${
+            known.length === 0
+                ? " No channel types are registered."
+                : ` Registered: ${known.join(", ")}.`
+        }`,
+        hint:
+            known.length === 0
+                ? `A channel is supplied by the embedder, not resolved by name at runtime. Pass it as Runtime.create({ channels: { telegram: telegramChannel } }). The ${BRAND.slug} binary registers the shipped channels for you — a library caller registers the ones it wants.`
+                : `Check the spelling against the registered types, or register a factory for "${type}" in Runtime.create({ channels }).`,
+        field: `channels.${type}`,
     })
 }
 

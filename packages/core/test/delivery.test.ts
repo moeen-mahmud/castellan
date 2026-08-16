@@ -299,7 +299,7 @@ describe("delivery keys", () => {
         const base = { sessionKey: SESSION, channelId: "tg", turnId: TURN }
         const differs =
             deliveryGroup({ ...base, recipient: "a|b" }) !==
-            deliveryGroup({ ...base, recipient: "a" }) + "|b"
+            `${deliveryGroup({ ...base, recipient: "a" })}|b`
         expect(differs).toBe(true)
     })
 

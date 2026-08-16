@@ -37,11 +37,12 @@ import {
     planFiles,
     presetById,
     type QuestionDefaults,
+    TELEGRAM_TOKEN_ENV,
     validateAnswer,
     webBackendByValue,
 } from "#lib/init-flow"
 import { resolveModeFromProcess } from "#lib/output"
-import { PROVIDER_IDS } from "#lib/providers"
+import { CHANNEL_IDS, PROVIDER_IDS } from "#lib/providers"
 import { agentsDir } from "#lib/sandbox"
 import type { InitOptions } from "#lib/schema"
 
@@ -64,6 +65,13 @@ const FLAG_FOR: Record<InitStep, string> = {
     webKey: "(asked at the prompt only)",
     composio: "--composio",
     composioKey: "(asked at the prompt only)",
+    telegram: "--telegram",
+    telegramAllow: "--telegram-allow",
+    // No flag, same reason as every other secret: a token on a command line lands in history.
+    telegramToken: "(asked at the prompt only)",
+    server: "--server",
+    // Never asked and never a flag — generated, because it is ours rather than a third party's.
+    serverToken: "(generated)",
     dir: "<dir>",
 }
 
@@ -164,6 +172,7 @@ async function runInit(options: InitOptions): Promise<InitResult> {
             (process.env[keyVar] === undefined || process.env[keyVar] === "")
         const loaded = loadManifest(join(targetDir, "agent.yaml"), {
             knownProviders: PROVIDER_IDS,
+            knownChannels: CHANNEL_IDS,
             ...(needsStub ? { env: { ...process.env, [keyVar]: "(pending)" } } : {}),
         })
         const capabilities = resolveCapabilities(
@@ -211,6 +220,9 @@ function fromFlags(options: InitOptions): Partial<Record<InitStep, string>> {
         ["web", options.web],
         ["webBackend", options.webBackend],
         ["composio", options.composio],
+        ["telegram", options.telegram],
+        ["telegramAllow", options.telegramAllow],
+        ["server", options.server],
         ["dir", options.dir],
     ]
     for (const [step, raw] of pairs) {
@@ -321,6 +333,9 @@ function complete(partial: Partial<Record<InitStep, string>>): InitAnswers {
         webKey?: string
         /** Undefined unless the Composio answer was `connected`, for the same reason. */
         composioKey?: string
+        /** Both stay undefined unless the Telegram answer was `connected`. */
+        telegramToken?: string
+        telegramAllow?: string
     }
     // Which variable holds the key is no longer asked — it comes from `--api-key-env`, or from the
     // preset. Defaulted HERE, at the one funnel both the wizard and the scripted path pass through:
@@ -346,12 +361,37 @@ function complete(partial: Partial<Record<InitStep, string>>): InitAnswers {
         ...(answers.composioKey === undefined || answers.composioKey === ""
             ? {}
             : { composioKey: answers.composioKey }),
+        telegram: answers.telegram,
+        ...(answers.telegramToken === undefined || answers.telegramToken === ""
+            ? {}
+            : { telegramToken: answers.telegramToken }),
+        ...(answers.telegramAllow === undefined || answers.telegramAllow === ""
+            ? {}
+            : { telegramAllow: answers.telegramAllow }),
+        server: answers.server,
+        // Minted here rather than in the flow, which is a PURE module and must stay deterministic.
+        // Only for an agent that asked for a server: an unused 64-hex string in every generated
+        // .env is a secret nobody chose and one more thing to wonder about.
+        ...(answers.server === "local" ? { serverToken: randomToken() } : {}),
         ...(keyVar === undefined ? {} : { apiKeyEnv: keyVar }),
         ...(answers.apiKey === undefined || answers.apiKey === ""
             ? {}
             : { apiKey: answers.apiKey }),
         dir: answers.dir,
     }
+}
+
+/**
+ * 32 bytes of hex — what `openssl rand -hex 32` produces, which is what someone types here by hand.
+ *
+ * `crypto.getRandomValues` is a global in both runtimes, so this needs no import and works the same
+ * under Bun and Node. Not in `init-flow.ts`: that module is PURE and its output has to be a
+ * function of its answers.
+ */
+function randomToken(): string {
+    const bytes = new Uint8Array(32)
+    crypto.getRandomValues(bytes)
+    return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("")
 }
 
 function nextSteps(
@@ -388,7 +428,34 @@ function nextSteps(
             `Add your Composio key: edit ${join(targetDir, ".env")} and set ${COMPOSIO_KEY_ENV}=`,
         )
     }
+    // The bot token, and only when it is genuinely missing. A channel whose token is blank fails
+    // the *load* — the factory reads it at boot — so this is not a first-turn surprise, it is a
+    // `serve` that will not start at all.
+    if (answers.telegram === "connected" && answers.telegramToken === undefined) {
+        steps.push(
+            `Add your bot token: message @BotFather with /newbot, then edit ` +
+                `${join(targetDir, ".env")} and set ${TELEGRAM_TOKEN_ENV}=`,
+        )
+    }
     steps.push(`${BRAND.slug} run ${runRef}`)
+    // `run` never starts a channel and never binds a port, so an agent configured for either has a
+    // second command to know about. Said here rather than discovered — the whole reason these
+    // capabilities became questions is that a generated file was hiding them.
+    if (answers.telegram === "connected" || answers.server === "local") {
+        const what =
+            answers.telegram === "connected" && answers.server === "local"
+                ? "the Telegram bot and the HTTP API"
+                : answers.telegram === "connected"
+                  ? "the Telegram bot"
+                  : "the HTTP API"
+        steps.push(`${BRAND.slug} serve ${runRef} — starts ${what}; \`run\` starts neither`)
+    }
+    if (answers.telegram === "connected" && answers.telegramAllow === undefined) {
+        steps.push(
+            `Message the bot. Nobody is on its allowFrom yet, so it will refuse you — and print ` +
+                `the exact line to paste into agent.yaml.`,
+        )
+    }
     if (composioEnabled(answers)) {
         steps.push(
             `Ask it for an app — "connect my Gmail" — and it finds the tools, gives you the ` +

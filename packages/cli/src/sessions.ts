@@ -13,7 +13,7 @@ import { type Agent, Runtime, type SessionSummary } from "@castellan/core"
 import { ambientEnv } from "#lib/ambient"
 import { DEFAULT_ROW_LIMIT, EXIT_FAILURE, EXIT_OK } from "#lib/const"
 import { onExit } from "#lib/exit"
-import { TOOL_PROVIDERS } from "#lib/providers"
+import { CHANNELS, TOOL_PROVIDERS } from "#lib/providers"
 import { storePath } from "#lib/sandbox"
 import type { SessionsOptions } from "#lib/schema"
 
@@ -98,6 +98,7 @@ export async function sessionsCommand(options: SessionsOptions): Promise<number>
         // The sandbox store — the same default `run` writes to, or `sessions` inspects nothing.
         store: options.store ?? storePath(),
         toolProviders: TOOL_PROVIDERS,
+        channels: CHANNELS,
         env: ambientEnv([options.manifestPath]),
     })
     onExit(() => runtime.stop("cli-exit"))

@@ -158,6 +158,40 @@ export interface InitAnswers {
      * manifest names the variable, no flag accepts the value.
      */
     readonly composioKey?: string
+    /**
+     * Whether people can message it on Telegram: `none` or `connected`.
+     *
+     * A question for the same reason `system`, `web` and `composio` are, and found the same way —
+     * Phase 4 shipped the channel and `init` generated it commented, so the only route to a working
+     * bot was knowing the field names. It is the fourth time a finished capability reached a
+     * generated manifest hidden, which is why the rule is now standing rather than case by case.
+     */
+    readonly telegram: string
+    /**
+     * The bot token, written to the gitignored `.env`. Same rule as every other secret: the
+     * manifest names the variable, no flag accepts the value.
+     */
+    readonly telegramToken?: string
+    /**
+     * Who may message it — one Telegram handle, or empty.
+     *
+     * Empty is a real answer and a safe one: `allowFrom: []` permits nobody, and the first message
+     * from anyone prints the exact line to add. That is a better first run than guessing a handle
+     * into the file, because a wrong handle fails the same way an empty list does and says less.
+     */
+    readonly telegramAllow?: string
+    /**
+     * Whether to serve the HTTP API: `none` or `local`.
+     *
+     * `local` binds loopback. A public bind is a deliberate edit afterwards, and it refuses to
+     * start without a token — which is why the generated `.env` gets one rather than an empty line.
+     */
+    readonly server: string
+    /**
+     * The API token, generated rather than asked. Not a third-party credential and not a choice —
+     * `openssl rand -hex 32` is what someone does by hand here, so the command does it.
+     */
+    readonly serverToken?: string
     /** Target directory, as given — the command resolves it against the cwd. */
     readonly dir: string
 }
@@ -277,6 +311,49 @@ export function composioChoice(value: string): (typeof COMPOSIO_CHOICES)[number]
  * different questions, and collapsing them forces anyone who wants a reviewer or a summariser to
  * grant a shell they never needed.
  */
+export const TELEGRAM_TOKEN_ENV = "TELEGRAM_BOT_TOKEN"
+
+/**
+ * Whether the agent is reachable on Telegram.
+ *
+ * Unlike `web` and `system`, `none` writes nothing live: a channel has no `available()` for the
+ * model to read, so naming a switched-off one would buy none of what naming a provider buys. It
+ * writes the same block commented, with a heading that does not end in a colon — uncommenting one
+ * that did turned the heading itself into a YAML key, which is a papercut this generated exactly
+ * once before someone hit it.
+ */
+export const TELEGRAM_CHOICES: readonly {
+    readonly value: string
+    readonly label: string
+}[] = [
+    { value: "none", label: "No — it is reachable through the CLI and the API only" },
+    { value: "connected", label: "Yes — a Telegram bot, long-poll (needs no public URL)" },
+]
+
+export function telegramChoice(value: string): (typeof TELEGRAM_CHOICES)[number] | undefined {
+    return TELEGRAM_CHOICES.find((choice) => choice.value === value)
+}
+
+/**
+ * Whether to serve the HTTP surface.
+ *
+ * Loopback only. Binding a public host is a deliberate edit, and it refuses to start without a
+ * token — so the generated `.env` carries a real one rather than an empty line to fill in. That is
+ * the one secret this command can legitimately mint: it is ours, not a third party's, and there is
+ * no shell-history risk because nothing types it.
+ */
+export const SERVER_CHOICES: readonly {
+    readonly value: string
+    readonly label: string
+}[] = [
+    { value: "none", label: "No" },
+    { value: "local", label: "Yes — HTTP, SSE and WebSocket on 127.0.0.1:7420" },
+]
+
+export function serverChoice(value: string): (typeof SERVER_CHOICES)[number] | undefined {
+    return SERVER_CHOICES.find((choice) => choice.value === value)
+}
+
 export const SYSTEM_CHOICES: readonly {
     readonly value: string
     readonly label: string
@@ -376,6 +453,10 @@ const STEP_ORDER: readonly InitStep[] = [
     "webKey",
     "composio",
     "composioKey",
+    "telegram",
+    "telegramAllow",
+    "telegramToken",
+    "server",
     "dir",
 ]
 
@@ -389,6 +470,7 @@ export const SECRET_STEPS: ReadonlySet<InitStep> = new Set<InitStep>([
     "apiKey",
     "webKey",
     "composioKey",
+    "telegramToken",
 ])
 
 export interface Question {
@@ -466,6 +548,13 @@ export function nextQuestion(
         if ((step === "webBackend" || step === "webKey") && partial.web !== "search") continue
         // Same rule: nobody who said no to Composio is asked for a Composio key.
         if (step === "composioKey" && partial.composio !== "connected") continue
+        // And nobody who said no to Telegram is asked for a bot token or an allowlist.
+        if (
+            (step === "telegramToken" || step === "telegramAllow") &&
+            partial.telegram !== "connected"
+        ) {
+            continue
+        }
 
         switch (step) {
             case "user":
@@ -564,6 +653,44 @@ export function nextQuestion(
                     fallback: "",
                     optional: true,
                 }
+            case "telegram":
+                return {
+                    step,
+                    prompt: "Can people message it on Telegram?",
+                    fallback: "1",
+                    options: TELEGRAM_CHOICES.map((choice) => ({
+                        value: choice.value,
+                        label: choice.label,
+                    })),
+                }
+            case "telegramAllow":
+                return {
+                    step,
+                    prompt: "Your Telegram handle — who may message it",
+                    // Empty permits nobody, which is the safe default and a workable first run:
+                    // the first message from anyone is refused with the exact line to add.
+                    fallback: "",
+                    optional: true,
+                }
+            case "telegramToken":
+                return {
+                    step,
+                    prompt: "Telegram bot token (from @BotFather)",
+                    // Empty is a real answer, as everywhere else a secret is asked for, and there
+                    // is no flag — a token on a command line lands in shell history.
+                    fallback: "",
+                    optional: true,
+                }
+            case "server":
+                return {
+                    step,
+                    prompt: "Serve the HTTP API?",
+                    fallback: "1",
+                    options: SERVER_CHOICES.map((choice) => ({
+                        value: choice.value,
+                        label: choice.label,
+                    })),
+                }
             case "dir":
                 return {
                     step,
@@ -640,7 +767,42 @@ export function validateAnswer(step: InitStep, raw: string): Answered {
 
         case "webKey":
         case "composioKey":
+        case "telegramToken":
             return { ok: true, value }
+
+        case "telegramAllow": {
+            // Empty permits nobody, which is a real and safe answer. A handle is normalised to a
+            // leading `@` so the file reads the way a person writes it — matching folds case and
+            // treats the prefix as optional either way, so this is cosmetic rather than load-bearing.
+            const handle = value.trim()
+            if (handle === "") return { ok: true, value: "" }
+            if (/\s/.test(handle)) {
+                return { ok: false, reason: "is one handle, with no spaces — for example @moeen." }
+            }
+            return { ok: true, value: handle.startsWith("@") ? handle : `@${handle}` }
+        }
+
+        case "telegram": {
+            const byNumber = TELEGRAM_CHOICES[Number(value) - 1]
+            const chosen = byNumber ?? telegramChoice(value.toLowerCase())
+            return chosen === undefined
+                ? {
+                      ok: false,
+                      reason: `pick 1-${TELEGRAM_CHOICES.length}, or a name: ${TELEGRAM_CHOICES.map((c) => c.value).join(", ")}.`,
+                  }
+                : { ok: true, value: chosen.value }
+        }
+
+        case "server": {
+            const byNumber = SERVER_CHOICES[Number(value) - 1]
+            const chosen = byNumber ?? serverChoice(value.toLowerCase())
+            return chosen === undefined
+                ? {
+                      ok: false,
+                      reason: `pick 1-${SERVER_CHOICES.length}, or a name: ${SERVER_CHOICES.map((c) => c.value).join(", ")}.`,
+                  }
+                : { ok: true, value: chosen.value }
+        }
 
         case "composio": {
             const byNumber = COMPOSIO_CHOICES[Number(value) - 1]
@@ -684,6 +846,12 @@ export function validateAnswer(step: InitStep, raw: string): Answered {
             // Never rejected. Key formats differ per vendor and change without notice, so a shape
             // check here would refuse a valid key on the vendor's say-so — and the endpoint gives
             // an honest 401 on the first turn anyway. Empty means "not now".
+            return { ok: true, value }
+
+        case "serverToken":
+            // Never asked — generated by the command, so there is nothing here to reject. Present
+            // so the switch stays exhaustive over InitStep, which is what makes adding a step
+            // without validating it a compile error rather than a silent pass-through.
             return { ok: true, value }
 
         case "system": {
@@ -1108,10 +1276,94 @@ function substitutionsFor(answers: InitAnswers): Record<string, string> {
  * Every mention of the binary interpolates `BRAND.slug` (hard rule 3), and the endpoint values
  * live in `.env` so switching providers never edits this file.
  */
+/** One section header, so every generated section is ruled to the same width. */
+const rule = (title: string): string =>
+    `# \u2500\u2500 ${title} ${"\u2500".repeat(Math.max(1, 88 - title.length))}`
+
+/**
+ * The `channels` and `delivery` sections.
+ *
+ * Live when the answer was `connected`, commented otherwise — a channel has no `available()`, so
+ * naming a switched-off one buys none of what naming a switched-off *provider* buys. The commented
+ * heading deliberately does not end in a colon: one that did became a YAML key the moment someone
+ * uncommented the block, which is how `Unrecognized key: "Phase 4 — channels, delivery, and the
+ * HTTP server"` happened to the first person who tried it.
+ */
+function channelsBlock(answers: InitAnswers): readonly string[] {
+    if (answers.telegram !== "connected") {
+        return [
+            rule("channels — not configured"),
+            `# Reachable through the CLI and the API only. To add Telegram: get a token from`,
+            `# @BotFather with /newbot, put it in the .env as ${TELEGRAM_TOKEN_ENV}, and uncomment.`,
+            `# allowFrom is INBOUND ONLY and omitting it permits nobody.`,
+            `# channels:`,
+            `#   - type: telegram`,
+            `#     id: tg`,
+            `#     tokenEnv: ${TELEGRAM_TOKEN_ENV}`,
+            `#     allowFrom: ["@your-handle"]`,
+            `# delivery:`,
+            `#   default: tg`,
+            ``,
+        ]
+    }
+
+    const handle = answers.telegramAllow ?? ""
+    return [
+        rule("channels"),
+        `# Long-poll: no public URL, no inbound firewall rule. Switch to webhook by setting`,
+        `# mode: webhook and webhookUrl once this runtime has a public HTTPS address.`,
+        `#`,
+        `# The bot connects AFTER the runtime is ready and never blocks it — a bad token surfaces`,
+        `# as an event and the HTTP surface keeps serving. Only \`${BRAND.slug} serve\` starts it;`,
+        `# \`${BRAND.slug} run\` builds the same agent with channels switched off.`,
+        `channels:`,
+        `  - type: telegram`,
+        `    id: tg                     # the channel segment of every session key it produces`,
+        `    tokenEnv: ${TELEGRAM_TOKEN_ENV}`,
+        `    mode: longpoll             # or webhook, with webhookUrl below`,
+        `    # webhookUrl: https://your-host/v1/channels/tg/webhook/${slugify(answers.name)}`,
+        ...(handle === ""
+            ? [
+                  `    # INBOUND ONLY, and an empty list permits nobody — which is the safe default.`,
+                  `    # Message the bot and the log prints the exact line to paste here.`,
+                  `    allowFrom: []`,
+              ]
+            : [
+                  `    # INBOUND ONLY. It grants nothing on delivery, and omitting it permits nobody.`,
+                  `    allowFrom: ["${handle}"]`,
+              ]),
+        ``,
+        `# Where a turn with no origin goes — a scheduled run, or an API call asking for delivery.`,
+        `delivery:`,
+        `  default: tg`,
+        ``,
+    ]
+}
+
+/**
+ * The `server` section.
+ *
+ * Written either way, unlike `channels`: `enabled: false` is a complete and readable statement of
+ * the choice, and the fields around it are the ones someone changes next. A public bind refuses to
+ * start without a token, which is why the generated `.env` carries a real one.
+ */
+function serverBlock(answers: InitAnswers): readonly string[] {
+    const on = answers.server === "local"
+    return [
+        rule("http api"),
+        `# ${on ? "Loopback only" : "Off"}. A non-loopback host REFUSES to start without a token —`,
+        `# an agent that can run shell commands, exposed on 0.0.0.0, looks identical to a safe one.`,
+        `server:`,
+        `  enabled: ${on}`,
+        `  host: 127.0.0.1`,
+        `  port: 7420`,
+        `  tokenEnv: ${BRAND.envPrefix}API_TOKEN`,
+        ``,
+    ]
+}
+
 function manifestFor(answers: InitAnswers): string {
     const slug = slugify(answers.name)
-    const rule = (title: string): string =>
-        `# ── ${title} ${"─".repeat(Math.max(1, 88 - title.length))}`
 
     const lines = [
         `# ${answers.name} — generated by \`${BRAND.slug} init\`.`,
@@ -1247,36 +1499,24 @@ function manifestFor(answers: InitAnswers): string {
         `  turnTimeoutMs: 120000`,
         `  toolTimeoutMs: 30000`,
         ``,
+        ...channelsBlock(answers),
+        ...serverBlock(answers),
         rule("later phases — refused at load until they ship"),
-        `# Phase 7 — phase-scoped tool visibility (the strongest published small-model lever):`,
+        `# Phase 7 — phase-scoped tool visibility (the strongest published small-model lever)`,
         `# phases:`,
         `#   triage: { entry: true, allow: ["now"] }`,
         `#   act:    { allow: ["*"] }`,
         ``,
-        `# Phase 5 — skills:`,
+        `# Phase 5 — skills`,
         `# skills: { dir: ./skills, maxActive: 1, threshold: 0.35 }`,
         ``,
-        `# Phase 3.5 — knowledge, keyword-gated and never pinned (create ./knowledge first):`,
+        `# Phase 3.5 — knowledge, keyword-gated and never pinned (create ./knowledge first)`,
         `# knowledge: { dir: ./knowledge, maxActive: 2, budget: 600 }`,
         ``,
-        `# Phase 6 — memory:`,
+        `# Phase 6 — memory`,
         `# memory: { retriever: fts5, dir: ./memory, k: 6, includeHistory: true }`,
         ``,
-        `# Phase 4 — channels, delivery, and the HTTP server:`,
-        `# channels:`,
-        `#   - type: telegram`,
-        `#     id: tg`,
-        `#     tokenEnv: TELEGRAM_BOT_TOKEN`,
-        `#     allowFrom: ["@your-handle"]`,
-        `# delivery:`,
-        `#   default: tg`,
-        `# server:`,
-        `#   enabled: true`,
-        `#   host: 127.0.0.1`,
-        `#   port: 7420`,
-        `#   tokenEnv: ${BRAND.envPrefix}API_TOKEN`,
-        ``,
-        `# Phase 8 — schedules:`,
+        `# Phase 8 — schedules`,
         `# schedules:`,
         `#   - id: morning-brief`,
         `#     kind: cron`,
@@ -1284,7 +1524,7 @@ function manifestFor(answers: InitAnswers): string {
         `#     task: "Summarise the day ahead."`,
         `#     deliver: { channel: tg, to: "@your-handle" }`,
         ``,
-        `# Phase 9 — plugins:`,
+        `# Phase 9 — plugins`,
         `# plugins:`,
         `#   - "${BRAND.packageScope}/channel-telegram"`,
         ``,
@@ -1323,6 +1563,19 @@ function envFor(answers: InitAnswers): string {
         lines.push("")
         lines.push(`# Composio, for your other apps. Needed to warm the cache and to execute.`)
         lines.push(`${COMPOSIO_KEY_ENV}=${answers.composioKey ?? ""}`)
+    }
+    if (answers.telegram === "connected") {
+        lines.push("")
+        lines.push(`# Telegram. From @BotFather with /newbot; /revoke invalidates it immediately.`)
+        lines.push(`${TELEGRAM_TOKEN_ENV}=${answers.telegramToken ?? ""}`)
+    }
+    // The one secret here that is *ours* rather than a third party's, so it is generated rather
+    // than left blank: a public bind refuses to start without it, and `openssl rand -hex 32` is
+    // exactly what someone does by hand at this point.
+    if (answers.serverToken !== undefined && answers.serverToken !== "") {
+        lines.push("")
+        lines.push(`# The HTTP API's bearer token. Generated — replace it whenever you like.`)
+        lines.push(`${BRAND.envPrefix}API_TOKEN=${answers.serverToken}`)
     }
     return `${lines.join("\n")}\n`
 }

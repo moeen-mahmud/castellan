@@ -10,6 +10,7 @@
 
 import { isAbsolute, resolve } from "node:path"
 import {
+    buildChannels,
     HarnessError,
     loadKnowledge,
     loadManifest,
@@ -19,13 +20,14 @@ import {
 } from "@castellan/core"
 import { ambientEnv } from "#lib/ambient"
 import { EXIT_FAILURE, EXIT_OK } from "#lib/const"
-import { PROVIDER_IDS } from "#lib/providers"
+import { CHANNEL_IDS, CHANNELS, PROVIDER_IDS } from "#lib/providers"
 import type { ValidateOptions } from "#lib/schema"
 
 export function validateCommand(options: ValidateOptions): number {
     try {
         const loaded = loadManifest(options.manifestPath, {
             knownProviders: PROVIDER_IDS,
+            knownChannels: CHANNEL_IDS,
             // The same environment `run` will use, or this validates a different agent — the
             // failure that rule exists for is a validator that disagrees with the runtime.
             env: ambientEnv([options.manifestPath]),
@@ -45,6 +47,13 @@ export function validateCommand(options: ValidateOptions): number {
             loaded,
             capabilities.promptStyle,
         )
+        // Constructed, not merely name-checked. A channel factory reads its own config — a
+        // `tokenEnv` naming an unset variable, an invalid `mode`, a `secretTokenEnv` left empty —
+        // and those are configuration mistakes knowable without a packet. Skipping this reported
+        // ok on a manifest `serve` refused at boot. Constructing a transport opens no socket, so
+        // this is the same function `Runtime.create` calls and costs nothing.
+        buildChannels(loaded, { channels: CHANNELS })
+
         // The same check `run` applies, applied here for the same reason it exists at all: a
         // validator that accepts a manifest the runtime refuses is worse than no validator.
         const ruleFailure = ruleBudgetFailure(workspace, manifest.context.rules)

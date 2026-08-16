@@ -344,6 +344,97 @@ function validateBaseUrls(manifest: AgentManifest): ErrorDetail[] {
 }
 
 /**
+ * Channel entries, and the delivery targets that name them.
+ *
+ * Read from the raw document rather than the parsed manifest so a schema default never looks like
+ * an author's intent, and so a malformed entry is reported here rather than throwing on a property
+ * access. Three checks, each of which was otherwise a runtime mystery:
+ *
+ * - a `type` no factory is registered for — a channel that constructs nothing and never receives,
+ *   which looks exactly like a wrong token or a network fault
+ * - a duplicate `id` — ids are the channel segment of a session key and a webhook path segment
+ * - `delivery` naming a channel that does not exist, which is rule 9 in `02-SPEC-MANIFEST.md` and
+ *   fails at the first scheduled run rather than at load
+ */
+function validateChannels(
+    raw: Record<string, unknown>,
+    knownChannels: readonly string[],
+): ErrorDetail[] {
+    const found: ErrorDetail[] = []
+    const entries = Array.isArray(raw.channels) ? raw.channels : []
+    const ids = new Set<string>()
+
+    for (const [index, entry] of entries.entries()) {
+        if (entry === null || typeof entry !== "object" || Array.isArray(entry)) continue
+        const channel = entry as Record<string, unknown>
+        const type = typeof channel.type === "string" ? channel.type : undefined
+        const id = typeof channel.id === "string" ? channel.id : undefined
+
+        if (id !== undefined) {
+            if (ids.has(id)) {
+                found.push({
+                    code: "channel_id_duplicate",
+                    message: `Two channels share the id "${id}".`,
+                    hint: "Channel ids become the channel segment of a session key and the path segment of a webhook URL, so they must be unique within an agent.",
+                    field: `channels[${index}].id`,
+                })
+            }
+            ids.add(id)
+        }
+
+        if (type !== undefined && !knownChannels.includes(type)) {
+            found.push({
+                code: "channel_type_unknown",
+                message: `channels[${index}] declares type "${type}", which is not registered here.${
+                    knownChannels.length === 0 ? "" : ` Available: ${knownChannels.join(", ")}.`
+                }`,
+                hint:
+                    knownChannels.length === 0
+                        ? `A channel is supplied by the embedder — nothing installs at runtime. Pass it as Runtime.create({ channels: { ${type}: … } }). ${BRAND.slug} validate reports this whenever it runs without one, since it cannot know what an embedder would register.`
+                        : "Check the spelling against the available types.",
+                field: `channels[${index}].type`,
+            })
+        }
+    }
+
+    const delivery = raw.delivery
+    if (delivery !== null && typeof delivery === "object" && !Array.isArray(delivery)) {
+        const config = delivery as Record<string, unknown>
+        const named: { channel: string; field: string }[] = []
+
+        if (typeof config.default === "string") {
+            named.push({ channel: config.default, field: "delivery.default" })
+        }
+        const targets = config.targets
+        if (targets !== null && typeof targets === "object" && !Array.isArray(targets)) {
+            for (const [name, target] of Object.entries(targets as Record<string, unknown>)) {
+                if (target === null || typeof target !== "object") continue
+                const channel = (target as { channel?: unknown }).channel
+                if (typeof channel === "string") {
+                    named.push({ channel, field: `delivery.targets.${name}.channel` })
+                }
+            }
+        }
+
+        for (const { channel, field } of named) {
+            if (ids.has(channel)) continue
+            found.push({
+                code: "delivery_channel_unknown",
+                message: `${field} names "${channel}", which is not a channel id on this agent.${
+                    ids.size === 0
+                        ? " The agent declares no channels."
+                        : ` Declared: ${[...ids].join(", ")}.`
+                }`,
+                hint: "A delivery target names a channel's id, not its type. Rule 9 in 02-SPEC-MANIFEST.md — checked at load rather than at the first scheduled run, which is otherwise where it surfaces.",
+                field,
+            })
+        }
+    }
+
+    return found
+}
+
+/**
  * Sections this build parses but does not implement.
  *
  * Refused rather than ignored. A manifest that configures Telegram against a runtime with no
@@ -352,20 +443,20 @@ function validateBaseUrls(manifest: AgentManifest): ErrorDetail[] {
  * never looks like a user's intent.
  */
 const UNSUPPORTED_SECTIONS: readonly { key: string; feature: string; phase: string }[] = [
-    { key: "channels", feature: "channels", phase: "Phase 4" },
     { key: "skills", feature: "skills", phase: "Phase 5" },
     { key: "memory", feature: "memory", phase: "Phase 6" },
     { key: "phases", feature: "phase-scoped tool visibility", phase: "Phase 7" },
     { key: "schedules", feature: "schedules", phase: "Phase 8" },
     { key: "plugins", feature: "plugins", phase: "Phase 9" },
-    { key: "delivery", feature: "delivery targets", phase: "Phase 4" },
 ]
 
 function validateSupportedSections(
     raw: Record<string, unknown>,
     knownProviders: readonly string[],
+    knownChannels: readonly string[],
 ): ErrorDetail[] {
     const found: ErrorDetail[] = []
+    found.push(...validateChannels(raw, knownChannels))
 
     for (const { key, feature, phase } of UNSUPPORTED_SECTIONS) {
         const value = raw[key]
@@ -381,23 +472,6 @@ function validateSupportedSections(
             hint: `${feature} arrives in ${phase}. Remove the "${key}" section for now — it is refused rather than silently ignored, because a runtime that drops configuration lies about what it is doing.`,
             field: key,
         })
-    }
-
-    // `server` is checked on `enabled` rather than on presence, because the schema gives it a default
-    // and writing `server: { enabled: false }` explicitly asks for nothing. Asking for a *listening*
-    // server is different: without this the manifest below validates, no server starts, and nothing
-    // anywhere says so — the whole of rule 8 in one field.
-    const server = raw.server
-    if (server !== null && typeof server === "object" && !Array.isArray(server)) {
-        if ((server as { enabled?: unknown }).enabled === true) {
-            found.push({
-                code: "not_implemented_yet",
-                message:
-                    "This build does not implement the HTTP server, but the manifest enables it.",
-                hint: "The server arrives in Phase 4. Set server.enabled to false or remove the section — it is refused rather than ignored, because a manifest that asks for a listening port and gets silence is worse than one that fails to load.",
-                field: "server.enabled",
-            })
-        }
     }
 
     // Nested under `context`, so the section-level loop above cannot see it. Fully specified in
@@ -518,6 +592,14 @@ export interface ValidateOptions {
      * registers, and a bare validation cannot know what an embedder would.
      */
     knownProviders?: readonly string[]
+    /**
+     * Channel types the caller can supply, from `Runtime.create({ channels })`.
+     *
+     * Same shape and same reasoning as `knownProviders`. Omitted means none, so a bare `validate`
+     * refuses a manifest declaring a channel — the CLI knows what it registers and passes it, and a
+     * library caller that registers nothing genuinely cannot serve that manifest.
+     */
+    knownChannels?: readonly string[]
 }
 
 /** Every rule this build can enforce. Returns all failures; the caller decides how to report. */
@@ -531,6 +613,10 @@ export function validateManifest(manifest: AgentManifest, options: ValidateOptio
         ...validateBaseUrls(manifest),
         ...validateApiKeyEnv(manifest, options.env),
         ...validateDialectSupport(manifest, options.capabilities),
-        ...validateSupportedSections(options.raw, options.knownProviders ?? []),
+        ...validateSupportedSections(
+            options.raw,
+            options.knownProviders ?? [],
+            options.knownChannels ?? [],
+        ),
     ]
 }

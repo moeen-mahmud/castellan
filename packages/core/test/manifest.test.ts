@@ -5,6 +5,7 @@ import { BRAND } from "../src/brand.ts"
 import { HarnessError } from "../src/errors.ts"
 import { loadManifest } from "../src/manifest/load.ts"
 import { providerIds, resolveProviders } from "../src/manifest/providers.ts"
+import { buildChannels } from "../src/runtime/runtime.ts"
 import { describe, expect, test } from "./_harness.ts"
 
 /**
@@ -34,17 +35,28 @@ model:
     apiKeyEnv: MODEL_API_KEY
 `)
 
-function load(files: Record<string, string>, env: Record<string, string | undefined> = ENV) {
+/**
+ * `extra` carries what a real caller would register — `knownProviders`, `knownChannels`.
+ *
+ * Defaulted to nothing rather than to everything, because that is what a bare `validate` sees, and
+ * the "nobody registered this" failures are the ones most worth pinning.
+ */
+function load(
+    files: Record<string, string>,
+    extra: { knownChannels?: readonly string[]; knownProviders?: readonly string[] } = {},
+    env: Record<string, string | undefined> = ENV,
+) {
     const dir = workspace(files)
-    return loadManifest(join(dir, "agent.yaml"), { env, skipEnvFile: true })
+    return loadManifest(join(dir, "agent.yaml"), { env, skipEnvFile: true, ...extra })
 }
 
 function expectFailure(
     files: Record<string, string>,
+    extra: { knownChannels?: readonly string[]; knownProviders?: readonly string[] } = {},
     env: Record<string, string | undefined> = ENV,
 ): HarnessError {
     try {
-        load(files, env)
+        load(files, extra, env)
     } catch (error) {
         if (error instanceof HarnessError) return error
         throw error
@@ -321,6 +333,7 @@ model:
     apiKeyEnv: MODEL_API_KEY
 `),
             },
+            {},
             ENV,
         )
         expect(error.code).toBe("env_var_missing")
@@ -351,6 +364,7 @@ model:
     apiKeyEnv: MODEL_API_KEY
 `),
             },
+            {},
             { ...ENV, MODEL_ID: "qwen3.5:9b", MODEL_BASE_URL: "http://localhost:11434/v1" },
         )
         expect(loaded.manifest.model.main.id).toBe("qwen3.5:9b")
@@ -358,7 +372,7 @@ model:
     })
 
     test("an apiKeyEnv naming an unset variable fails at load, not at first request", () => {
-        const error = expectFailure({ "agent.yaml": VALID }, {})
+        const error = expectFailure({ "agent.yaml": VALID }, {}, {})
         expect(codes(error)).toContain("model_api_key_missing")
         expect(fields(error)).toContain("model.main.apiKeyEnv")
     })
@@ -521,9 +535,10 @@ model:
 })
 
 describe("sections this build does not implement", () => {
-    test("configuring channels is refused rather than silently ignored", () => {
-        // A manifest that configures Telegram against a runtime with no channel support would
-        // otherwise boot healthy and deliver nothing.
+    test("a channel type nobody registered is refused, naming the field", () => {
+        // Phase 4 replaced the blanket refusal with a registration check, for the same reason
+        // `tools.provider` has one: a channel that constructs nothing never receives, and the only
+        // symptom is a bot that does not answer — indistinguishable from a wrong token.
         const error = expectFailure({
             "agent.yaml": manifestYaml(`id: t
 model:
@@ -537,8 +552,149 @@ channels:
     tokenEnv: TELEGRAM_BOT_TOKEN
 `),
         })
-        expect(codes(error)).toContain("not_implemented_yet")
-        expect(allDetails(error)[0]?.hint).toContain("Phase 4")
+        expect(codes(error)).toContain("channel_type_unknown")
+        expect(allDetails(error)[0]?.field).toBe("channels[0].type")
+    })
+
+    test("a registered channel type loads, keeping its type-specific fields", () => {
+        const loaded = load(
+            {
+                "agent.yaml": manifestYaml(`id: t
+model:
+  main:
+    id: gpt-4o-mini
+    baseUrl: https://api.example.com/v1
+    apiKeyEnv: MODEL_API_KEY
+channels:
+  - type: telegram
+    id: tg
+    tokenEnv: TELEGRAM_BOT_TOKEN
+    mode: longpoll
+    allowFrom: ["@moeen"]
+`),
+            },
+            { knownChannels: ["telegram"] },
+        )
+        const channel = loaded.manifest.channels[0]
+        expect(channel?.id).toBe("tg")
+        // `ChannelSchema` is passthrough: stripping the type-specific fields here would delete the
+        // channel's entire configuration before its factory ever sees it.
+        expect((channel as Record<string, unknown>).mode).toBe("longpoll")
+        expect(channel?.allowFrom).toEqual(["@moeen"])
+    })
+
+    test("two channels sharing an id are refused", () => {
+        const error = expectFailure({
+            "agent.yaml": manifestYaml(`id: t
+model:
+  main:
+    id: gpt-4o-mini
+    baseUrl: https://api.example.com/v1
+    apiKeyEnv: MODEL_API_KEY
+channels:
+  - type: telegram
+    id: tg
+  - type: telegram
+    id: tg
+`),
+        })
+        expect(codes(error)).toContain("channel_id_duplicate")
+    })
+
+    test("a disabled channel is not constructed, so its factory never refuses", () => {
+        // `enabled: false` is the one thing that must work on a *broken* channel. A factory that
+        // ran anyway — and refused because its tokenEnv is unset — would make switching one off
+        // impossible. The `type` is still checked, because a typo there is a typo either way.
+        const loaded = load(
+            {
+                "agent.yaml": manifestYaml(`id: t
+model:
+  main:
+    id: gpt-4o-mini
+    baseUrl: https://api.example.com/v1
+    apiKeyEnv: MODEL_API_KEY
+channels:
+  - type: telegram
+    id: tg
+    enabled: false
+`),
+            },
+            { knownChannels: ["telegram"] },
+        )
+        const built = buildChannels(loaded, {
+            channels: {
+                telegram: () => {
+                    throw new Error("a disabled channel must not be constructed")
+                },
+            },
+        })
+        expect(built.length).toBe(0)
+    })
+
+    test("buildChannels hands the factory the type-specific fields and the channel id", () => {
+        const loaded = load(
+            {
+                "agent.yaml": manifestYaml(`id: t
+model:
+  main:
+    id: gpt-4o-mini
+    baseUrl: https://api.example.com/v1
+    apiKeyEnv: MODEL_API_KEY
+channels:
+  - type: telegram
+    id: tg
+    mode: webhook
+    allowFrom: ["@moeen"]
+`),
+            },
+            { knownChannels: ["telegram"] },
+        )
+        let seen: Record<string, unknown> = {}
+        let seenId = ""
+        const built = buildChannels(loaded, {
+            channels: {
+                telegram: (context) => {
+                    seen = { ...context.config }
+                    seenId = context.id
+                    return {
+                        id: context.id,
+                        type: "telegram",
+                        limits: { maxMessageChars: 4096, idempotentSend: false },
+                        start: async () => {},
+                        stop: async () => {},
+                        send: async () => ({ ok: true }) as const,
+                    }
+                },
+            },
+        })
+        expect(seenId).toBe("tg")
+        // The four fields core owns are stripped; everything else reaches the plugin's own schema.
+        expect(seen).toEqual({ mode: "webhook" })
+        expect(built[0]?.allowFrom).toEqual(["@moeen"])
+    })
+
+    test("a delivery target naming a channel that does not exist is refused at load", () => {
+        // Rule 9 in 02-SPEC-MANIFEST.md. Otherwise it surfaces at the first scheduled run.
+        const error = expectFailure(
+            {
+                "agent.yaml": manifestYaml(`id: t
+model:
+  main:
+    id: gpt-4o-mini
+    baseUrl: https://api.example.com/v1
+    apiKeyEnv: MODEL_API_KEY
+channels:
+  - type: telegram
+    id: tg
+delivery:
+  default: telegram
+`),
+            },
+            { knownChannels: ["telegram"] },
+        )
+        expect(codes(error)).toContain("delivery_channel_unknown")
+        // The most likely mistake is naming the *type* where an *id* belongs, so the message says so.
+        expect(allDetails(error)[0]?.hint).toContain("names a channel's id, not its type")
     })
 
     test("naming a provider nobody registered is refused, naming the field", () => {
@@ -749,10 +905,10 @@ context:
 })
 
 describe("the HTTP server section", () => {
-    test("enabling it is refused — a listening port that never opens is rule 8", () => {
-        // It validated cleanly before this check existed: nothing consumes `manifest.server`, so a
-        // manifest asking for port 9999 loaded, no server started, and nothing anywhere said so.
-        const error = expectFailure({
+    test("enabling it loads, now that something consumes it", () => {
+        // Refused for three phases, because nothing read `manifest.server` and a manifest asking
+        // for port 9999 would have loaded, started nothing, and said nothing. `serve` reads it now.
+        const loaded = load({
             "agent.yaml": manifestYaml(`id: t
 model:
   main:
@@ -764,8 +920,8 @@ server:
   port: 9999
 `),
         })
-        expect(codes(error)).toContain("not_implemented_yet")
-        expect(allDetails(error)[0]?.field).toBe("server.enabled")
+        expect(loaded.manifest.server.enabled).toBe(true)
+        expect(loaded.manifest.server.port).toBe(9999)
     })
 
     test("declaring it disabled is not an error — that asks for nothing", () => {

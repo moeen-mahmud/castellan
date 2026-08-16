@@ -80,6 +80,13 @@ export interface LoadOptions {
      * provider would be refused by the very runtime that registered it.
      */
     knownProviders?: readonly string[]
+    /**
+     * Channel types the caller can supply, so `channels[].type` can be checked at load.
+     *
+     * Threaded from `Runtime.create({ channels })`, for the same reason as `knownProviders`: a
+     * runtime must not refuse a manifest naming a channel it registered.
+     */
+    knownChannels?: readonly string[]
 }
 
 interface Resolved {
@@ -257,6 +264,7 @@ export function loadManifestFromObject(
         env,
         raw: expanded,
         ...(options.knownProviders === undefined ? {} : { knownProviders: options.knownProviders }),
+        ...(options.knownChannels === undefined ? {} : { knownChannels: options.knownChannels }),
     })
     if (failures.length > 0) throw validationFailed(failures)
 

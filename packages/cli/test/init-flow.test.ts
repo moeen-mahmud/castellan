@@ -32,6 +32,8 @@ const ANSWERS: InitAnswers = {
     system: "none",
     web: "none",
     composio: "none",
+    telegram: "none",
+    server: "none",
     dir: "./milo",
 }
 
@@ -58,7 +60,8 @@ describe("nextQuestion", () => {
                 question.step === "preset" ? "deepseek" : question.fallback || "x"
         }
         // No webBackend or webKey: the fallback answer to the web question is "1" — none — and a
-        // backend nobody will use is a question that lies. No composioKey, for the same reason.
+        // backend nobody will use is a question that lies. No composioKey, no telegramAllow and no
+        // telegramToken, for the same reason.
         expect(seen).toEqual([
             "user",
             "name",
@@ -70,6 +73,8 @@ describe("nextQuestion", () => {
             "system",
             "web",
             "composio",
+            "telegram",
+            "server",
             "dir",
         ])
     })
@@ -534,7 +539,7 @@ describe("the Composio question", () => {
             system: "none",
             web: "none",
         }
-        expect(nextQuestion({ ...base, composio: "none" })?.step).toBe("dir")
+        expect(nextQuestion({ ...base, composio: "none" })?.step).toBe("telegram")
         expect(nextQuestion({ ...base, composio: "connected" })?.step).toBe("composioKey")
     })
 

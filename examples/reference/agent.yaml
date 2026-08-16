@@ -6,7 +6,7 @@
 #
 # The commenting is not cosmetic. A section this build does not implement is **refused at load**,
 # naming the phase, rather than parsed and ignored: a runtime that silently drops configuration
-# lies about what it is doing. Uncomment `channels` today and the load fails on purpose.
+# lies about what it is doing. Uncomment `schedules` today and the load fails on purpose.
 #
 # `docs/02-SPEC-MANIFEST.md` is the binding reference. This file is the worked copy.
 
@@ -346,30 +346,42 @@ knowledge:
 #   includeHistory: true
 
 # ── Phase 4: channels, delivery, and the HTTP server ──────────────────────────────────────
-# `allowFrom` is inbound-only. It confers nothing on outbound delivery, and conflating the two
-# produces a confusing "chat not found" class of failure.
+# `allowFrom` is **inbound-only**, and omitting it permits nobody. It confers nothing on outbound
+# delivery, and conflating the two produces a confusing "chat not found" class of failure.
+# Matching folds case, treats a leading `@` as optional, and checks the handle *and* the numeric
+# peer id — a Telegram user with no username has only the latter. `["*"]` permits anyone.
 #
-# channels:
-#   - type: telegram
-#     id: tg
-#     enabled: true
-#     mode: longpoll               # channel-specific fields reach the plugin's own schema
-#     tokenEnv: TELEGRAM_BOT_TOKEN
-#     allowFrom: ["@moeen"]
-#   - type: whatsapp
-#     id: wa
-#     authDir: ./.castellan/wa-auth
-#
-# delivery:
-#   default: tg                    # used when a turn has no origin — a schedule, or the API
-#   targets:
-#     owner: { channel: tg, to: "@moeen" }
-#
-# server:
-#   enabled: false                 # enabling it is refused until Phase 4
-#   host: 127.0.0.1                # a public bind is explicit, and requires a token
-#   port: 7420
-#   tokenEnv: CASTELLAN_API_TOKEN
+# Channels connect **after** `runtime.ready`, never before, and a channel that cannot connect never
+# blocks readiness: it reports `agent.channel.error` and the process keeps serving. Only
+# `castellan serve` starts them — `run` builds the same runtime with them switched off.
+# `enabled: false` here only so this file stays runnable with no bot token — a *disabled* channel
+# is never constructed, so its factory never asks for one. Set TELEGRAM_BOT_TOKEN and flip it.
+channels:
+  - type: telegram
+    id: tg                         # the channel segment of every session key it produces
+    enabled: false
+    mode: longpoll                 # or webhook; channel-specific fields reach the plugin's schema
+    tokenEnv: TELEGRAM_BOT_TOKEN
+    allowFrom: ["@moeen"]
+    # webhookUrl: https://agent.example.com/v1/channels/tg/webhook/reference
+    # secretTokenEnv: TELEGRAM_WEBHOOK_SECRET   # naming it and leaving it unset is refused
+  # WhatsApp is Phase 4's non-goal — the type is not registered, so this would fail at load.
+  # - type: whatsapp
+  #   id: wa
+  #   authDir: ./.castellan/wa-auth
+
+# A delivery target names a channel's **id**, not its type. Checked at load rather than at the
+# first scheduled run, which is otherwise where it surfaces.
+delivery:
+  default: tg                      # used when a turn has no origin — a schedule, or the API
+  targets:
+    owner: { channel: tg, to: "@moeen" }
+
+server:
+  enabled: true
+  host: 127.0.0.1                  # a non-loopback bind refuses to start without a token
+  port: 7420
+  tokenEnv: CASTELLAN_API_TOKEN
 
 # ── Phase 8: schedules ────────────────────────────────────────────────────────────────────
 # Validated at write time rather than fire time. `deliver` is required — `{channel,to}` or the

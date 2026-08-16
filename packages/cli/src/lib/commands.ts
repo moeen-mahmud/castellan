@@ -116,6 +116,26 @@ export const COMMANDS: readonly CommandSpec[] = [
                 defaultHelp: "none",
             },
             {
+                name: "telegram",
+                kind: "string",
+                placeholder: "level",
+                help: "reachable on Telegram: none | connected",
+                defaultHelp: "none",
+            },
+            {
+                name: "telegram-allow",
+                kind: "string",
+                placeholder: "@handle",
+                help: "who may message it — empty permits nobody, which is the safe default",
+            },
+            {
+                name: "server",
+                kind: "string",
+                placeholder: "level",
+                help: "serve the HTTP API: none | local",
+                defaultHelp: "none",
+            },
+            {
                 name: "yes",
                 kind: "boolean",
                 help: "take every default; never ask, even at a terminal",
@@ -255,6 +275,32 @@ export const COMMANDS: readonly CommandSpec[] = [
                 kind: "boolean",
                 help: "fetch every pinned slug from the provider and write the resolution cache",
             },
+            JSON_FLAG,
+        ],
+    },
+    {
+        // The only command that opens a listening socket, and the only one that starts channels.
+        // `run` builds the same runtime without them: a REPL that quietly began answering Telegram
+        // while you typed at it would be a surprise.
+        name: "serve",
+        summary: "run the HTTP API and connect the agent's channels",
+        args: [MANIFEST],
+        flags: [
+            {
+                name: "port",
+                kind: "number",
+                placeholder: "n",
+                help: "port to bind",
+                defaultHelp: "server.port, or 7420",
+            },
+            {
+                name: "host",
+                kind: "string",
+                placeholder: "addr",
+                help: "address to bind — a non-loopback host requires an API token",
+                defaultHelp: "server.host, or 127.0.0.1",
+            },
+            STORE,
             JSON_FLAG,
         ],
     },

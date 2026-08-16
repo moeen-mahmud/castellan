@@ -33,7 +33,9 @@
         "typecheck": "tsc -p tsconfig.json"
     },
     "dependencies": {
+        "@castellan/channel-telegram": "workspace:*",
         "@castellan/core": "workspace:*",
+        "@castellan/server": "workspace:*",
         "@castellan/tools-composio": "workspace:*",
         "@castellan/tools-system": "workspace:*",
         "@castellan/tools-web": "workspace:*",

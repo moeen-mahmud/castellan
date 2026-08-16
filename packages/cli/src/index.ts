@@ -28,6 +28,7 @@ import { finish, installGuards } from "#lib/exit"
 import { helpText } from "#lib/help"
 import { resolveAgentRef } from "#lib/sandbox"
 import { runCommand } from "#run"
+import { serveCommand } from "#serve"
 import { sessionsCommand } from "#sessions"
 import { soulCommand } from "#soul"
 import { toolsCommand } from "#tools"
@@ -93,6 +94,9 @@ async function dispatch(argv: readonly string[]): Promise<number> {
             const web = flags.str("web")
             const webBackend = flags.str("web-backend")
             const composio = flags.str("composio")
+            const telegram = flags.str("telegram")
+            const telegramAllow = flags.str("telegram-allow")
+            const server = flags.str("server")
             return await initCommand({
                 ...(dir === undefined ? {} : { dir }),
                 ...(user === undefined ? {} : { user }),
@@ -106,6 +110,9 @@ async function dispatch(argv: readonly string[]): Promise<number> {
                 ...(web === undefined ? {} : { web }),
                 ...(webBackend === undefined ? {} : { webBackend }),
                 ...(composio === undefined ? {} : { composio }),
+                ...(telegram === undefined ? {} : { telegram }),
+                ...(telegramAllow === undefined ? {} : { telegramAllow }),
+                ...(server === undefined ? {} : { server }),
                 yes: flags.bool("yes"),
                 plain: flags.bool("plain"),
             })
@@ -169,6 +176,19 @@ async function dispatch(argv: readonly string[]): Promise<number> {
                 manifestPaths: positionals.map((ref) => resolveAgentRef(ref)),
                 json: flags.bool("json"),
             })
+
+        case "serve": {
+            const port = flags.num("port")
+            const host = flags.str("host")
+            const store = flags.str("store")
+            return await serveCommand({
+                manifestPath: resolved(),
+                ...(port === undefined ? {} : { port }),
+                ...(host === undefined ? {} : { host }),
+                ...(store === undefined ? {} : { store }),
+                json: flags.bool("json"),
+            })
+        }
 
         case "tools":
             return await toolsCommand({

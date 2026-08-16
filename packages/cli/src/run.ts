@@ -29,7 +29,7 @@ import { ambientEnv, demotedKeys } from "#lib/ambient"
 import { EXIT_FAILURE, EXIT_OK, PROMPT } from "#lib/const"
 import { flushOutput, markTerminalDirty, onExit } from "#lib/exit"
 import { resolveModeFromProcess } from "#lib/output"
-import { TOOL_PROVIDERS } from "#lib/providers"
+import { CHANNELS, TOOL_PROVIDERS } from "#lib/providers"
 import { listAgents, storePath } from "#lib/sandbox"
 import type { RunOptions } from "#lib/schema"
 import {
@@ -157,6 +157,7 @@ export async function runCommand(options: RunOptions): Promise<number> {
             agents: [options.manifestPath],
             emitChunks: true,
             toolProviders: TOOL_PROVIDERS,
+            channels: CHANNELS,
             // A `.env` in the directory this was launched from loses to the agent's own. See
             // `lib/ambient.ts` — core's "real environment wins" is untouched; this decides what
             // counts as the real environment.

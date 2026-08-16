@@ -14,6 +14,7 @@
 
 import { statSync } from "node:fs"
 import { isAbsolute, resolve } from "node:path"
+import { assembleContext, slotReport } from "../context/assemble.ts"
 import { type ErrorDetail, envOverridden, toolGatedAfterFirstUse } from "../errors.ts"
 import type { EventBus } from "../events/bus.ts"
 import { newTurnId } from "../loop/ids.ts"
@@ -422,6 +423,65 @@ export class Agent {
      */
     streamFilter(): StreamFilter {
         return this.#toolRuntime?.dialect.createStreamFilter() ?? passThroughFilter()
+    }
+
+    /**
+     * The context the next turn on this session would be given, without running one.
+     *
+     * Exists for `GET /v1/agents/:id/context`, whose whole justification is that "why did it do
+     * that?" is almost always a context question. **It calls `assembleContext` with the same
+     * arguments `send` does**, and that is the entire point: a server that rebuilt the argument list
+     * itself would answer a question about a prompt the agent does not actually use, and would drift
+     * silently the first time a slot moved. `examplesIn` placement, the volatile tier's position
+     * behind the cache breakpoint, and the window reduction for native's wire tokens are all
+     * properties of that one call, and none of them are re-derived here.
+     *
+     * `input` defaults to empty, which activates no knowledge — Tier 3 is keyword-gated on the
+     * turn's input, so a preview with no input honestly shows a turn with no input.
+     */
+    async previewContext(
+        options: { readonly sessionKey?: string; readonly input?: string } = {},
+    ): Promise<{
+        readonly slots: readonly { slot: number; label: string; tokens: number; pinned: boolean }[]
+        readonly total: number
+        readonly window: number
+        readonly reserveOutput: number
+    }> {
+        const sessionKey = options.sessionKey ?? Agent.DEFAULT_SESSION
+        const input = options.input ?? ""
+        const history = await this.store.messages.history(this.id, sessionKey)
+        const active =
+            this.knowledge === undefined || input === ""
+                ? []
+                : activateKnowledge(input, this.knowledge)
+        const tools = this.#toolRuntime
+
+        const assembled = assembleContext({
+            identity: this.identity,
+            ...(tools === undefined ? {} : { toolBlocks: tools.blocks }),
+            ...(this.workspace.examples === "" ? {} : { examples: this.workspace.examples }),
+            ...(this.workspace.volatile === "" ? {} : { volatile: this.workspace.volatile }),
+            ...(active.length === 0
+                ? {}
+                : {
+                      knowledge: active.map((entry) => ({
+                          name: entry.name,
+                          content: entry.content,
+                      })),
+                  }),
+            ...(this.workspace.reminder === "" ? {} : { reminder: this.workspace.reminder }),
+            history,
+            input,
+            window: Math.max(1, this.window - (tools?.wireTokens ?? 0)),
+            reserveOutput: this.manifest.context.reserveOutput,
+        })
+
+        return {
+            slots: slotReport(assembled.blocks),
+            total: assembled.totalTokens,
+            window: this.window,
+            reserveOutput: this.manifest.context.reserveOutput,
+        }
     }
 
     describe(): AgentDescription {

@@ -1177,8 +1177,11 @@ it than a test that kills the process at a chosen instruction. **Part B** is `ch
 
 **Acceptance**
 
-- [ ] Real Telegram bot: message in, agent replies, typing indicator shows
-- [ ] Both long-poll and webhook modes verified
+- [ ] Real Telegram bot: message in, agent replies, typing indicator shows — **needs a bot token
+      from @BotFather; the only criterion in this phase not yet verified against the real thing**
+- [ ] Both long-poll and webhook modes verified end to end (same blocker). Both are covered against
+      a scripted Bot API: offset advance, leftover-webhook cleanup, poll-failure recovery, secret
+      verification, and the 429/403/5xx classification
 - [x] Message over 4096 chars chunks correctly, order preserved — `due` withholds any chunk whose
       predecessor is not `sent`, so ordering is a property of the query rather than of the caller
 - [x] Killing the process mid-delivery and restarting sends **exactly once** — at every crash point
@@ -1186,11 +1189,17 @@ it than a test that kills the process at a chosen instruction. **Part B** is `ch
       honest form of this criterion and replaces it
 - [x] `allowFrom` blocks a non-listed sender inbound but does not affect outbound — enforced in
       `Inbox.accept`, which the outbox never consults
-- [ ] Bad bot token → `agent.channel.error`, `runtime.ready` still fires, `/v1/health` 200
-- [ ] `POST /v1/agents/:id/messages` → 202, SSE streams, disconnect does not cancel
-- [ ] Non-loopback host without a token refuses to start
-- [x] Boot budget still met with channels configured — median 25.3 ms, unchanged; nothing in Part A
-      runs at boot except `recoverInflight`, which is one indexed query
+- [x] Bad bot token → `agent.channel.error`, `runtime.ready` still fires, `/v1/health` 200 —
+      verified live against the built binary: the error carried its hint, `/v1/health` returned 200,
+      `/v1/ready` returned ready, and the agent resource reported `tg: error`
+- [x] `POST /v1/agents/:id/messages` → 202, SSE streams, disconnect does not cancel — 202 with
+      `{turnId, sessionKey}`, `stream: true` returns 202 *with* an SSE body opening on
+      `turn.accepted`, and the turn runs detached; only `POST /stop` ends one early
+- [x] Non-loopback host without a token refuses to start — `server_public_without_token`, exit 1,
+      verified against the binary
+- [x] Boot budget still met with channels configured — median 22 ms. Constructing a transport
+      allocates an object; the `channels` boot phase is sub-millisecond and nothing connects until
+      after `runtime.ready`
 
 **Non-goals.** WhatsApp. Schedules.
 
@@ -1220,6 +1229,28 @@ it than a test that kills the process at a chosen instruction. **Part B** is `ch
 - **The `channels` and `delivery` manifest sections stay refused.** Part A ships no channel *type*,
   so a `channels:` entry still cannot resolve to a transport. The gate in `validate.ts` becomes
   type-aware in Part B, when there is something for it to accept.
+
+### Part B — deviations from the plan as written
+
+- **`POST /v1/agents/:id/reload` answers 501 rather than reloading.** Decision 11.20. The spec
+  describes rebuilding the tool index live, which contradicts the fixed-catalogue design the cached
+  prompt prefix depends on. The refusal names the reason and points at a restart.
+- **WebSocket is Bun-only.** Decision 11.21. Node gets a 501 naming the reason rather than a
+  dependency on `ws`; SSE plus `POST /messages` covers everything the endpoint does.
+- **`GET /v1/agents/:id/skills` returns `{ skills: [], supported: false }`.** A bare empty array
+  cannot be told apart from "this agent has no skills", which is the silent-nothing shape rule 8
+  exists to prevent. Phase 5 fills it in.
+- **`Agent.previewContext` is a new core seam.** `GET /v1/agents/:id/context` must show the prompt
+  the agent *actually* assembles, so it calls `assembleContext` with the same arguments `send` does
+  rather than the server rebuilding the argument list — which would answer a question about a prompt
+  nothing uses, and drift the first time a slot moved.
+- **`TurnStreams.open(turnId)` is new, and `attach` still does not create buffers.** A caller that
+  starts a turn and immediately attaches — `POST /messages` with `stream: true` — arrives before the
+  first event, because `Agent.send` awaits the session write before emitting. Creating a buffer
+  inside `attach` instead would make a typo'd turn id indistinguishable from a real one and leave
+  the client tailing an empty stream forever.
+- **Bun's `idleTimeout` was killing SSE streams at 10 s.** Decision 11.22 — found by running the
+  binary, invisible to the tests, and now derived from `HEARTBEAT_MS`.
 
 ---
 
