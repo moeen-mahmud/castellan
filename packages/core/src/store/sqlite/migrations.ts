@@ -178,6 +178,57 @@ CREATE INDEX outbox_inflight ON outbox (status) WHERE status = 'inflight';
 CREATE INDEX outbox_by_session ON outbox (agent_id, session_key, id DESC);
 `,
     },
+    {
+        version: 4,
+        name: "runtime_leases",
+        /**
+         * Which process is serving which agent, right now.
+         *
+         * Two problems, one row, and they are the same problem seen from either end.
+         *
+         * **Nobody may serve an agent twice.** Telegram allows exactly one `getUpdates` poller per
+         * bot token, and the poll loop is specified never to exit on its own — it catches
+         * everything and backs off — so a 409 from a second poller is indistinguishable *by
+         * construction* from the outage that loop exists to survive. Both processes back off, both
+         * run forever, messages land with whichever wins each race, and both append to one session
+         * history. Webhook mode produces no 409 at all: `setWebhook` silently moves the hook to the
+         * last caller. The transport cannot detect this, so the store does.
+         *
+         * **Boot recovery must not reach across processes.** `turns.reapRunning` and
+         * `outbox.recoverInflight` were both unfiltered, which is correct for one process on one
+         * database and wrong the moment two share a file — the second one's boot would mark the
+         * first's live turn failed and flip its in-flight delivery back to pending, re-sending a
+         * Telegram message that had already gone. A lease says which rows are *this* process's to
+         * recover.
+         *
+         * Scoped by ownership rather than by agent id, and the difference is not academic: an
+         * agent id that no longer boots — deleted directory, edited `id:` — would never be passed
+         * again, so its rows would stay `running` forever, which is precisely the ambiguity
+         * `reapRunning` exists to remove. Rows with no live lease are recoverable by whoever finds
+         * them.
+         *
+         * `PRIMARY KEY (agent_id)` is the mutual exclusion. Claiming is an upsert inside a
+         * transaction that first re-reads the row, so two simultaneous starts cannot both win —
+         * which is why this is a table and not a `kv` entry, since `kv` has no compare-and-set.
+         *
+         * `pid` is advisory and known to be imperfect: pids are reused, and a lease whose process
+         * died without releasing looks identical to one whose process is merely wedged. The
+         * caller decides liveness (`process.kill(pid, 0)`) and passes the verdict in; the store
+         * stores facts and does not probe the operating system.
+         */
+        sql: `
+CREATE TABLE runtime_leases (
+    agent_id      TEXT PRIMARY KEY,
+    runtime_id    TEXT NOT NULL,
+    pid           INTEGER NOT NULL,
+    -- How the process was started, so a refusal can say "in a terminal" or "as a service"
+    -- instead of only naming a number the person then has to go and look up.
+    mode          TEXT NOT NULL CHECK (mode IN ('daemon', 'terminal', 'embedded')),
+    started_at    TEXT NOT NULL,
+    heartbeat_at  TEXT NOT NULL
+);
+`,
+    },
 ]
 
 export interface MigrationReport {

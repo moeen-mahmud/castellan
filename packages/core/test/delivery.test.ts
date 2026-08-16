@@ -405,7 +405,7 @@ describe("outbox store", () => {
         const id = first?.record.id ?? 0
         await store.outbox.claim(id)
 
-        const recovered = await store.outbox.recoverInflight()
+        const recovered = await store.outbox.recoverInflight([AGENT])
         expect(recovered.length).toBe(1)
         expect(recovered[0]?.uncertain).toBe(true)
         expect(recovered[0]?.status).toBe("pending")
@@ -488,7 +488,7 @@ describe("outbox engine", () => {
         expect(due.length).toBe(1)
         await store.outbox.claim(due[0]?.id ?? 0)
 
-        const recovered = await outbox.recover()
+        const recovered = await outbox.recover([AGENT])
         expect(recovered.length).toBe(1)
         expect(h.typesOf("delivery.uncertain")).toEqual(["delivery.uncertain"])
 
@@ -508,7 +508,7 @@ describe("outbox engine", () => {
         await outbox.enqueue(reply("hello"))
         await outbox.drain(AGENT)
         // A fresh process: recovery finds nothing, and the row is terminal.
-        expect((await outbox.recover()).length).toBe(0)
+        expect((await outbox.recover([AGENT])).length).toBe(0)
         await outbox.drain(AGENT)
         expect(transport.sent.length).toBe(1)
         await store.close()

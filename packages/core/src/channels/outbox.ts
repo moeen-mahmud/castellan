@@ -272,9 +272,16 @@ export class Outbox {
      *
      * Returns what it recovered so the caller reports it rather than this method logging into a
      * void — the same reason `TurnStore.reapRunning` returns its ids.
+     *
+     * `agentIds` are the agents this process holds a runtime lease for. Recovering another live
+     * process's in-flight rows makes *it* re-send a message it had already sent, so the scope is
+     * not an optimisation.
      */
-    async recover(): Promise<readonly DeliveryRecord[]> {
-        const recovered = await this.#store.recoverInflight(new Date(this.#now()).toISOString())
+    async recover(agentIds: readonly string[]): Promise<readonly DeliveryRecord[]> {
+        const recovered = await this.#store.recoverInflight(
+            agentIds,
+            new Date(this.#now()).toISOString(),
+        )
         for (const row of recovered) {
             this.#bus.emit(
                 "delivery.uncertain",

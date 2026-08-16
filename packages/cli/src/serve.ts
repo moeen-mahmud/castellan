@@ -19,7 +19,9 @@ import { BRAND, EventBus, HarnessError, loadManifest, Runtime } from "@castellan
 import { serve } from "@castellan/server"
 import { ambientEnv } from "#lib/ambient"
 import { EXIT_FAILURE, EXIT_OK } from "#lib/const"
+import { claimSignals, onExit } from "#lib/exit"
 import { CHANNEL_IDS, CHANNELS, PROVIDER_IDS, TOOL_PROVIDERS } from "#lib/providers"
+import { storePath } from "#lib/sandbox"
 
 export interface ServeOptions {
     readonly manifestPath: string
@@ -49,6 +51,11 @@ export async function serveCommand(options: ServeOptions): Promise<number> {
     // "unauthenticated" while the file plainly had it. Same mistake `Agent.create` documents:
     // the manifest's live env, not the ambient one.
     const token = loaded.env[config.tokenEnv]
+
+    // Set by the generated service definition and by nothing else, so this is a fact rather than a
+    // guess. `ppid === 1` would also be true of any orphaned process, and getting it wrong means
+    // telling someone to press ctrl-c at a log file.
+    const asDaemon = env[`${BRAND.envPrefix}SERVICE`] !== undefined
 
     // Subscribed BEFORE the runtime exists, which is what the `bus` option is for. Channels start
     // inside `Runtime.create` — after `runtime.ready`, but still inside the call — so a listener
@@ -83,7 +90,19 @@ export async function serveCommand(options: ServeOptions): Promise<number> {
         channels: CHANNELS,
         // The one call site that passes this. See the file comment.
         startChannels: true,
-        ...(options.store === undefined ? {} : { store: options.store }),
+        // `run` and `sessions` have resolved this default since the sandbox landed; `serve` never
+        // did, so it silently took core's `":memory:"` — correct as a *library* default, since
+        // constructing a Runtime must not create a directory in someone's working tree, and wrong
+        // for the one command built to stay up. The cost was invisible and total: every channel
+        // conversation started blank after a restart, `sessions` could not see a single turn that
+        // arrived over a channel, and Phase 4's exactly-once outbox was unreachable through the
+        // only command that has channels — the queue was created and destroyed per process, so a
+        // crash mid-delivery lost the queue rather than recovering it.
+        store: options.store ?? storePath(),
+        // Recorded on the runtime lease and read back only to phrase a refusal. `<PREFIX>SERVICE`
+        // is set by the generated service definition and by nothing else, so this is a fact rather
+        // than a guess — `ppid === 1` would also be true of any orphaned process.
+        mode: asDaemon ? "daemon" : "terminal",
     })
 
     let running: Awaited<ReturnType<typeof serve>>
@@ -146,14 +165,50 @@ export async function serveCommand(options: ServeOptions): Promise<number> {
         if (!running.websocket) {
             process.stdout.write("  /v1/ws unavailable under Node — SSE and HTTP are unaffected.\n")
         }
-        process.stdout.write("  ctrl-c to stop\n")
+        // The single highest-value place to mention the daemon: this is the exact moment a person
+        // learns that `serve` lives and dies with the terminal it was typed into. Left unsaid, the
+        // discovery happens later, by the agent going quiet with nothing to explain it.
+        if (asDaemon) {
+            process.stdout.write(
+                `  running as a background service · ${BRAND.slug} daemon status ${agents[0]?.id ?? ""}\n`,
+            )
+        } else {
+            process.stdout.write(
+                `  ctrl-c to stop — this ends when the terminal does. \`${BRAND.slug} daemon install ${
+                    agents[0]?.id ?? "<agent>"
+                }\` keeps it running.\n`,
+            )
+        }
     }
 
-    await waitForShutdown()
+    // Registered as a *teardown*, not as a second signal handler, and that distinction was a live
+    // bug. `installGuards` already owns SIGTERM and answers it with `finishNow(EXIT_SIGTERM)`,
+    // which hard-exits; this module used to register its own `process.once("SIGTERM")` alongside
+    // it. Both fired, and the hard exit won — so `runtime.stop()` never completed. No outbox
+    // flush, no clean database close, and no `provider.stop()`, which is the only thing that reaps
+    // the child processes `exec` backgrounds. Invisible at a terminal, because ctrl-C sends SIGINT
+    // and the guard deliberately ignores that one; unavoidable under a service manager, where
+    // SIGTERM is how every stop and every restart happens.
+    //
+    // `finish()` awaits `runTeardowns()`, so putting the shutdown here means the signal path waits
+    // for it instead of racing it.
+    claimSignals()
+    let stopped = false
+    const shutdown = async () => {
+        if (stopped) return
+        stopped = true
+        await running.stop()
+        await runtime.stop("interrupted")
+    }
+    onExit(shutdown)
+
+    await waitForSignal()
 
     process.stdout.write("stopping\n")
-    await running.stop()
-    await runtime.stop("interrupted")
+    await shutdown()
+    // Zero, deliberately, and it is load-bearing rather than cosmetic. A requested stop is not a
+    // fault, and the generated service definition restarts only on a crash signal — so a non-zero
+    // exit here would be read by the supervisor as "this configuration is broken, stay down".
     return EXIT_OK
 }
 
@@ -164,7 +219,7 @@ export async function serveCommand(options: ServeOptions): Promise<number> {
  * that ignored SIGTERM would be killed after its grace period — mid-delivery, which is the one
  * moment the outbox's recovery path exists to survive and would rather not exercise.
  */
-function waitForShutdown(): Promise<void> {
+function waitForSignal(): Promise<void> {
     return new Promise((resolve) => {
         const finish = () => {
             process.off("SIGINT", finish)

@@ -23,11 +23,12 @@ import { resolveProviders } from "../manifest/providers.ts"
 import type { FetchLike } from "../model/provider.ts"
 import { TurnStreams } from "../store/buffer.ts"
 import { SqliteStore } from "../store/sqlite/store.ts"
-import type { Store } from "../store/store.ts"
+import type { RuntimeMode, Store } from "../store/store.ts"
 import { ToolRegistry } from "../tools/registry.ts"
 import type { ToolProvider, ToolProviderFactory } from "../tools/types.ts"
 import { Agent } from "./agent.ts"
 import { type ChannelFactory, ChannelHub } from "./channels.ts"
+import { claimLeases, LEASE_BEAT_MS } from "./lease.ts"
 
 export type AgentSource = string | Record<string, unknown>
 
@@ -86,6 +87,23 @@ export interface RuntimeOptions {
      * before readiness — the flag decides whether it happens at all, never whether it happens early.
      */
     readonly startChannels?: boolean
+    /**
+     * How this process was started, recorded on the runtime lease.
+     *
+     * Only ever read back to phrase a refusal — "already served by pid 4711 as a background
+     * service" is actionable where a bare pid is a number the person then has to go and look up.
+     * Defaults to `embedded`, which is what an embedder is; the CLI passes `terminal` or `daemon`.
+     */
+    readonly mode?: RuntimeMode
+    /**
+     * Whether to take the serving lease for these agents. Default true.
+     *
+     * False for a read-only command — a listing that momentarily claimed a lease could refuse a
+     * `serve` starting in the same millisecond, which is a race invented by the act of looking.
+     * A runtime that does not claim also recovers nothing, which is correct: those rows belong to
+     * whoever does hold it.
+     */
+    readonly lease?: boolean
 }
 
 export interface BootReport {
@@ -124,6 +142,9 @@ export class Runtime {
     #stopped = false
     /** False when the caller passed an already-open store, which stays theirs to close. */
     #ownsStore: boolean
+    /** Agent ids this runtime holds a lease for — released on stop, refreshed while alive. */
+    #owned: readonly string[] = []
+    #heartbeat: ReturnType<typeof setInterval> | undefined
 
     private constructor(init: {
         runtimeId: string
@@ -133,6 +154,7 @@ export class Runtime {
         streams: TurnStreams
         channels: ChannelHub
         ownsStore: boolean
+        owned: readonly string[]
     }) {
         this.runtimeId = init.runtimeId
         this.bus = init.bus
@@ -141,6 +163,7 @@ export class Runtime {
         this.streams = init.streams
         this.channels = init.channels
         this.#ownsStore = init.ownsStore
+        this.#owned = init.owned
     }
 
     static async create(options: RuntimeOptions): Promise<Runtime> {
@@ -190,7 +213,27 @@ export class Runtime {
         // 2. Store: open the file, run pending migrations, reap turns a dead process left running.
         //    Disk only — a database file is not network I/O, so this belongs before readiness.
         const { store, ownsStore } = await markAsync("store", () => openStore(options))
-        const reaped = await store.turns.reapRunning("the process exited before the turn finished")
+
+        // Claim before recovering anything. Recovery is scoped to what this process owns, because
+        // two runtimes can share a store file and the unscoped version marked the *other* one's
+        // live turn failed and made it re-send a delivery it had already sent.
+        const leases =
+            options.lease === false
+                ? { owned: [], tookOver: [], declined: [] }
+                : await claimLeases({
+                      store,
+                      agentIds: loaded.map((entry) => entry.manifest.id),
+                      runtimeId,
+                      mode: options.mode ?? "embedded",
+                      now: Date.now(),
+                      // Only a runtime about to open a channel refuses. A REPL or a one-shot has
+                      // always been allowed alongside another and simply recovers nothing.
+                      exclusive: options.startChannels === true,
+                  })
+        const reaped = await store.turns.reapRunning(
+            leases.owned,
+            "the process exited before the turn finished",
+        )
 
         // A caller-supplied store need not be the SQLite one — a plugin driver reports no
         // migration numbers, and inventing some would misreport rather than under-report.
@@ -256,6 +299,7 @@ export class Runtime {
             streams,
             channels: hub,
             ownsStore,
+            owned: leases.owned,
         })
 
         runtime.#providers = [...providersByAgent.values()].flat()
@@ -318,12 +362,23 @@ export class Runtime {
         // start reports through the bus and leaves the rest of the runtime serving.
         if (options.startChannels === true) await hub.start()
 
+        // After readiness, so a timer never delays boot. `unref` because a heartbeat must not be
+        // the reason a one-shot command fails to exit — the lease going stale is exactly the
+        // recoverable state it is designed for, whereas a process that will not end is not.
+        runtime.#startHeartbeat()
+
         // Slot 2 reports state, not configuration, so the agents are told what actually happened —
         // before any turn, which is what keeps the block byte-stable. Without this an agent under
         // `run` was told "channels: tg (telegram)" and concluded the Telegram runtime had died,
         // while running inside the very process that would have been polling.
         for (const agent of agents) {
-            agent.reportRuntimeState({ channelsStarted: hub.statusOf(agent.id).length > 0 })
+            // `hub.started` and not `statusOf(...).length > 0`. The second is true of `run` as well,
+            // because a binding is *registered* either way — so slot 2 was telling an agent under
+            // `run` that its channel was connected in this session, which is exactly the sentence
+            // decision 5.17 was written to stop it saying.
+            agent.reportRuntimeState({
+                channelsStarted: hub.started && hub.statusOf(agent.id).length > 0,
+            })
         }
 
         // The first legal network call of the process, and deliberately not awaited. Awaiting it here
@@ -412,10 +467,20 @@ export class Runtime {
         // `exec` backgrounded rather than killed. Reported rather than silent: an orphan nobody
         // mentions is one nobody looks for, and thirty-three of them took a machine to a load
         // average of 351. One failing provider must not stop the others from cleaning up.
+        //
+        // Each is bounded, because every supervisor SIGKILLs eventually — launchd after
+        // `ExitTimeOut`, a container after its grace period — and a provider that hangs would
+        // consume the whole window and leave the *rest* unreaped. A reaper that does not fit in
+        // the window is a reaper that does not run. Timing out is reported, never swallowed: the
+        // whole point of this loop is that an orphan nobody mentions is one nobody looks for.
         for (const provider of this.#providers) {
             if (provider.stop === undefined) continue
             try {
-                const released = await provider.stop()
+                const released = await withDeadline(
+                    provider.stop(),
+                    STOP_DEADLINE_MS,
+                    `Provider "${provider.id}" did not release its resources within ${STOP_DEADLINE_MS}ms.`,
+                )
                 if (released.length > 0) {
                     this.bus.emit("runtime.released", {
                         provider: provider.id,
@@ -428,14 +493,74 @@ export class Runtime {
                     message: `Provider "${provider.id}" failed to release its resources: ${
                         error instanceof Error ? error.message : String(error)
                     }`,
-                    hint: "Anything it owns outside this process may still be running. For the system provider that means a backgrounded command — check with `ps` if the machine seems busy after exit.",
+                    hint: "Anything it owns outside this process may still be running. For the system provider that means a backgrounded command — check with `ps` if the machine seems busy after exit. Under a service manager this is the window before SIGKILL, so a provider that times out here leaves its children behind.",
                 })
+            }
+        }
+
+        // Before the store closes, and best-effort: a lease left behind is recovered by the next
+        // boot once its heartbeat goes stale, so failing to release is a delay rather than a
+        // deadlock. Failing to *close the store* because releasing threw would be the worse bug.
+        if (this.#heartbeat !== undefined) clearInterval(this.#heartbeat)
+        for (const agentId of this.#owned) {
+            try {
+                await this.store.leases.release(agentId, this.runtimeId)
+            } catch {
+                // Deliberately swallowed. See above: the next boot recovers a stale lease, and a
+                // shutdown that throws here would skip closing the database.
             }
         }
 
         // Schedules arrive in Phase 8. A caller-supplied store is not closed here: it was open
         // before this runtime existed and may outlive it.
         if (this.#ownsStore) await this.store.close()
+    }
+
+    /** Agent ids this runtime holds the serving lease for. */
+    get owned(): readonly string[] {
+        return this.#owned
+    }
+
+    #startHeartbeat(): void {
+        if (this.#owned.length === 0) return
+        this.#heartbeat = setInterval(() => {
+            const now = new Date().toISOString()
+            for (const agentId of this.#owned) {
+                // Fire and forget, and errors are ignored on purpose: a heartbeat that threw into
+                // an unhandled rejection would take down a healthy process over a bookkeeping row.
+                void this.store.leases.beat(agentId, this.runtimeId, now).catch(() => {})
+            }
+        }, LEASE_BEAT_MS)
+        this.#heartbeat.unref?.()
+    }
+}
+
+/**
+ * How long one provider may take to let go before the runtime moves on without it.
+ *
+ * Sized against the shortest grace period a supervisor gives: launchd's `ExitTimeOut` defaults to
+ * 20 seconds and a container's SIGTERM grace is commonly 10. Two providers each hanging for the
+ * full window would exceed either, so this is deliberately well under half.
+ */
+const STOP_DEADLINE_MS = 5_000
+
+/**
+ * Resolve, or reject with a named failure, and never leave a timer holding the event loop open.
+ *
+ * The `finally` is the part that matters: an un-cleared `setTimeout` in a shutdown path is how a
+ * process that has finished stopping sits there for another five seconds.
+ */
+async function withDeadline<T>(work: Promise<T>, ms: number, message: string): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+        return await Promise.race([
+            work,
+            new Promise<never>((_, reject) => {
+                timer = setTimeout(() => reject(new Error(message)), ms)
+            }),
+        ])
+    } finally {
+        if (timer !== undefined) clearTimeout(timer)
     }
 }
 

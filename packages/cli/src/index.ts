@@ -20,6 +20,7 @@
 
 import { HarnessError, VERSION } from "@castellan/core"
 import { agentsCommand } from "#agents"
+import { daemonCommand } from "#daemon"
 import { initCommand } from "#init"
 import { parse } from "#lib/args"
 import { EXIT_FAILURE, EXIT_OK } from "#lib/const"
@@ -186,6 +187,23 @@ async function dispatch(argv: readonly string[]): Promise<number> {
                 ...(port === undefined ? {} : { port }),
                 ...(host === undefined ? {} : { host }),
                 ...(store === undefined ? {} : { store }),
+                json: flags.bool("json"),
+            })
+        }
+
+        case "daemon": {
+            const lines = flags.num("lines")
+            return await daemonCommand({
+                // As for `soul`, the first positional is the action rather than a manifest — so
+                // `resolved()` must not run here. The agent is positional 1, and it is optional:
+                // bare `daemon status` reports on every installed agent.
+                action: manifestPath,
+                ...(positionals[1] === undefined
+                    ? {}
+                    : { manifestPath: resolveAgentRef(positionals[1]) }),
+                ...(lines === undefined ? {} : { lines }),
+                truncate: flags.bool("truncate"),
+                dryRun: flags.bool("dry-run"),
                 json: flags.bool("json"),
             })
         }

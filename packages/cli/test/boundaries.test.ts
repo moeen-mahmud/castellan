@@ -11,7 +11,9 @@ import { describe, expect, test } from "bun:test"
 import { readdirSync, readFileSync, statSync } from "node:fs"
 import { join, relative, resolve } from "node:path"
 import { BRAND } from "@castellan/core"
+import { DAEMON_ACTIONS } from "#daemon"
 import { COMMANDS } from "#lib/commands"
+import { helpText } from "#lib/help"
 
 const SRC = resolve(import.meta.dirname, "..", "src")
 
@@ -103,6 +105,14 @@ describe("the pure modules stay pure", () => {
         "lib/theme.ts",
         "lib/select.ts",
         "lib/wizard.ts",
+        // The daemon's three. `launchd.ts` renders a plist and parses `launchctl` output;
+        // `daemon-plan.ts` decides what would stop an install and what a service's state means;
+        // `render.ts` is the plain path's shared vocabulary. Keeping all three pure is what lets
+        // every plist key, every wait-status decode and every verdict be asserted without
+        // installing a service on the machine running the tests.
+        "lib/launchd.ts",
+        "lib/daemon-plan.ts",
+        "lib/render.ts",
     ]
 
     test("they import no renderer and no node built-ins", () => {
@@ -124,6 +134,59 @@ describe("the pure modules stay pure", () => {
             expect(text).not.toContain("process.env")
             expect(text).not.toContain("process.stdout")
         }
+    })
+})
+
+describe("exactly one module may spawn a subprocess", () => {
+    /**
+     * The CLI spawned nothing at all until the daemon needed `launchctl`, and that is worth
+     * keeping true of everything except the one seam built for it. A second call site is a second
+     * place tests would have to intercept, and the first one that forgets reaches the real
+     * `~/Library/LaunchAgents` on somebody's machine.
+     */
+    const SPAWNER = "lib/service.ts"
+
+    test("only the service seam imports node:child_process", () => {
+        const offenders = FILES.filter(
+            (file) => file.path !== SPAWNER && staticImportsOf(file.text, "node:child_process"),
+        ).map((file) => file.path)
+        expect(offenders).toEqual([])
+    })
+
+    test("and it really does — otherwise this test proves nothing", () => {
+        const seam = FILES.find((file) => file.path === SPAWNER)?.text ?? ""
+        expect(staticImportsOf(seam, "node:child_process")).toBe(true)
+    })
+})
+
+describe("help lists everything a command accepts", () => {
+    /**
+     * The flag half of this has been pinned since Phase 2.5. The *action* half had no check at
+     * all: `soul`'s single verb lived inside a prose help string, invisible to anything, and
+     * `daemon` arriving with seven of them turned that from an oddity into a class of drift. So
+     * actions are structured data now, and the guarantee is the same one flags already have.
+     */
+    test("every action-taking command enumerates its actions", () => {
+        for (const command of COMMANDS) {
+            const action = command.args.find((arg) => arg.name === "action")
+            if (action === undefined) continue
+            expect(action.choices ?? []).not.toEqual([])
+            const help = helpText(command)
+            for (const choice of action.choices ?? []) {
+                expect(help).toContain(choice.value)
+                expect(help).toContain(choice.help)
+            }
+        }
+    })
+
+    test("the daemon's actions in help are exactly the ones it accepts", () => {
+        const spec = COMMANDS.find((command) => command.name === "daemon")
+        const listed = (spec?.args.find((arg) => arg.name === "action")?.choices ?? []).map(
+            (choice) => choice.value,
+        )
+        // Compared against the command's own runtime list, so adding a verb in one place and not
+        // the other fails here rather than at the moment somebody types it.
+        expect(listed).toEqual([...DAEMON_ACTIONS])
     })
 })
 

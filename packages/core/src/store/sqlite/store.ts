@@ -17,9 +17,13 @@ import type {
     DeliveryRecord,
     DeliveryStatus,
     KVStore,
+    LeaseClaim,
+    LeaseRecord,
+    LeaseStore,
     MessagePage,
     MessageStore,
     OutboxStore,
+    RuntimeMode,
     SessionRecord,
     SessionStore,
     SessionSummary,
@@ -241,6 +245,26 @@ function toDelivery(row: DeliveryRow): DeliveryRecord {
     }
 }
 
+interface LeaseRow {
+    agent_id: string
+    runtime_id: string
+    pid: number
+    mode: string
+    started_at: string
+    heartbeat_at: string
+}
+
+function toLease(row: LeaseRow): LeaseRecord {
+    return {
+        agentId: row.agent_id,
+        runtimeId: row.runtime_id,
+        pid: row.pid,
+        mode: row.mode as RuntimeMode,
+        startedAt: row.started_at,
+        heartbeatAt: row.heartbeat_at,
+    }
+}
+
 export interface SqliteStoreOptions extends OpenOptions {}
 
 export class SqliteStore implements Store {
@@ -248,6 +272,7 @@ export class SqliteStore implements Store {
     readonly messages: MessageStore
     readonly turns: TurnStore
     readonly outbox: OutboxStore
+    readonly leases: LeaseStore
     readonly kv: KVStore
     readonly location: string
     /** What `migrate` did at open. Reported by boot rather than logged and forgotten. */
@@ -347,12 +372,40 @@ export class SqliteStore implements Store {
                 `SELECT * FROM turns WHERE agent_id = ? AND session_key = ?
                   ORDER BY started_at DESC, rowid DESC LIMIT ?`,
             ),
-            turnsRunning: db.prepare("SELECT turn_id FROM turns WHERE status = 'running'"),
+            // Both take one agent id and are run once per owned agent inside a transaction, rather
+            // than building an `IN (?,?,…)` list. A dynamic arity needs a fresh `prepare` per call
+            // shape, which defeats the statement cache for the overwhelmingly common case of one
+            // agent per runtime. The partial index means each pass scans only what is running.
+            turnsRunning: db.prepare(
+                "SELECT turn_id FROM turns WHERE status = 'running' AND agent_id = ?",
+            ),
             turnsReap: db.prepare(
                 `UPDATE turns
                     SET status = 'error', ended_at = ?,
                         error_code = 'turn_abandoned', error_message = ?, error_hint = ?
-                  WHERE status = 'running'`,
+                  WHERE status = 'running' AND agent_id = ?`,
+            ),
+            turnsRunningOrphan: db.prepare(
+                `SELECT DISTINCT agent_id FROM turns
+                  WHERE status = 'running'
+                    AND agent_id NOT IN (SELECT agent_id FROM runtime_leases)`,
+            ),
+
+            leaseGet: db.prepare("SELECT * FROM runtime_leases WHERE agent_id = ?"),
+            leaseAll: db.prepare("SELECT * FROM runtime_leases ORDER BY agent_id"),
+            leaseInsert: db.prepare(
+                `INSERT INTO runtime_leases
+                     (agent_id, runtime_id, pid, mode, started_at, heartbeat_at)
+                 VALUES (?, ?, ?, ?, ?, ?)
+                 ON CONFLICT (agent_id) DO UPDATE SET
+                     runtime_id = excluded.runtime_id, pid = excluded.pid, mode = excluded.mode,
+                     started_at = excluded.started_at, heartbeat_at = excluded.heartbeat_at`,
+            ),
+            leaseBeat: db.prepare(
+                "UPDATE runtime_leases SET heartbeat_at = ? WHERE agent_id = ? AND runtime_id = ?",
+            ),
+            leaseRelease: db.prepare(
+                "DELETE FROM runtime_leases WHERE agent_id = ? AND runtime_id = ?",
             ),
 
             outboxInsert: db.prepare(
@@ -422,11 +475,18 @@ export class SqliteStore implements Store {
                   WHERE agent_id = ? AND group_key = ? AND chunk_index > ?
                     AND status IN ('pending', 'inflight')`,
             ),
-            outboxInflight: db.prepare("SELECT * FROM outbox WHERE status = 'inflight'"),
+            outboxInflight: db.prepare(
+                "SELECT * FROM outbox WHERE status = 'inflight' AND agent_id = ?",
+            ),
             outboxRecover: db.prepare(
                 `UPDATE outbox
                     SET status = 'pending', uncertain = 1, next_attempt_at = ?, updated_at = ?
-                  WHERE status = 'inflight'`,
+                  WHERE status = 'inflight' AND agent_id = ?`,
+            ),
+            outboxInflightOrphan: db.prepare(
+                `SELECT DISTINCT agent_id FROM outbox
+                  WHERE status = 'inflight'
+                    AND agent_id NOT IN (SELECT agent_id FROM runtime_leases)`,
             ),
             outboxPrune: db.prepare(
                 "DELETE FROM outbox WHERE status IN ('sent', 'failed') AND updated_at < ?",
@@ -619,15 +679,26 @@ export class SqliteStore implements Store {
                 q.turnList
                     .all<TurnRow>(agentId, sessionKey, options?.limit ?? DEFAULT_PAGE)
                     .map(toTurn),
-            reapRunning: async (reason) => {
-                const ids = q.turnsRunning.all<{ turn_id: string }>().map((row) => row.turn_id)
-                if (ids.length === 0) return []
-                q.turnsReap.run(
-                    nowIso(),
-                    `The process holding this turn exited before it finished (${reason}).`,
-                    "A turn cannot be resumed by a different process — the model stream it was reading is gone. Send the input again. This row was left running by an earlier crash and is marked failed at boot rather than left ambiguous.",
-                )
-                return ids
+            reapRunning: async (agentIds, reason) => {
+                if (agentIds.length === 0) return []
+                const ts = nowIso()
+                return db.transaction(() => {
+                    const reaped: string[] = []
+                    for (const agentId of agentIds) {
+                        const ids = q.turnsRunning
+                            .all<{ turn_id: string }>(agentId)
+                            .map((row) => row.turn_id)
+                        if (ids.length === 0) continue
+                        q.turnsReap.run(
+                            ts,
+                            `The process holding this turn exited before it finished (${reason}).`,
+                            "A turn cannot be resumed by a different process — the model stream it was reading is gone. Send the input again. This row was left running by an earlier crash and is marked failed at boot rather than left ambiguous.",
+                            agentId,
+                        )
+                        reaped.push(...ids)
+                    }
+                    return reaped
+                })
             },
         }
 
@@ -708,22 +779,31 @@ export class SqliteStore implements Store {
                     )
                     return ids
                 }),
-            recoverInflight: async (nextAttemptAt) =>
-                db.transaction(() => {
-                    const rows = q.outboxInflight.all<DeliveryRow>()
-                    if (rows.length === 0) return []
+            recoverInflight: async (agentIds, nextAttemptAt) => {
+                if (agentIds.length === 0) return []
+                return db.transaction(() => {
                     const ts = nextAttemptAt ?? nowIso()
-                    q.outboxRecover.run(ts, nowIso())
-                    // The pre-update rows, with the two fields the update changed applied by hand:
-                    // a caller reporting recovery wants to see the state it is about to be in, and
-                    // re-reading every row to get it would double the query count for no new fact.
-                    return rows.map((row) => ({
-                        ...toDelivery(row),
-                        status: "pending" as const,
-                        uncertain: true,
-                        nextAttemptAt: ts,
-                    }))
-                }),
+                    const recovered: DeliveryRecord[] = []
+                    for (const agentId of agentIds) {
+                        const rows = q.outboxInflight.all<DeliveryRow>(agentId)
+                        if (rows.length === 0) continue
+                        q.outboxRecover.run(ts, nowIso(), agentId)
+                        // The pre-update rows, with the two fields the update changed applied by
+                        // hand: a caller reporting recovery wants to see the state it is about to
+                        // be in, and re-reading every row would double the query count for no new
+                        // fact.
+                        recovered.push(
+                            ...rows.map((row) => ({
+                                ...toDelivery(row),
+                                status: "pending" as const,
+                                uncertain: true,
+                                nextAttemptAt: ts,
+                            })),
+                        )
+                    }
+                    return recovered
+                })
+            },
             get: async (id) => {
                 const row = q.outboxById.get<DeliveryRow>(id)
                 return row === undefined ? undefined : toDelivery(row)
@@ -747,6 +827,64 @@ export class SqliteStore implements Store {
                     .map(toDelivery)
             },
             prune: async (before) => q.outboxPrune.run(before).changes,
+        }
+
+        this.leases = {
+            claim: async (input) =>
+                // The read and the write are one transaction, which is the whole mechanism: two
+                // processes starting at the same instant would otherwise both read "no holder" and
+                // both insert, and the second would win the upsert without anyone being told.
+                db.transaction((): LeaseClaim => {
+                    const held = q.leaseGet.get<LeaseRow>(input.agentId)
+                    if (held !== undefined && held.runtime_id !== input.runtimeId) {
+                        // `stealFrom` names the holder the caller established is dead. Matching on
+                        // it — rather than on a bare "force" flag — is what makes the probe safe:
+                        // if the lease changed hands between the probe and here, this is a
+                        // different, living process and the claim is refused.
+                        if (input.stealFrom !== held.runtime_id) {
+                            return { ok: false, held: toLease(held) }
+                        }
+                    }
+                    q.leaseInsert.run(
+                        input.agentId,
+                        input.runtimeId,
+                        input.pid,
+                        input.mode,
+                        input.now,
+                        input.now,
+                    )
+                    const lease: LeaseRecord = {
+                        agentId: input.agentId,
+                        runtimeId: input.runtimeId,
+                        pid: input.pid,
+                        mode: input.mode,
+                        startedAt: input.now,
+                        heartbeatAt: input.now,
+                    }
+                    return held === undefined || held.runtime_id === input.runtimeId
+                        ? { ok: true, lease }
+                        : { ok: true, lease, tookOver: toLease(held) }
+                }),
+            beat: async (agentId, runtimeId, now) =>
+                q.leaseBeat.run(now, agentId, runtimeId).changes > 0,
+            release: async (agentId, runtimeId) => {
+                q.leaseRelease.run(agentId, runtimeId)
+            },
+            get: async (agentId) => {
+                const row = q.leaseGet.get<LeaseRow>(agentId)
+                return row === undefined ? undefined : toLease(row)
+            },
+            all: async () => q.leaseAll.all<LeaseRow>().map(toLease),
+            orphans: async () => {
+                const ids = new Set<string>()
+                for (const row of q.turnsRunningOrphan.all<{ agent_id: string }>()) {
+                    ids.add(row.agent_id)
+                }
+                for (const row of q.outboxInflightOrphan.all<{ agent_id: string }>()) {
+                    ids.add(row.agent_id)
+                }
+                return [...ids].sort()
+            },
         }
 
         this.kv = {

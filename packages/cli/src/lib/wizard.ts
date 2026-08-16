@@ -277,6 +277,7 @@ export function answeredRows(
         telegramAllow: "Telegram handle",
         telegramToken: "Bot token",
         server: "HTTP API",
+        daemon: "Background service",
         serverToken: "API token",
         composioKey: "Composio key",
         dir: "Directory",

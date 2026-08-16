@@ -21,6 +21,7 @@ import {
     BRAND,
     defaultStorePath,
     HarnessError,
+    processAlive,
     Runtime as RuntimeClass,
     VERSION,
 } from "@castellan/core"
@@ -30,6 +31,7 @@ import { EXIT_FAILURE, EXIT_OK, PROMPT } from "#lib/const"
 import { flushOutput, markTerminalDirty, onExit } from "#lib/exit"
 import { resolveModeFromProcess } from "#lib/output"
 import { CHANNELS, TOOL_PROVIDERS } from "#lib/providers"
+import { keyValue } from "#lib/render"
 import { listAgents, storePath } from "#lib/sandbox"
 import type { RunOptions } from "#lib/schema"
 import {
@@ -506,6 +508,9 @@ async function runPlain(wired: Wired): Promise<RunOutcome> {
             case "tools":
                 row(toolsReport(toolsView(agent)))
                 return "handled"
+            case "status":
+                row(await sessionStatus(wired))
+                return "handled"
             case "reset":
                 await agent.clearSession(sessionKey)
                 row("session cleared — memory files on disk are untouched")
@@ -663,4 +668,71 @@ async function runPlain(wired: Wired): Promise<RunOutcome> {
         process.off("SIGINT", sigintHandler)
         unsubscribe()
     }
+}
+
+/**
+ * `/status` — what this agent is, and what is actually running.
+ *
+ * The human twin of context slot 2. That block tells the *model* its model, window, channels,
+ * server and permissions on every turn; until this existed the person at the prompt could not see
+ * any of it, which is the same asymmetry slot 2 was added to remove, pointed the other way.
+ *
+ * State, not configuration, for the same reason slot 2 is: told only what the manifest says, an
+ * agent under `run` concluded its Telegram runtime had died and reported that nothing was listening
+ * on its port — from inside the running process. Every statement was true of the file and false of
+ * the moment. So a configured-but-not-started channel says exactly that, and names what does start
+ * it.
+ */
+async function sessionStatus(wired: Wired): Promise<string> {
+    const agent = wired.agent
+    const described = agent.describe()
+    const manifest = agent.manifest
+    // `channels.started`, never "are any registered". A binding exists under `run` too, so reading
+    // its presence as "connected" is decision 5.17's bug wearing a different hat — and it was,
+    // until this screen was built and said so out loud.
+    const configured = manifest.channels
+        .filter((channel) => channel.enabled)
+        .map((channel) => `${channel.id} (${channel.type})`)
+        .join(", ")
+    const channels =
+        configured === ""
+            ? "none — reached through this session and the HTTP API only"
+            : wired.runtime.channels.started
+              ? `${configured} — connected in this session`
+              : `${configured} — configured, NOT running here; \`serve\` starts channels, \`run\` does not`
+
+    const server = !manifest.server.enabled
+        ? "off"
+        : `enabled on ${manifest.server.host}:${manifest.server.port}, NOT bound here — \`serve\` binds it`
+
+    return keyValue([
+        { label: "agent", value: `${described.id} (${described.name})` },
+        {
+            label: "model",
+            value: `${described.model} · ${manifest.tools.dialect} · ${described.window} token window`,
+        },
+        { label: "channels", value: channels },
+        { label: "http api", value: server },
+        { label: "store", value: wired.runtime.store.location },
+        { label: "background", value: await supervision(wired, described.id) },
+    ])
+}
+
+/**
+ * Who, if anyone, is keeping this agent up — and the three answers are genuinely different.
+ *
+ * "Not supervised" was the first version, derived from this runtime not holding the lease. It was
+ * wrong in the most misleading direction available: a REPL correctly *declines* the lease when a
+ * service already holds it, so an agent that had been running as a daemon for a week reported
+ * itself unsupervised to the person looking straight at it.
+ */
+async function supervision(wired: Wired, agentId: string): Promise<string> {
+    if (wired.runtime.owned.includes(agentId)) return "this session is serving this agent"
+    const lease = await wired.runtime.store.leases.get(agentId)
+    if (lease !== undefined && processAlive(lease.pid)) {
+        return lease.mode === "daemon"
+            ? `running as a background service · pid ${lease.pid} · \`${BRAND.slug} daemon status ${agentId}\``
+            : `served by another session · pid ${lease.pid} (${lease.mode})`
+    }
+    return `not supervised — \`${BRAND.slug} daemon install ${agentId}\` keeps it running without a terminal`
 }

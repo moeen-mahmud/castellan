@@ -192,6 +192,13 @@ export interface InitAnswers {
      * `openssl rand -hex 32` is what someone does by hand here, so the command does it.
      */
     readonly serverToken?: string
+    /**
+     * Whether to keep it running in the background: `none` or `service`.
+     *
+     * Writes nothing — see `DAEMON_CHOICES`. It decides whether the last screen names the command,
+     * which is the whole of its job: `serve` dies with its terminal, and nothing in the flow said so.
+     */
+    readonly daemon: string
     /** Target directory, as given — the command resolves it against the cwd. */
     readonly dir: string
 }
@@ -354,6 +361,33 @@ export function serverChoice(value: string): (typeof SERVER_CHOICES)[number] | u
     return SERVER_CHOICES.find((choice) => choice.value === value)
 }
 
+/**
+ * Whether this agent should keep running without a terminal.
+ *
+ * The answer writes **nothing** — no service, no manifest field. Not a service, because at this
+ * point in the flow the `.env` is still empty of the bot token in the common case, and the install
+ * check that exists to catch exactly that would fail; installing anyway would produce a service
+ * that fails from birth, which is the failure this whole capability was designed against. Not a
+ * manifest field, because whether *this machine* supervises the agent is a fact about the machine
+ * and would make the manifest non-portable.
+ *
+ * What it changes is the last screen: the command appears in the next steps, at the moment it
+ * becomes runnable. A capability reachable only by someone who already knows the field names is a
+ * capability the generated file is hiding — the standing rule that put `system`, `web` and Composio
+ * in here too.
+ */
+export const DAEMON_CHOICES: readonly {
+    readonly value: string
+    readonly label: string
+}[] = [
+    { value: "none", label: "No — it runs while you have `serve` open in a terminal" },
+    { value: "service", label: "Yes — in the background: starts at login, restarts on crash" },
+]
+
+export function daemonChoice(value: string): (typeof DAEMON_CHOICES)[number] | undefined {
+    return DAEMON_CHOICES.find((choice) => choice.value === value)
+}
+
 export const SYSTEM_CHOICES: readonly {
     readonly value: string
     readonly label: string
@@ -457,6 +491,7 @@ const STEP_ORDER: readonly InitStep[] = [
     "telegramAllow",
     "telegramToken",
     "server",
+    "daemon",
     "dir",
 ]
 
@@ -553,6 +588,12 @@ export function nextQuestion(
             (step === "telegramToken" || step === "telegramAllow") &&
             partial.telegram !== "connected"
         ) {
+            continue
+        }
+        // And nobody with neither a channel nor a server is asked about a background service —
+        // there would be nothing for it to keep up, which is the same refusal `daemon install`
+        // makes. An answer the flow discards is a question that lies.
+        if (step === "daemon" && partial.telegram !== "connected" && partial.server !== "local") {
             continue
         }
 
@@ -691,6 +732,16 @@ export function nextQuestion(
                         label: choice.label,
                     })),
                 }
+            case "daemon":
+                return {
+                    step,
+                    prompt: "Keep it running in the background?",
+                    fallback: "1",
+                    options: DAEMON_CHOICES.map((choice) => ({
+                        value: choice.value,
+                        label: choice.label,
+                    })),
+                }
             case "dir":
                 return {
                     step,
@@ -800,6 +851,17 @@ export function validateAnswer(step: InitStep, raw: string): Answered {
                 ? {
                       ok: false,
                       reason: `pick 1-${SERVER_CHOICES.length}, or a name: ${SERVER_CHOICES.map((c) => c.value).join(", ")}.`,
+                  }
+                : { ok: true, value: chosen.value }
+        }
+
+        case "daemon": {
+            const byNumber = DAEMON_CHOICES[Number(value) - 1]
+            const chosen = byNumber ?? daemonChoice(value.toLowerCase())
+            return chosen === undefined
+                ? {
+                      ok: false,
+                      reason: `pick 1-${DAEMON_CHOICES.length}, or a name: ${DAEMON_CHOICES.map((c) => c.value).join(", ")}.`,
                   }
                 : { ok: true, value: chosen.value }
         }

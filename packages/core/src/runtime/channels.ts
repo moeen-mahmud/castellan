@@ -131,6 +131,19 @@ export class ChannelHub {
         return this.#agents.size
     }
 
+    /**
+     * Whether `start()` has been called — that is, whether anything is actually listening.
+     *
+     * Not derivable from `statusOf`, and assuming it was is how decision 5.17's bug survived its
+     * own fix. `statusOf` reports every *registered* binding, which `run` has just as much as
+     * `serve` does, so `statusOf(id).length > 0` answers "is a channel configured" and was being
+     * read as "is a channel running". Slot 2 then told an agent under `run` that its Telegram
+     * channel was connected in this session, which is the precise sentence 5.17 exists to prevent.
+     */
+    get started(): boolean {
+        return this.#started
+    }
+
     /** Channel ids and their last reported state, for `GET /v1/agents/:id`. */
     statusOf(agentId: string): readonly { id: string; type: string; status: ChannelStatus }[] {
         const bound = this.#agents.get(agentId)
@@ -154,7 +167,10 @@ export class ChannelHub {
         this.#started = true
 
         for (const [agentId, bound] of this.#agents) {
-            await bound.outbox.recover()
+            // Scoped to this agent, not to every row in the file. Two runtimes can share a store,
+            // and recovering the other one's in-flight chunk makes it re-send a message it has
+            // already delivered.
+            await bound.outbox.recover([agentId])
             bound.outbox.start(agentId)
 
             for (const binding of bound.bindings) {

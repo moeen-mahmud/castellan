@@ -193,6 +193,15 @@ export {
     type ChannelHubOptions,
 } from "./runtime/channels.ts"
 export {
+    claimLeases,
+    LEASE_BEAT_MS,
+    LEASE_STALE_MS,
+    type LeaseOutcome,
+    // Exported so a front end asking "is this lease real?" uses the same witness the runtime does.
+    // Two definitions of alive is how a status command comes to disagree with the thing it reports.
+    processAlive,
+} from "./runtime/lease.ts"
+export {
     type AgentSource,
     type BootReport,
     buildChannels,

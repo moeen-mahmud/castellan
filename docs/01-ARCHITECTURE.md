@@ -716,26 +716,44 @@ retry, reassign, or surface it.
 
 ## CLI
 
-Four commands — `run`, `sessions`, `validate`, `agents` — and three renderers.
+Eleven commands and three renderers. One module per command, and the interesting logic in each
+lives in a pure module beside it rather than in the command.
 
 ```
 packages/cli/src/
   index.ts          parse → dispatch → exit. Imports no Ink and no React.
   lib/              plumbing, one concern per file
-    commands.ts       the command and flag table — data only
+    commands.ts       the command, arg and flag table — data only
     args.ts           pure parser
-    help.ts           help rendered from the table
+    help.ts           help rendered from the table, actions included
     output.ts         resolveMode(): json | plain | rich
+    render.ts         the PLAIN path's vocabulary: keyValue, bytes, duration (pure)
+    theme.ts          the RICH path's: colour tokens and glyphs (pure)
     env.ts            every environment read
-    exit.ts           the single teardown
+    ambient.ts        which .env wins
+    sandbox.ts        ~/<stateDir>: discovery, ref resolution, the store path
+    exit.ts           the single teardown, and who owns SIGTERM
+    providers.ts      which tool providers and channels this binary can supply
+    launchd.ts        plist rendering and launchctl parsing (pure)
+    daemon-plan.ts    preflight findings and status verdicts (pure)
+    service.ts        the service-manager seam — the only subprocess in the package
+    init-flow.ts wizard.ts select.ts session-commands.ts templates.ts
     const.ts types.ts schema.ts wrap.ts
   transcript.ts     pure AnyEvent → TranscriptState reducer
   keymap.ts         pure key → intent
   editor.ts         pure intent → input line
-  run.ts sessions.ts validate.ts agents.ts    one module per command
-  components/       App, Transcript, Live, StatusBar, Prompt
+  init.ts run.ts sessions.ts validate.ts workspace.ts soul.ts
+  agents.ts tools.ts serve.ts daemon.ts       one module per command
+  components/       App, Transcript, Live, StatusBar, Prompt, Picker, WizardApp, the kit
   hooks/            useTurn, useTerminalSize, useElapsed
 ```
+
+**`serve` and `daemon` are the long-running half.** `serve` is the only command that binds a socket
+or starts a channel; `daemon` installs it as a macOS LaunchAgent so it outlives its terminal. A
+runtime lease in the store — one row per agent id, claimed before channels start — is what stops
+two processes serving one agent, which the transport cannot detect for itself: a second Telegram
+poller produces 409s indistinguishable from the outage the poll loop is built to survive, and
+webhook mode produces no signal at all.
 
 **Mode is resolved once**, ordered and total, and reports its reason. `json` is a single document on
 stdout; `plain` is line-oriented with no ANSI and no cursor movement; `rich` is the Ink app. A

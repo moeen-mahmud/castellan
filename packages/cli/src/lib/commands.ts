@@ -236,7 +236,14 @@ export const COMMANDS: readonly CommandSpec[] = [
         name: "soul",
         summary: "scaffold a hand-edited compact identity from a long-form document",
         args: [
-            { name: "action", required: true, help: "distill" },
+            {
+                name: "action",
+                required: true,
+                help: "what to do",
+                choices: [
+                    { value: "distill", help: "scaffold a compact identity beside the source" },
+                ],
+            },
             { name: "file", required: true, help: "path to the long-form identity document" },
         ],
         flags: [
@@ -296,6 +303,62 @@ export const COMMANDS: readonly CommandSpec[] = [
                 defaultHelp: "server.host, or 127.0.0.1",
             },
             STORE,
+            JSON_FLAG,
+        ],
+    },
+    {
+        // `serve` stays up only as long as its terminal, which makes an agent configured for a
+        // channel answer only while a window is open. This installs it as a supervised service.
+        //
+        // Second action-as-positional command after `soul` — and the reason `ArgSpec.choices`
+        // exists, since seven verbs hidden inside a prose help string is a set nothing can check.
+        name: "daemon",
+        summary: "keep an agent serving in the background — starts at login, restarts on crash",
+        args: [
+            {
+                name: "action",
+                required: true,
+                help: "what to do",
+                choices: [
+                    {
+                        value: "install",
+                        help: "check it will boot, write the service, load it, and watch it start",
+                    },
+                    { value: "uninstall", help: "unload it and remove the service definition" },
+                    { value: "start", help: "load it again after a stop" },
+                    { value: "stop", help: "unload it, and keep it stopped across a login" },
+                    { value: "restart", help: "what you run after editing agent.yaml or .env" },
+                    {
+                        value: "status",
+                        help: "running? how many restarts? why did it stop? — bare, reports every agent",
+                    },
+                    { value: "logs", help: "the tail of stderr; --lines, --truncate" },
+                ],
+            },
+            {
+                name: "agent",
+                // Optional so a bare `daemon status` can answer "is anything running?" — the
+                // question people actually have, and one that should not require naming an agent.
+                required: false,
+                help: "path or sandbox agent name (omit only for status)",
+            },
+        ],
+        flags: [
+            {
+                name: "lines",
+                kind: "number",
+                placeholder: "n",
+                integer: true,
+                min: 1,
+                help: "how much of the log to show",
+                defaultHelp: "40",
+            },
+            { name: "truncate", kind: "boolean", help: "empty the log files (logs)" },
+            {
+                name: "dry-run",
+                kind: "boolean",
+                help: "print the service definition and the checks; write nothing",
+            },
             JSON_FLAG,
         ],
     },

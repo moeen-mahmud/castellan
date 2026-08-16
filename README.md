@@ -65,6 +65,39 @@ passed on the command line lands in shell history — so a scripted run
 (`init --user Ada --name Scout --preset ollama --yes`) leaves the line blank and says where to fill
 it in.
 
+## Keeping an agent up
+
+`run` is a conversation and `serve` is a server: `serve` is the only command that binds a socket or
+connects a channel, because a REPL that quietly started answering Telegram while you typed at it
+would be a surprise — and because a messaging provider allows exactly one listener per token, so
+the two would fight over your bot.
+
+`serve` still dies with its terminal. On macOS:
+
+```bash
+castellan daemon install milo   # checks it will boot, then installs a LaunchAgent
+castellan daemon status         # running? how many restarts? why did it stop?
+castellan daemon restart milo   # after editing agent.yaml or .env
+castellan daemon logs milo
+```
+
+A configuration error stops the service **once** rather than restarting it forever — the generated
+job restarts on a crash signal and on nothing else, so a missing token leaves a stopped service and
+an explanation instead of a log file growing at one line every ten seconds. `status` prints the
+exit code and the tail of stderr, and exits non-zero, so it is usable from a monitor.
+
+The service definition contains no secrets, ever. `launchctl print` echoes a job's environment in
+plaintext to any local process, so the agent reads its credentials from the `.env` beside its
+manifest — which `init` writes `0600` — and the plist carries only `HOME`, `PATH` and the two brand
+variables.
+
+**Linux and containers.** There is no `daemon` on Linux: nothing in this project's test environment
+can run `systemctl`, and shipping a unit file nobody has executed is how a "supported" platform
+turns out not to be. `daemon` there refuses and prints the `ExecStart=` line with the paths already
+resolved, which is the part that is hard to get right by hand. In a container, run `serve` in the
+foreground and let the container runtime supervise it — it handles SIGTERM, finishes the delivery
+in flight, and exits 0.
+
 ## Development
 
 ```bash

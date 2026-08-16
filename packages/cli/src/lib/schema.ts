@@ -39,6 +39,17 @@ export interface ArgSpec {
     readonly required: boolean
     readonly variadic?: boolean
     readonly help: string
+    /**
+     * The fixed set this argument accepts, when it is a verb rather than a value.
+     *
+     * Structured rather than prose in `help`, because prose is invisible to every check. `soul`'s
+     * single action lived inside its help string for three phases, so nothing could tell whether
+     * the command still accepted what the help claimed — and a second action-taking command made
+     * that a class of drift rather than one oddity. `help.ts` renders these as an `actions:` block
+     * and a test asserts every action the command body accepts appears here, which is the same
+     * guarantee the flag table already gives flags.
+     */
+    readonly choices?: readonly { readonly value: string; readonly help: string }[]
 }
 
 export interface CommandSpec {

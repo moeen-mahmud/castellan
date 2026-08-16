@@ -18,7 +18,7 @@
 
 import { nearest } from "@castellan/core"
 
-export type SessionCommandKind = "help" | "restart" | "tools" | "reset" | "exit"
+export type SessionCommandKind = "help" | "status" | "restart" | "tools" | "reset" | "exit"
 
 export interface SessionCommandSpec {
     readonly kind: SessionCommandKind
@@ -30,6 +30,16 @@ export interface SessionCommandSpec {
 
 export const SESSION_COMMANDS: readonly SessionCommandSpec[] = [
     { kind: "help", word: "/help", aliases: [], summary: "this list" },
+    {
+        // The human twin of context slot 2. Until this existed, the *model* was told its model,
+        // window, channels, server and permissions on every turn — and the person at the prompt
+        // had no way to see any of it. An agent that knows more about the runtime than its operator
+        // does is the same asymmetry, pointed the other way, that slot 2 was added to fix.
+        kind: "status",
+        word: "/status",
+        aliases: [],
+        summary: "model, channels, server, store — what this agent is and what is actually running",
+    },
     {
         kind: "restart",
         word: "/restart",

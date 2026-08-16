@@ -427,7 +427,7 @@ describe("turns", () => {
             input: "x",
         })
 
-        const reaped = await store.turns.reapRunning("test")
+        const reaped = await store.turns.reapRunning([AGENT], "test")
         expect(reaped).toEqual(["t_live"])
 
         const turn = await store.turns.get("t_live")
@@ -435,7 +435,7 @@ describe("turns", () => {
         expect(turn?.errorCode).toBe("turn_abandoned")
         expect(turn?.errorHint).toContain("cannot be resumed")
 
-        expect(await store.turns.reapRunning("test")).toEqual([])
+        expect(await store.turns.reapRunning([AGENT], "test")).toEqual([])
         await store.close()
     })
 
@@ -457,8 +457,39 @@ describe("turns", () => {
             outputTokens: 1,
             durationMs: 1,
         })
-        expect(await store.turns.reapRunning("test")).toEqual([])
+        expect(await store.turns.reapRunning([AGENT], "test")).toEqual([])
         expect((await store.turns.get("t_done"))?.status).toBe("final")
+        await store.close()
+    })
+
+    /**
+     * The regression the whole lease exists for.
+     *
+     * Unfiltered, this call marked *every* running turn in the database failed. One process on one
+     * file makes that correct; two processes sharing a file makes it a live turn reported as dead,
+     * with the row's own error text claiming the process had exited. Nothing failed, nothing was
+     * logged, and the only evidence was a turn record nobody reads.
+     */
+    test("reapRunning leaves another agent's running turn alone", async () => {
+        const store = await openMemoryStore()
+        for (const [id, agent] of [
+            ["t_mine", AGENT],
+            ["t_theirs", "other"],
+        ] as const) {
+            await store.turns.start({
+                turnId: id,
+                agentId: agent,
+                sessionKey: KEY,
+                source: "repl",
+                input: "x",
+            })
+        }
+
+        expect(await store.turns.reapRunning([AGENT], "test")).toEqual(["t_mine"])
+        expect((await store.turns.get("t_theirs"))?.status).toBe("running")
+        // And an empty list is not "everything" — the shape a careless default would take.
+        expect(await store.turns.reapRunning([], "test")).toEqual([])
+        expect((await store.turns.get("t_theirs"))?.status).toBe("running")
         await store.close()
     })
 
@@ -475,6 +506,116 @@ describe("turns", () => {
         // Both bindings surface SQLite's own text here, which is the same even though the error
         // class and `code` around it differ.
         await expect(store.turns.start(record)).rejects.toThrow("constraint failed")
+        await store.close()
+    })
+})
+
+describe("runtime leases", () => {
+    const T0 = "2026-08-17T02:00:00.000Z"
+    const T1 = "2026-08-17T02:00:30.000Z"
+
+    function claim(runtimeId: string, pid: number, now: string, stealFrom?: string) {
+        return {
+            agentId: AGENT,
+            runtimeId,
+            pid,
+            mode: "terminal" as const,
+            now,
+            ...(stealFrom === undefined ? {} : { stealFrom }),
+        }
+    }
+
+    test("the first claim wins and the second is refused, naming the holder", async () => {
+        const store = await openMemoryStore()
+        const first = await store.leases.claim(claim("rt_a", 100, T0))
+        expect(first.ok).toBe(true)
+
+        const second = await store.leases.claim(claim("rt_b", 200, T1))
+        expect(second.ok).toBe(false)
+        // The refusal has to carry enough for a person to act: which process, and since when.
+        if (!second.ok) {
+            expect(second.held.pid).toBe(100)
+            expect(second.held.runtimeId).toBe("rt_a")
+            expect(second.held.startedAt).toBe(T0)
+        }
+        await store.close()
+    })
+
+    test("re-claiming your own lease is not a conflict", async () => {
+        const store = await openMemoryStore()
+        await store.leases.claim(claim("rt_a", 100, T0))
+        const again = await store.leases.claim(claim("rt_a", 100, T1))
+        expect(again.ok).toBe(true)
+        // Not reported as a takeover — you cannot take over from yourself, and saying so would put
+        // a spurious "recovered a dead process" line in front of a person on every restart.
+        if (again.ok) expect(again.tookOver).toBeUndefined()
+        await store.close()
+    })
+
+    test("a lease is taken over only from the holder the caller probed", async () => {
+        const store = await openMemoryStore()
+        await store.leases.claim(claim("rt_a", 100, T0))
+
+        // The caller established rt_a is dead — but by the time it claims, rt_c holds the lease.
+        // Stealing here would evict a process that has only just legitimately started, which is
+        // exactly the double-poller the lease exists to prevent.
+        await store.leases.claim(claim("rt_c", 300, T1, "rt_a"))
+        const stale = await store.leases.claim(claim("rt_b", 200, T1, "rt_a"))
+        expect(stale.ok).toBe(false)
+
+        const fresh = await store.leases.claim(claim("rt_b", 200, T1, "rt_c"))
+        expect(fresh.ok).toBe(true)
+        if (fresh.ok) expect(fresh.tookOver?.runtimeId).toBe("rt_c")
+        await store.close()
+    })
+
+    test("release frees it, and only for the holder", async () => {
+        const store = await openMemoryStore()
+        await store.leases.claim(claim("rt_a", 100, T0))
+        await store.leases.release(AGENT, "rt_b")
+        expect((await store.leases.get(AGENT))?.runtimeId).toBe("rt_a")
+
+        await store.leases.release(AGENT, "rt_a")
+        expect(await store.leases.get(AGENT)).toBeUndefined()
+        expect(await store.leases.all()).toEqual([])
+        await store.close()
+    })
+
+    test("beat refreshes the holder and is a no-op for anyone else", async () => {
+        const store = await openMemoryStore()
+        await store.leases.claim(claim("rt_a", 100, T0))
+        expect(await store.leases.beat(AGENT, "rt_b", T1)).toBe(false)
+        expect((await store.leases.get(AGENT))?.heartbeatAt).toBe(T0)
+
+        expect(await store.leases.beat(AGENT, "rt_a", T1)).toBe(true)
+        expect((await store.leases.get(AGENT))?.heartbeatAt).toBe(T1)
+        await store.close()
+    })
+
+    /**
+     * Scoping recovery to leaseholders means a deleted or renamed agent's rows are nobody's to
+     * reap — which is the exact ambiguity `reapRunning` exists to remove, reintroduced by the fix
+     * for a different bug. `orphans` is what keeps the narrowing honest.
+     */
+    test("orphans names agents with running rows and no lease", async () => {
+        const store = await openMemoryStore()
+        await store.turns.start({
+            turnId: "t_ghost",
+            agentId: "deleted-agent",
+            sessionKey: KEY,
+            source: "repl",
+            input: "x",
+        })
+        await store.turns.start({
+            turnId: "t_held",
+            agentId: AGENT,
+            sessionKey: KEY,
+            source: "repl",
+            input: "x",
+        })
+        await store.leases.claim(claim("rt_a", 100, T0))
+
+        expect(await store.leases.orphans()).toEqual(["deleted-agent"])
         await store.close()
     })
 })

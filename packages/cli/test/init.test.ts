@@ -7,7 +7,7 @@
  */
 
 import { describe, expect, test } from "bun:test"
-import { existsSync, mkdtempSync, readFileSync } from "node:fs"
+import { existsSync, mkdtempSync, readFileSync, statSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import {
@@ -92,6 +92,21 @@ describe("initCommand", () => {
         // whichever soul the model gets, not on whichever one the test was written against.
         expect(placeholderFindings.map((finding) => finding.field)).toEqual(["SOUL.md"])
         expect(placeholderFindings[0]?.message).toContain("{{INPUT_1}}")
+    })
+
+    /**
+     * The generated `.env` holds every credential the agent has, and it used to be world-readable
+     * at the default 0644. That became load-bearing once a background service existed: launchd
+     * hands a job almost no environment and the service definition carries no secrets on purpose,
+     * so this file is the only path a credential arrives by.
+     */
+    test("the .env is created 0600 and nothing else is", async () => {
+        const dir = scratch()
+        expect(await initCommand({ ...FLAGS, dir })).toBe(EXIT_OK)
+        expect(statSync(join(dir, ".env")).mode & 0o777).toBe(0o600)
+        // Deliberately narrow — locking down the manifest or the workspace would break the
+        // ordinary case of a person editing them.
+        expect(statSync(join(dir, "agent.yaml")).mode & 0o077).not.toBe(0)
     })
 
     test("a big-window frontier model ships the full SOUL.md, identity leading", async () => {

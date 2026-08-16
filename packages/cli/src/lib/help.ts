@@ -33,6 +33,26 @@ function flagLine(flag: FlagSpec): string {
 const SESSION_KEY_NOTE = `Session keys are {channel}:{peerId}[:{thread}] — a bare word is refused, because outbound
 delivery reads the channel back out of the key.`
 
+/**
+ * The fixed set an argument accepts, listed rather than described.
+ *
+ * A command whose first positional is a verb has to enumerate its verbs somewhere a check can see.
+ * Before this they lived inside a prose `help` string, so nothing could tell whether the command
+ * still accepted what the help claimed — and `daemon` has seven of them.
+ */
+function choiceLines(command: CommandSpec): readonly string[] {
+    const out: string[] = []
+    for (const arg of command.args) {
+        if (arg.choices === undefined || arg.choices.length === 0) continue
+        const width = Math.max(...arg.choices.map((choice) => choice.value.length)) + 2
+        out.push("", `${arg.name}:`)
+        for (const choice of arg.choices) {
+            out.push(`  ${choice.value.padEnd(width)}${choice.help}`)
+        }
+    }
+    return out
+}
+
 /** Help for one command, or for the whole tool when `command` is absent. */
 export function helpText(command?: CommandSpec): string {
     if (command !== undefined) {
@@ -41,6 +61,7 @@ export function helpText(command?: CommandSpec): string {
             "",
             "usage:",
             `  ${usageLine(command)} [flags]`,
+            ...choiceLines(command),
             "",
             "flags:",
             ...flagsFor(command).map(flagLine),

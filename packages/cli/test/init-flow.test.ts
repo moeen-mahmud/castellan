@@ -34,6 +34,7 @@ const ANSWERS: InitAnswers = {
     composio: "none",
     telegram: "none",
     server: "none",
+    daemon: "none",
     dir: "./milo",
 }
 

@@ -35,6 +35,7 @@ const teardowns: Teardown[] = []
 let guardsInstalled = false
 let restored = false
 let dirty = false
+let signalsClaimed = false
 
 /**
  * Declare that the terminal has been put into a state that needs undoing — raw mode, a hidden
@@ -57,6 +58,26 @@ export function onExit(teardown: Teardown): void {
 }
 
 /**
+ * Take ownership of SIGTERM, for a command whose shutdown *is* the point.
+ *
+ * The default guard answers SIGTERM with `finishNow(EXIT_SIGTERM)`, which is right for a command
+ * that was interrupted: 143 is the shell convention and the work was not finished. It is wrong for
+ * `serve`, where a signal is the ordinary and expected way to stop — the work was to stay up, and
+ * being asked to stop is the successful end of it, not a failure.
+ *
+ * That distinction is not cosmetic once a service manager is involved. The generated service
+ * definition restarts only on a crash, precisely so a misconfiguration stops once instead of
+ * looping forever; a graceful stop reported as 143 is indistinguishable from that misconfiguration,
+ * so the supervisor would refuse to bring the agent back.
+ *
+ * The caller must resolve its own wait on the signal and return an exit code normally. Everything
+ * registered with `onExit` still runs, because `finish` awaits the teardowns either way.
+ */
+export function claimSignals(): void {
+    signalsClaimed = true
+}
+
+/**
  * Synchronous by necessity — `process.on("exit")` cannot await. Idempotent, because it runs both
  * explicitly and from the exit hook.
  */
@@ -74,6 +95,7 @@ export function resetForTests(options: { readonly dirty?: boolean } = {}): void 
     teardowns.length = 0
     restored = false
     dirty = options.dirty ?? true
+    signalsClaimed = false
 }
 
 async function flush(stream: { writableNeedDrain?: boolean }): Promise<void> {
@@ -139,6 +161,12 @@ export function installGuards(): void {
     process.on("exit", () => restoreTerminal())
 
     process.on("SIGTERM", () => {
+        // Yield to a command that owns its own shutdown. Without this the two handlers raced and
+        // the hard exit won: `serve`'s graceful path started, `process.exit(143)` landed first, and
+        // `runtime.stop()` never completed — so the outbox was not flushed, the database was not
+        // closed, and the child processes `exec` backgrounds were never reaped. Invisible at a
+        // terminal, because ctrl-C sends SIGINT and this guard deliberately ignores that one.
+        if (signalsClaimed) return
         void finishNow(EXIT_SIGTERM)
     })
 

@@ -779,3 +779,47 @@ Never claim a performance property without a number in `evals/` and a script to 
   reports "no link" on a call that returned one — a failure shaped like success. Same lesson one
   layer down: the workbench argument is `code_to_execute`, undocumented, and `code` came back
   "Validation error". Read a field first, walk as a fallback, and verify against the endpoint.
+
+- **Two handlers for one signal means the destructive one wins.** `installGuards` answered SIGTERM
+  with `finishNow(EXIT_SIGTERM)` while `serve` registered its own graceful handler; both fired,
+  the hard exit won, and `runtime.stop()` never completed — no outbox flush, no clean store close,
+  no `provider.stop()`, which is the only reaper for backgrounded `exec` children. Invisible for
+  three phases because ctrl-C sends SIGINT, which the guard deliberately ignores, so every
+  interactive stop took the right path; SIGTERM is the *only* path a service manager uses. The
+  shutdown belongs in the `onExit` teardown list that `finish()` already awaits, and `claimSignals`
+  yields the exit code too — a requested stop exits 0, because under `KeepAlive: {Crashed: true}`
+  a non-zero exit tells the supervisor to stay down.
+- **A fix to a rendering is not a fix to the fact it renders.** Decision 5.17 made slot 2 report
+  state, and the *wiring* stayed wrong: `channelsStarted` came from `hub.statusOf(id).length > 0`,
+  which is true under `run` as well, since a binding is registered either way and `start()` is what
+  differs. So the agent was still being told its channel was connected in a session where nothing
+  was listening. Found only by building `/status`, a second consumer of the same fact, and noticing
+  the two agreed with each other and disagreed with reality. `hub.started` is the honest signal.
+- **A good error message in a file nobody opens is a silent failure.** `~/.openclaw/logs/gateway.err.log`
+  is 57 MB of one sentence that names its cause, carries a hint and offers two remedies, written
+  every ten seconds for 2,463 restarts. Message quality was never the problem. This is why the
+  restart limit is structural — `KeepAlive: {Crashed: true}`, so a configuration fault stops once —
+  rather than "we will warn about it", and why `daemon status` exits non-zero and prints the stderr
+  tail instead of reporting a stopped job as merely not running.
+- **A service is only as durable as the paths baked into it, and `#!/usr/bin/env node` is not one.**
+  launchd's PATH is `/usr/bin:/bin:/usr/sbin:/sbin`, which on a machine with a version manager
+  contains no `node` — so the obvious plist naming the shim exits 127 forever, into a log nobody
+  has been told about. Interpreter and script are both `realpath`'d and written absolutely, the
+  manifest too (`resolveAgentRef` is cwd-relative, and launchd's cwd is `/`). Two warnings ride
+  along because the paths *can* rot: a binary inside a git checkout, and an interpreter under nvm.
+- **`launchctl print` echoes a job's environment in plaintext, so a plist carries no secret.**
+  Enforced by a throw in `renderPlist` against a brand-derived allowlist, not by review — the cost
+  of getting it wrong is a credential readable by every local process, with nothing about the
+  running agent looking wrong. Corollary: `.env` beside the manifest is the *only* credential path
+  under a service manager, which is why `init` writes it 0600.
+- **`disable` persists across boots; `bootout` does not.** So `daemon stop` is disable + bootout, or
+  the agent quietly comes back at the next login — and `install` must `enable` first, or a service
+  that was once stopped installs cleanly and silently never starts. Modern verbs only: `bootstrap`,
+  `bootout`, `kickstart -k`, `enable`, `disable`, `print`, `print-disabled`. And `launchctl list`'s
+  status column is a raw wait status (`256` is exit 1) while `print`'s `last exit code` is already
+  decoded — decoding the second turns a failure into a clean stop.
+- **A lease row is a claim, not a fact, and a dead pid outranks a fresh heartbeat.** A boot that
+  fails *after* claiming leaves a row seconds old with no process under it, which blocked every
+  retry for ninety seconds while naming a pid that no longer existed — at the moment somebody was
+  fixing the fault. Check `process.kill(pid, 0)` first; the heartbeat only settles pid reuse.
+  Anything reading a lease to report state must re-check liveness for the same reason.

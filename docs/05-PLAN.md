@@ -1,7 +1,7 @@
 # 05 — Implementation Plan
 
-Eighteen phases, dependency-ordered — thirteen numbered, plus 2.5, 3.5, 3.6, 3.7 and 3.8 inserted rather than
-renumbered, because the later numbers are named across the source and the other docs. Every phase
+Nineteen phases, dependency-ordered — thirteen numbered, plus 2.5, 3.5, 3.6, 3.7, 3.8 and 4.1 inserted rather
+than renumbered, because the later numbers are named across the source and the other docs. Every phase
 ends at a **running state** — nothing is half-wired across a boundary.
 
 ## How to use this
@@ -1251,6 +1251,103 @@ it than a test that kills the process at a chosen instruction. **Part B** is `ch
   the client tailing an empty stream forever.
 - **Bun's `idleTimeout` was killing SSE streams at 10 s.** Decision 11.22 — found by running the
   binary, invisible to the tests, and now derived from `HEARTBEAT_MS`.
+
+---
+
+## Phase 4.1 — always on
+
+**Goal.** An agent keeps answering with no terminal open, `serve` is safe for any supervisor to
+restart, and every CLI and TUI surface that should mention it does.
+
+Inserted rather than renumbered, like 2.5–3.8. It depends on Phase 4's channels and outbox, and
+Phase 5 depends on none of it. Split in three, as Phase 4 was: **A** makes `serve` supervisable and
+is pure runtime work, deterministic under both sqlite drivers and useful to Phase 11's container
+whether or not B ships; **B** is the macOS service command; **C** is the DX pass the CLI needed
+anyway and this feature made unavoidable.
+
+**Deliverables** — built 2026-08-17:
+
+- [x] **A1** Migration 004 `runtime_leases` + `LeaseStore` — one row per agent id, claimed
+  transactionally before channels start, released in `runtime.stop`, heartbeat every 30 s.
+  `runtime/lease.ts` owns liveness (`process.kill(pid, 0)`); the store stores facts and never
+  probes the OS. `RuntimeOptions.mode` records daemon/terminal/embedded so a refusal can say where
+- [x] **A2** `turns.reapRunning(agentIds, reason)` and `outbox.recoverInflight(agentIds, …)` scoped
+  to leased agents — `agentIds` **required**, so the global form is unexpressible;
+  `leases.orphans()` names rows belonging to no lease at all
+- [x] **A3** `serve` registers its shutdown with `onExit` instead of a second SIGTERM listener;
+  `claimSignals()` lets it own the code so a requested stop exits 0; `runtime.stop` bounds each
+  `provider.stop()` at 5 s and reports what it abandoned
+- [x] **A4** Exit-code contract: a configuration fault exits non-zero once, a transient never exits
+- [x] **A5** `serve` defaults to `storePath()` — it was silently running on `":memory:"`
+- [x] **B** `daemon install|uninstall|start|stop|restart|status|logs`; `lib/launchd.ts` (pure plist
+  rendering, `launchctl` parsing, wait-status decode), `lib/daemon-plan.ts` (pure preflight and
+  status verdicts), `lib/service.ts` (the seam, the only subprocess in the package),
+  `KeepAlive: {Crashed: true}`, install watches and rolls back, `enable` before `bootstrap`
+- [x] **C** `lib/render.ts` — the plain path's shared vocabulary, replacing eight hand-rolled
+  column widths; `ArgSpec.choices` so `--help` lists every action, pinned by a test; `/status` in
+  the session menu; `agents` reports live state from the lease; `serve`'s banner names the daemon;
+  `init` asks and prints the command; the generated `.env` is 0600
+
+**Acceptance**
+
+- [x] The agent answers Telegram with no terminal open — verified live: `daemon install milo`,
+      `tg: connected — @KamlaAI_bot, long-poll` in the service log, `/v1/health` 200
+- [x] `launchctl print` echoes no secret — verified live against the loaded job: zero occurrences
+      of either the bot token or the model key, while the OpenClaw job beside it prints its gateway
+      token in plaintext
+- [x] A configuration fault stops the service once instead of looping — verified live: bot token
+      blanked, `daemon restart`, watched for 36 s at `starts 2` and holding; `status` printed the
+      exit code and the `telegram_token_missing` tail, and exited non-zero
+- [x] A second `serve` on one agent is refused, naming the pid — two real processes, in
+      `cli/test/serve.test.ts`
+- [x] SIGTERM runs the full shutdown and exits 0, proven by the lease row being released — the
+      first test in this repo that spawns the built binary, and the reason the bug survived is that
+      there was no `serve.test.ts` at all
+- [x] Agent B's boot leaves agent A's `running` turns and `inflight` deliveries alone — two
+      runtimes over one temp database, under both sqlite drivers
+- [x] `--help` lists every action of every action-taking command, pinned by a test
+- [x] Boot budget unchanged — `bench:boot ok`; the lease is one indexed row and the heartbeat
+      starts after readiness
+- [ ] Log out and back in, and reboot — needs a real session change; the `gui/$UID` limitation
+      (a LaunchAgent needs a logged-in desktop session) is documented rather than solved
+
+**Non-goals.** systemd and Linux service installation — unverifiable here, so Linux gets a refusal
+that names the gap *and* prints the resolved `ExecStart=` line, behind `resolveServiceManager`.
+Containers, which supervise themselves and are the deployment this runtime is designed around. Log
+rotation, which has no rootless mechanism on macOS. `LaunchDaemon` in `/Library/LaunchDaemons`.
+`daemon doctor`, health checks, `install --all`, a `daemon:` manifest field.
+
+### Deviations from the plan as written
+
+- **The lease replaced the pid file.** The plan reached for `{pid, startedAt, mode}` in a state
+  file; a row in the store the runtime already opens is not a new lifecycle, is contended inside
+  the component that is already a lock manager, is testable with two runtimes over one temp
+  database, and does three jobs instead of one.
+- **Recovery is scoped by ownership, not by agent id.** Scoping by agent looked equivalent and
+  breaks the guarantee `reapRunning` documents: a deleted or renamed agent's rows would stay
+  `running` forever, which is the exact ambiguity it exists to remove. `leases.orphans()` keeps the
+  narrowing honest.
+- **A dead pid beats a fresh heartbeat, and this was found by installing the real thing.** The
+  first rule trusted a recent heartbeat without probing. A boot that fails *after* claiming — a
+  missing bot token, the single likeliest install-time fault — then blocked every retry for ninety
+  seconds, naming a pid that no longer existed, at the moment somebody was fixing the fault.
+- **`installGuards` needed `claimSignals`, not just `onExit`.** Registering the shutdown as a
+  teardown made it *run*; the guard still forced exit 143, which under `KeepAlive: {Crashed: true}`
+  a supervisor reads as "this configuration is broken, stay down". Caught by the new spawn test on
+  its first run.
+- **`KeepAlive: {Crashed: true}`, not `{SuccessfulExit: false}`.** Restart on a crash signal only.
+  The trade is explicit — an uncaught exception stops the service rather than looping — and it is
+  the right way round for a codebase whose objection to the 2,463-restart job is that nobody was
+  ever told.
+- **`hub.started` exists because slot 2 was still wrong.** `Runtime.create` derived
+  `channelsStarted` from `hub.statusOf(id).length > 0`, which is true under `run` as well, since a
+  binding is registered either way — so decision 5.17's bug had survived its own fix one layer
+  down. Found by building `/status`, the human-facing twin of the same block.
+- **`RuntimeOptions.lease`.** A read-only listing must not claim a lease: `agents` briefly holding
+  one could refuse a `serve` starting in the same millisecond, a race invented by the act of
+  looking.
+- **`daemon logs` shipped** after being cut. It is fifteen lines on top of `status`, and telling
+  someone to type `tail -f` is the difference between a tool and a wrapper.
 
 ---
 

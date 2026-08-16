@@ -70,6 +70,7 @@ const FLAG_FOR: Record<InitStep, string> = {
     // No flag, same reason as every other secret: a token on a command line lands in history.
     telegramToken: "(asked at the prompt only)",
     server: "--server",
+    daemon: "--daemon",
     // Never asked and never a flag — generated, because it is ours rather than a third party's.
     serverToken: "(generated)",
     dir: "<dir>",
@@ -155,7 +156,15 @@ async function runInit(options: InitOptions): Promise<InitResult> {
     for (const file of files) {
         const path = join(targetDir, file.relPath)
         mkdirSync(dirname(path), { recursive: true })
-        writeFileSync(path, file.contents, "utf8")
+        // `.env` alone gets 0600. It holds every credential this agent has — the model key, the
+        // bot token, a Composio key — and the default 0644 made all of them readable by anything
+        // running on the machine. That mattered more once a background service arrived: launchd
+        // hands a job almost no environment and the service definition carries no secrets by
+        // design, so this file becomes the *only* path credentials arrive by.
+        writeFileSync(path, file.contents, {
+            encoding: "utf8",
+            ...(file.relPath === ".env" ? { mode: 0o600 } : {}),
+        })
     }
 
     // The real loader, on the real output. The one concession: when the named key var is not in
@@ -369,6 +378,7 @@ function complete(partial: Partial<Record<InitStep, string>>): InitAnswers {
             ? {}
             : { telegramAllow: answers.telegramAllow }),
         server: answers.server,
+        daemon: answers.daemon,
         // Minted here rather than in the flow, which is a PURE module and must stay deterministic.
         // Only for an agent that asked for a server: an unused 64-hex string in every generated
         // .env is a secret nobody chose and one more thing to wonder about.
@@ -449,6 +459,18 @@ function nextSteps(
                   ? "the Telegram bot"
                   : "the HTTP API"
         steps.push(`${BRAND.slug} serve ${runRef} — starts ${what}; \`run\` starts neither`)
+        // And the half `serve` does not cover: it lives and dies with its terminal. Printed only
+        // when they asked for it, and only as a command — `init` deliberately does not install,
+        // because the token in step 1 is usually still missing at this moment and the check that
+        // exists to catch that would refuse. A service that fails from birth is the exact failure
+        // this capability was built against.
+        if (answers.daemon === "service") {
+            steps.push(
+                `${BRAND.slug} daemon install ${runRef} — the same thing, supervised: starts at ` +
+                    `login and survives a reboot. Do this once the key and token above are in .env; ` +
+                    `the install checks them and refuses without them, on purpose.`,
+            )
+        }
     }
     if (answers.telegram === "connected" && answers.telegramAllow === undefined) {
         steps.push(

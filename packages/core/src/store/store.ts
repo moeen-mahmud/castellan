@@ -169,8 +169,80 @@ export interface TurnStore {
      * A process cannot resume someone else's in-flight generation, and leaving the row
      * `running` forever would make a dead turn indistinguishable from a live one. Returns what
      * it reaped so boot can report it rather than fixing it silently.
+     *
+     * `agentIds` is **required**, and it is the list this process holds a lease for — never
+     * "every agent in the manifest" and never, now, "all of them". Unfiltered was correct while
+     * one process owned one database and became wrong the moment two shared a file: the second
+     * one's boot marked the first one's *live* turn failed, silently, with the row's own error
+     * text claiming the process had exited. Required rather than optional because an optional
+     * "all" leaves that behaviour one omitted argument away from returning, and the resulting bug
+     * is invisible until somebody reads a turn record.
+     *
+     * Rows belonging to no live lease are still reachable — see `LeaseStore.orphans`.
      */
-    reapRunning(reason: string): Promise<readonly string[]>
+    reapRunning(agentIds: readonly string[], reason: string): Promise<readonly string[]>
+}
+
+/** How a runtime was started. Reported in a refusal, so it has to be a fact rather than a guess. */
+export type RuntimeMode = "daemon" | "terminal" | "embedded"
+
+export interface LeaseRecord {
+    readonly agentId: string
+    readonly runtimeId: string
+    readonly pid: number
+    readonly mode: RuntimeMode
+    readonly startedAt: string
+    readonly heartbeatAt: string
+}
+
+/**
+ * The outcome of asking to serve an agent.
+ *
+ * A discriminated result rather than a throw, because the store does not know how to phrase the
+ * refusal: `serve` wants a `HarnessError` naming the other process, an embedder may want to wait,
+ * and a test wants neither. The store reports who holds it; the caller decides what that means.
+ */
+export type LeaseClaim =
+    | { readonly ok: true; readonly lease: LeaseRecord; readonly tookOver?: LeaseRecord }
+    | { readonly ok: false; readonly held: LeaseRecord }
+
+/**
+ * Who is serving which agent — the mutual exclusion that stops two pollers on one bot token.
+ *
+ * Liveness is **not** decided here. The store records a pid and a heartbeat; whether that pid is
+ * alive is an operating-system question, and a store that answered it would be untestable without
+ * spawning processes. The caller probes and passes its verdict to `claim` as `stealFrom`.
+ */
+export interface LeaseStore {
+    /**
+     * Take the lease for an agent, or report who holds it.
+     *
+     * `stealFrom` is the runtime id the caller has established is dead. Passing it makes the claim
+     * succeed against exactly that holder and no other — so a lease that changed hands between the
+     * liveness probe and the claim is still refused, rather than being stolen from a process that
+     * has just legitimately started.
+     */
+    claim(input: {
+        readonly agentId: string
+        readonly runtimeId: string
+        readonly pid: number
+        readonly mode: RuntimeMode
+        readonly now: string
+        readonly stealFrom?: string
+    }): Promise<LeaseClaim>
+    /** Refresh `heartbeat_at`. A no-op when this runtime no longer holds the lease. */
+    beat(agentId: string, runtimeId: string, now: string): Promise<boolean>
+    release(agentId: string, runtimeId: string): Promise<void>
+    get(agentId: string): Promise<LeaseRecord | undefined>
+    all(): Promise<readonly LeaseRecord[]>
+    /**
+     * Agent ids with `running` turns or `inflight` deliveries and no lease row at all.
+     *
+     * The escape hatch that keeps ownership-scoped recovery honest. Narrowing recovery to leased
+     * agents means a deleted or renamed agent's rows are nobody's to reap; this names them so
+     * `sessions --reap-orphans` can, rather than leaving a permanent lie in the turn list.
+     */
+    orphans(): Promise<readonly string[]>
 }
 
 export interface KVStore {
@@ -322,8 +394,17 @@ export interface OutboxStore {
      * `nextAttemptAt` defaults to now, and is a parameter for the same reason it is one on
      * `enqueue`: the recovering caller's clock is the one that will later ask `due`, and a store
      * that stamped its own would schedule the row into that caller's future.
+     *
+     * `agentIds` scopes it the same way and for the same reason as `TurnStore.reapRunning`, except
+     * that here the unscoped version does visible damage rather than silent: flipping another live
+     * process's `inflight` row back to `pending` makes *that* process re-send a Telegram message it
+     * had already sent, flagged `uncertain`. Decision 8.9 built that flag to make a crash
+     * explicable; firing it because somebody started an unrelated agent makes it mean nothing.
      */
-    recoverInflight(nextAttemptAt?: string): Promise<readonly DeliveryRecord[]>
+    recoverInflight(
+        agentIds: readonly string[],
+        nextAttemptAt?: string,
+    ): Promise<readonly DeliveryRecord[]>
     get(id: number): Promise<DeliveryRecord | undefined>
     byDedupeKey(agentId: string, dedupeKey: string): Promise<DeliveryRecord | undefined>
     list(
@@ -343,6 +424,7 @@ export interface Store {
     readonly messages: MessageStore
     readonly turns: TurnStore
     readonly outbox: OutboxStore
+    readonly leases: LeaseStore
     readonly kv: KVStore
     /** Human-readable location, for `store.ready` and the `sessions` command. */
     readonly location: string
