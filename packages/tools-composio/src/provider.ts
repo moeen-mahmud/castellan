@@ -11,6 +11,11 @@
  * `resolve()` deliberately omits slugs it does not know rather than throwing. The registry diffs what
  * came back against what was asked for and fails naming every missing slug at once with the nearest
  * match — so throwing on the first one would report a single typo and hide the other three.
+ *
+ * The cold-cache failure follows the same rule and did not always: it lived inside `resolve()` and
+ * fired on *any* non-empty request, which meant a provider map holding both `system` and `composio`
+ * refused to boot over `config_read`. It is `explainUnresolved()` now, which the registry consults
+ * only once a slug is genuinely missing everywhere.
  */
 
 import {
@@ -100,15 +105,6 @@ export class ComposioProvider implements ToolProvider {
 
     /** Cache-only. Called before `runtime.ready`, so it must not touch the network. */
     async resolve(slugs: readonly string[]): Promise<readonly Tool[]> {
-        // An empty cache and a non-empty request means this agent has never been warmed, and that is a
-        // different failure from a mistyped slug. Left to the registry both look identical: it reports
-        // "no provider resolved GMAIL_FETCH_EMAILS … Available: now, memory_write", which blames three
-        // correct slugs and names local tools as the alternative. The distinction is worth making here
-        // because only this provider knows the cache is the reason.
-        if (Object.keys(this.#tools).length === 0 && slugs.length > 0) {
-            throw composioCacheMiss(slugs, cachePath(this.#dir))
-        }
-
         const out: Tool[] = []
         const assumed: string[] = []
         for (const slug of slugs) {
@@ -135,6 +131,27 @@ export class ComposioProvider implements ToolProvider {
     /** Which pinned slugs are absent from the cache. The caller decides how loudly to fail. */
     uncached(slugs: readonly string[]): readonly string[] {
         return slugs.filter((slug) => this.#tools[slug] === undefined)
+    }
+
+    /**
+     * An empty cache is a different failure from a mistyped slug, and only this provider can tell
+     * them apart — the registry's generic message reads "no provider resolved GMAIL_FETCH_EMAILS …
+     * Available: now, memory_write", which blames three correct slugs and offers local tools as the
+     * alternative.
+     *
+     * Reported rather than thrown from `resolve`, which is where it used to live. The registry hands
+     * every provider the *whole* pinned list, so a cold cache saw `config_read` and `config_set` —
+     * the system provider's, and about to resolve fine — and refused the boot. A manifest with
+     * `system` and `composio` both configured and nothing Composio-ish pinned is exactly what `init
+     * --composio connected` writes, so the eager version made the generated agent unstartable.
+     *
+     * The registry calls this only once a slug is genuinely unresolved after every provider has
+     * answered. Silent when the cache has anything in it at all: past the first warm, an unknown slug
+     * really is a typo, and the nearest-match message is the better one.
+     */
+    explainUnresolved(slugs: readonly string[]): ConfigError | undefined {
+        if (Object.keys(this.#tools).length > 0 || slugs.length === 0) return undefined
+        return composioCacheMiss(slugs, cachePath(this.#dir))
     }
 
     describe(): {
@@ -215,7 +232,7 @@ export class ComposioProvider implements ToolProvider {
     }
 }
 
-/** Keys `tools.providerConfig` may carry. Anything else is a typo, and typos are refused. */
+/** Keys `tools.providers.composio` may carry. Anything else is a typo, and typos are refused. */
 const CONFIG_KEYS = ["apiKeyEnv", "userId", "baseUrl"] as const
 
 function configString(
@@ -227,9 +244,9 @@ function configString(
     if (typeof value !== "string" || value === "") {
         throw new ConfigError({
             code: "composio_config_invalid",
-            message: `tools.providerConfig.${key} must be a non-empty string.`,
+            message: `tools.providers.composio.${key} must be a non-empty string.`,
             hint: `Got ${value === null ? "null" : typeof value}. ${key === "apiKeyEnv" ? "This is the *name* of an environment variable, never the key itself — a manifest holding a literal key fails validation." : "Remove the key to use the default."}`,
-            field: `tools.providerConfig.${key}`,
+            field: `tools.providers.composio.${key}`,
         })
     }
     return value
@@ -238,7 +255,7 @@ function configString(
 /**
  * The factory to register as `composio`.
  *
- * Unknown config keys are refused rather than ignored. `providerConfig` is a free-form record in the
+ * Unknown config keys are refused rather than ignored. A provider's config is a free-form record in the
  * manifest schema, so nothing upstream can catch `userid` for `userId` — and a silently ignored
  * setting is a configuration that looks applied and is not.
  */
@@ -249,9 +266,9 @@ export function composioFromConfig(context: ToolProviderContext): ComposioProvid
     if (unknown.length > 0) {
         throw new ConfigError({
             code: "composio_config_unknown",
-            message: `tools.providerConfig has ${unknown.length === 1 ? "a key" : "keys"} the Composio provider does not read: ${unknown.join(", ")}.`,
+            message: `tools.providers.composio has ${unknown.length === 1 ? "a key" : "keys"} the Composio provider does not read: ${unknown.join(", ")}.`,
             hint: `Accepted keys are ${CONFIG_KEYS.join(", ")}. Refused rather than ignored, because a setting that looks applied and is not is worse than a rejected manifest.`,
-            field: "tools.providerConfig",
+            field: "tools.providers.composio",
         })
     }
 

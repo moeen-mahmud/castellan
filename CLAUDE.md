@@ -609,3 +609,29 @@ Never claim a performance property without a number in `evals/` and a script to 
   it, and the general rule is the useful part: **a fact with no frame is a fact a small model will
   not connect to a question.** Framing is structure and is allowed; rewriting an authored sentence
   is decision 4.19 and is not.
+- **`bun run build` must build every package the binary imports, and for three phases it did not.**
+  It built `core` and `cli`; the CLI imports `tools-system`, `tools-web` and `tools-composio` from
+  their `dist`. So a provider change was invisible to the binary until someone rebuilt that package
+  by hand, and the symptom is the worst kind — the new code is right, the test fails, and the stack
+  trace points into a `dist` that still holds the old version. Recorded for `core` already; it was
+  never a `core` property.
+- **A provider reports an unresolved slug through `explainUnresolved()`, and never throws from
+  `resolve()`.** The registry hands *every* provider the whole `pinned` list, so a cold Composio is
+  asked about `config_read` and cannot know the system provider is about to answer for it. Throwing
+  there refused a correct manifest with "2 pinned Composio tools are not in the resolution cache:
+  config_read, config_set" — wrong in both halves. Both principles hold and neither is sufficient
+  alone: omit what you do not know, *and* only the provider knows an empty cache is the reason
+  rather than a typo. The provider supplies the sentence; the registry asks for it only once a slug
+  is missing everywhere. Silent once the cache holds anything — past the first warm it really is a
+  typo, and nearest-match is the better message.
+- **Name a disabled provider when it can tell the model what it lacks; document it when it cannot.**
+  `web: {}` is named while switched off because that is what makes `available()` run. Composio is
+  left commented, because it deliberately has no `available()` — 25,000 tools have nothing useful to
+  say there — so naming it buys none of what naming `web` buys and implies to a reader that the
+  agent knows about an integration it cannot see. Not an inconsistency to iron out: the two answers
+  come from the same rule applied to providers that differ.
+- **`init --composio connected` pins nothing, and that is the honest answer rather than a TODO.**
+  Composio resolves from an on-disk cache inside boot, where hard rule 4 forbids the network, so a
+  slug pinned before the first `tools <ref> --warm` fails the load. `init` makes no requests, so it
+  cannot leave a usable pin behind. The next steps say so out loud — the failure otherwise is an
+  agent that starts perfectly and has none of the apps it was promised, with nothing reporting it.

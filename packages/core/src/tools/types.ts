@@ -12,7 +12,7 @@
  * small model was never going to get right.
  */
 
-import type { ErrorDetail } from "../errors.ts"
+import type { ConfigError, ErrorDetail } from "../errors.ts"
 import type { Trust } from "./trust.ts"
 
 export type JsonType = "string" | "number" | "integer" | "boolean" | "array" | "object"
@@ -216,6 +216,21 @@ export interface ToolProvider {
      * its own runtime, and only the person reading the manifest can work out why.
      */
     available?(): Promise<readonly ToolAvailability[]>
+    /**
+     * Why these slugs came back unresolved, when the provider knows something the registry cannot.
+     *
+     * Consulted **only** when a slug is genuinely missing after every provider has been asked — which
+     * is the half neither side can decide alone, and getting that wrong is how a correct manifest
+     * stopped booting. The registry asks every provider for the whole pinned list, so a cold Composio
+     * sees `config_read` and `config_set` and has no way to know the system provider is about to
+     * answer for both. Throwing there refused an agent whose every pinned tool resolved.
+     *
+     * The other direction is just as wrong: left to the registry alone, an empty cache reports
+     * "no provider resolved GMAIL_FETCH_EMAILS … Available: now, memory_write", which blames three
+     * correct slugs. Only the provider knows the cache is the reason. So the provider supplies the
+     * sentence and the registry decides whether anyone needs to hear it.
+     */
+    explainUnresolved?(slugs: readonly string[]): ConfigError | undefined
 }
 
 export interface ToolProviderRefresh {

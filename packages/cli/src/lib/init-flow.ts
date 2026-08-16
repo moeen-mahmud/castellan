@@ -144,6 +144,20 @@ export interface InitAnswers {
      * model key: the manifest names the variable, no flag accepts the value.
      */
     readonly webKey?: string
+    /**
+     * Whether the agent reaches the person's other apps through Composio: `none` or `connected`.
+     *
+     * A question for the same reason `system` and `web` are — the provider shipped finished and
+     * generated as a single commented line, which is the third time a built capability reached a
+     * generated manifest hidden. What differs is what the answer can *do*, and the difference is
+     * real rather than an inconsistency to iron out: see `COMPOSIO_CHOICES`.
+     */
+    readonly composio: string
+    /**
+     * The Composio key, written to the gitignored `.env`. Same rule as every other secret here: the
+     * manifest names the variable, no flag accepts the value.
+     */
+    readonly composioKey?: string
     /** Target directory, as given — the command resolves it against the cwd. */
     readonly dir: string
 }
@@ -202,6 +216,47 @@ export const WEB_BACKENDS: readonly {
 
 export function webBackendByValue(value: string): (typeof WEB_BACKENDS)[number] | undefined {
     return WEB_BACKENDS.find((backend) => backend.value === value)
+}
+
+/** The variable the Composio provider reads when the manifest names none. Its own default. */
+export const COMPOSIO_KEY_ENV = "COMPOSIO_API_KEY"
+
+/**
+ * Whether the agent is wired to the person's other apps, and why this question's answers are
+ * shaped unlike `system`'s and `web`'s.
+ *
+ * **Neither answer pins a tool, and the `connected` one cannot.** Composio resolves slugs from an
+ * on-disk cache during boot, where hard rule 4 forbids the network — so a pinned slug on an agent
+ * that has never been warmed is a *load failure*, not a slow first call. `init` writes files and
+ * makes no requests, so there is no honest way for it to hand back a manifest with `GMAIL_SEND` in
+ * `pinned`. The answer configures the provider and the next steps name `tools --warm`; pinning is
+ * the step after that, and `config_set` can do it once the cache exists.
+ *
+ * **`none` leaves the block commented, which is the opposite of what `web` does, on purpose.**
+ * Naming a provider is worth doing when it makes `available()` run — that is what turns "I can't do
+ * that" into "I can't do that yet, and here is the line that would let me". `ComposioProvider`
+ * deliberately has no `available()`: the catalogue is ~25,000 tools and enumerating it into every
+ * prompt is the thing `pinned` exists to prevent. So naming it while switched off would buy none of
+ * what naming `web` buys, and would leave a reader of the manifest reasonably believing the agent
+ * knows about an integration it cannot see. The generated block still carries every line needed to
+ * turn it on, which is the part that actually stops a capability hiding.
+ */
+export const COMPOSIO_CHOICES: readonly {
+    readonly value: string
+    readonly label: string
+}[] = [
+    {
+        value: "none",
+        label: "No — the manifest shows how to add it later",
+    },
+    {
+        value: "connected",
+        label: "Yes — Gmail, Slack, Notion and ~1,000 more, via a Composio account",
+    },
+]
+
+export function composioChoice(value: string): (typeof COMPOSIO_CHOICES)[number] | undefined {
+    return COMPOSIO_CHOICES.find((choice) => choice.value === value)
 }
 
 /**
@@ -308,6 +363,8 @@ const STEP_ORDER: readonly InitStep[] = [
     "web",
     "webBackend",
     "webKey",
+    "composio",
+    "composioKey",
     "dir",
 ]
 
@@ -317,7 +374,11 @@ const STEP_ORDER: readonly InitStep[] = [
  * The renderer reads this rather than special-casing a slug, so a second secret question later
  * cannot be added without the masking coming with it.
  */
-export const SECRET_STEPS: ReadonlySet<InitStep> = new Set<InitStep>(["apiKey", "webKey"])
+export const SECRET_STEPS: ReadonlySet<InitStep> = new Set<InitStep>([
+    "apiKey",
+    "webKey",
+    "composioKey",
+])
 
 export interface Question {
     readonly step: InitStep
@@ -392,6 +453,8 @@ export function nextQuestion(
         // The backend and its key are only questions for someone who asked for search. Skipped
         // rather than asked-and-ignored: an answer the flow discards is a question that lies.
         if ((step === "webBackend" || step === "webKey") && partial.web !== "search") continue
+        // Same rule: nobody who said no to Composio is asked for a Composio key.
+        if (step === "composioKey" && partial.composio !== "connected") continue
 
         switch (step) {
             case "user":
@@ -471,6 +534,25 @@ export function nextQuestion(
                     fallback: "",
                     optional: true,
                 }
+            case "composio":
+                return {
+                    step,
+                    prompt: "Can it use your other apps?",
+                    fallback: "1",
+                    options: COMPOSIO_CHOICES.map((choice) => ({
+                        value: choice.value,
+                        label: choice.label,
+                    })),
+                }
+            case "composioKey":
+                return {
+                    step,
+                    prompt: "Composio API key",
+                    // Empty is a real answer, as everywhere else a secret is asked for. There is no
+                    // flag for the value — a key on a command line lands in shell history.
+                    fallback: "",
+                    optional: true,
+                }
             case "dir":
                 return {
                     step,
@@ -546,7 +628,19 @@ export function validateAnswer(step: InitStep, raw: string): Answered {
         }
 
         case "webKey":
+        case "composioKey":
             return { ok: true, value }
+
+        case "composio": {
+            const byNumber = COMPOSIO_CHOICES[Number(value) - 1]
+            const chosen = byNumber ?? composioChoice(value.toLowerCase())
+            return chosen === undefined
+                ? {
+                      ok: false,
+                      reason: `pick 1-${COMPOSIO_CHOICES.length}, or a name: ${COMPOSIO_CHOICES.map((c) => c.value).join(", ")}.`,
+                  }
+                : { ok: true, value: chosen.value }
+        }
 
         case "baseUrl": {
             let url: URL
@@ -715,11 +809,7 @@ function systemBlock(answers: InitAnswers): readonly string[] {
         `    # Neither tool can change anything, but what they return is text a stranger wrote — so it`,
         `    # is fenced as data, and a tool that CHANGES something needs an allow rule after one runs.`,
         ``,
-        `    # A remote catalogue. Run \`${BRAND.slug} tools . --warm\` once before starting: resolution`,
-        `    # happens during boot, where no network call is permitted, and a cold cache fails the load.`,
-        `    # composio:`,
-        `    #   apiKeyEnv: COMPOSIO_API_KEY`,
-        `    #   userId: me`,
+        ...composioBlock(answers),
         ``,
         `  # What the model is actually given, from any provider above. A slug no configured provider`,
         `  # has fails the load naming it — nothing is ever dropped quietly.`,
@@ -728,7 +818,55 @@ function systemBlock(answers: InitAnswers): readonly string[] {
         ...webPinned.map((slug) => `    - ${slug}`),
         ...(webPinned.includes("web_search") ? [] : [`    # - web_search`]),
         ...(webPinned.includes("web_fetch") ? [] : [`    # - web_fetch`]),
-        `    # - GMAIL_FETCH_EMAILS`,
+        ...(composioEnabled(answers)
+            ? [
+                  `    # Composio slugs go here once the cache exists — \`${BRAND.slug} tools . --warm\` first,`,
+                  `    # then \`${BRAND.slug} tools .\` lists what was fetched. Pinning one before the warm`,
+                  `    # fails the load, because resolution happens in boot where no request is allowed.`,
+                  `    # - GMAIL_FETCH_EMAILS`,
+              ]
+            : [`    # - GMAIL_FETCH_EMAILS`]),
+    ]
+}
+
+/** Whether this agent was wired to Composio. One reading, so no caller re-derives it. */
+export function composioEnabled(answers: InitAnswers): boolean {
+    return answers.composio === "connected"
+}
+
+/**
+ * The Composio entry in the `providers` map — live when asked for, commented otherwise.
+ *
+ * The commented form is not a placeholder: it carries the key variable, the account field and the
+ * warm command, because "the generated file hides its own options" is the failure this whole
+ * question exists to fix. What it deliberately does not do is name the provider with nothing
+ * configured — see `COMPOSIO_CHOICES` for why that helps for `web` and not here.
+ */
+function composioBlock(answers: InitAnswers): readonly string[] {
+    if (!composioEnabled(answers)) {
+        return [
+            `    # Your other apps — Gmail, Slack, Notion, ~1,000 more — through a Composio account.`,
+            `    # Unlike the two above, this one is left off rather than named-and-empty: its catalogue`,
+            `    # is ~25,000 tools, so it has no available() and naming it would tell the model nothing.`,
+            `    # To turn it on: uncomment, put the key in .env, then \`${BRAND.slug} tools . --warm\``,
+            `    # once — resolution happens during boot where no request is permitted, so a slug pinned`,
+            `    # against a cold cache fails the load rather than fetching.`,
+            `    # composio:`,
+            `    #   apiKeyEnv: ${COMPOSIO_KEY_ENV}`,
+            `    #   userId: default`,
+        ]
+    }
+
+    return [
+        `    # Your other apps, through Composio. Nothing is pinned yet and that is not an omission:`,
+        `    # slugs resolve from an on-disk cache during boot, where no network call is permitted, so`,
+        `    # a slug pinned before \`${BRAND.slug} tools . --warm\` fails the load. Warm once, then add`,
+        `    # slugs under pinned below — or ask the agent to, which is what config_set is for.`,
+        `    composio:`,
+        `      apiKeyEnv: ${COMPOSIO_KEY_ENV}`,
+        `      # Which connected account to act as at execution time — Composio's own identifier for`,
+        `      # the person whose Gmail this is, not a name of yours. "default" is the usual answer.`,
+        `      userId: default`,
     ]
 }
 
@@ -1139,6 +1277,14 @@ function envFor(answers: InitAnswers): string {
         lines.push(`# ${backend.label.split(" —")[0] ?? backend.value}, for web_search.`)
         lines.push(`${backend.apiKeyEnv}=${answers.webKey ?? ""}`)
     }
+    // Same rule again: only written for an agent that asked for it. An empty COMPOSIO_API_KEY in
+    // every generated .env is a variable nobody chose, and the provider names the missing one at
+    // the moment it needs it anyway.
+    if (composioEnabled(answers)) {
+        lines.push("")
+        lines.push(`# Composio, for your other apps. Needed to warm the cache and to execute.`)
+        lines.push(`${COMPOSIO_KEY_ENV}=${answers.composioKey ?? ""}`)
+    }
     return `${lines.join("\n")}\n`
 }
 
@@ -1176,6 +1322,10 @@ function envExampleFor(answers: InitAnswers): string {
     if (backend !== undefined) {
         lines.push(``, `# ${backend.label.split(" —")[0] ?? backend.value}, for web_search.`)
         lines.push(`${backend.apiKeyEnv}=`)
+    }
+    if (composioEnabled(answers)) {
+        lines.push(``, `# Composio, for your other apps.`)
+        lines.push(`${COMPOSIO_KEY_ENV}=`)
     }
     return `${lines.join("\n")}\n`
 }

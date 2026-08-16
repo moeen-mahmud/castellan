@@ -92,6 +92,7 @@ async function dispatch(argv: readonly string[]): Promise<number> {
             const system = flags.str("system")
             const web = flags.str("web")
             const webBackend = flags.str("web-backend")
+            const composio = flags.str("composio")
             return await initCommand({
                 ...(dir === undefined ? {} : { dir }),
                 ...(user === undefined ? {} : { user }),
@@ -104,6 +105,7 @@ async function dispatch(argv: readonly string[]): Promise<number> {
                 ...(system === undefined ? {} : { system }),
                 ...(web === undefined ? {} : { web }),
                 ...(webBackend === undefined ? {} : { webBackend }),
+                ...(composio === undefined ? {} : { composio }),
                 yes: flags.bool("yes"),
                 plain: flags.bool("plain"),
             })

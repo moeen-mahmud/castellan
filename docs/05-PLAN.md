@@ -1035,6 +1035,25 @@ the renderer swap this non-goal priced in; the sub-clauses below stayed binding.
 values (shoulder-surfing at a prompt, shell history via a flag). Channel or schedule
 configuration — those arrive with their phases.
 
+### Added after the phase closed
+
+- **2026-08-16 — Composio is a question** (`--composio none|connected`), completing the sweep the
+  web provider started: every capability the runtime has is asked about here (decisions 4.77–4.78).
+  It is the one answer that cannot pin a tool — Composio resolves from an on-disk cache inside boot
+  where no request is permitted, so `init`, which makes no requests, has no honest way to leave a
+  usable pin. The next steps name `tools <ref> --warm` and say plainly that nothing is available
+  until it runs. `none` leaves the block commented rather than named-and-empty, because Composio
+  has no `available()` and naming it would tell the model nothing — the rule is *name a disabled
+  provider when it can report what it lacks, document it when it cannot*.
+- **The first test written for it found a latent boot failure** (decision 4.79). The registry hands
+  every provider the whole `pinned` list, so a cold Composio was asked about `config_read` and threw
+  from `resolve()`, refusing a manifest in which nothing was wrong. Providers now report through
+  `explainUnresolved()`, which the registry consults only once a slug is missing everywhere. It had
+  been reachable by hand since the provider map landed in Phase 3 Part D and unreachable through any
+  generated manifest, which is why it survived.
+- **The root `build` script did not build the `tools-*` packages** (decision 4.80), so the fix above
+  appeared not to work twice against a stale `dist`.
+
 ### Deviations from the plan as written
 
 - **The repo-root `.env` contaminated the first integration test.** Bun auto-loads it, the real

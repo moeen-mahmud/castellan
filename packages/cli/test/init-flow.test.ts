@@ -9,11 +9,13 @@
 import { describe, expect, test } from "bun:test"
 import { countRules, LOCAL_TOOL_SLUGS, parseWorkspaceFile, rulesBlocksOnly } from "@castellan/core"
 import {
+    COMPOSIO_KEY_ENV,
     INIT_LOCAL_TOOL_SLUGS,
     type InitAnswers,
     nextQuestion,
     PRESETS,
     planFiles,
+    SECRET_STEPS,
     slugify,
     validateAnswer,
 } from "#lib/init-flow"
@@ -29,6 +31,7 @@ const ANSWERS: InitAnswers = {
     apiKey: "sk-test-value",
     system: "none",
     web: "none",
+    composio: "none",
     dir: "./milo",
 }
 
@@ -55,7 +58,7 @@ describe("nextQuestion", () => {
                 question.step === "preset" ? "deepseek" : question.fallback || "x"
         }
         // No webBackend or webKey: the fallback answer to the web question is "1" — none — and a
-        // backend nobody will use is a question that lies.
+        // backend nobody will use is a question that lies. No composioKey, for the same reason.
         expect(seen).toEqual([
             "user",
             "name",
@@ -66,6 +69,7 @@ describe("nextQuestion", () => {
             "apiKey",
             "system",
             "web",
+            "composio",
             "dir",
         ])
     })
@@ -424,7 +428,7 @@ describe("the web question", () => {
             system: "none",
         }
         // An answer the flow would discard is a question that lies.
-        expect(nextQuestion({ ...base, web: "fetch" })?.step).toBe("dir")
+        expect(nextQuestion({ ...base, web: "fetch" })?.step).toBe("composio")
         expect(nextQuestion({ ...base, web: "search" })?.step).toBe("webBackend")
         expect(nextQuestion({ ...base, web: "search", webBackend: "exa" })?.step).toBe("webKey")
     })
@@ -435,5 +439,96 @@ describe("the web question", () => {
         expect(validateAnswer("web", "maybe").ok).toBe(false)
         expect(validateAnswer("webBackend", "3")).toEqual({ ok: true, value: "exa" })
         expect(validateAnswer("webBackend", "google").ok).toBe(false)
+    })
+})
+
+describe("the Composio question", () => {
+    function generated(over: Partial<InitAnswers>, file = "agent.yaml"): string {
+        return planFiles({ ...ANSWERS, ...over }).find((f) => f.relPath === file)?.contents ?? ""
+    }
+
+    test("connected writes a live provider entry with the key variable and the account", () => {
+        const yaml = generated({ composio: "connected" })
+        expect(yaml).toContain("    composio:\n")
+        expect(yaml).toContain(`      apiKeyEnv: ${COMPOSIO_KEY_ENV}`)
+        expect(yaml).toContain("      userId: default")
+        // Live, not commented — the whole point of the question.
+        expect(yaml.includes("    # composio:")).toBe(false)
+    })
+
+    test("connected pins nothing from Composio, and says why in the file", () => {
+        // Not an omission and not a TODO: slugs resolve from an on-disk cache inside boot, where
+        // hard rule 4 forbids the network, so a slug pinned before the first warm fails the LOAD.
+        // init makes no requests, so there is no honest way for it to leave a usable pin here.
+        const yaml = generated({ composio: "connected" })
+        const pinned = yaml.slice(yaml.indexOf("  pinned:"))
+        const active = pinned
+            .split("\n")
+            .filter((line) => /^\s+- /.test(line))
+            .map((line) => line.trim().slice(2))
+        expect(active.some((slug) => slug === slug.toUpperCase() && slug.includes("_"))).toBe(false)
+        expect(yaml).toContain("--warm")
+    })
+
+    test("none leaves the block commented, with every line needed to turn it on", () => {
+        // The opposite of what `web: none` does, on purpose: naming a provider is worth doing when
+        // it makes available() run, and ComposioProvider deliberately has none — 25,000 tools have
+        // nothing useful to say there. So naming it while off would buy nothing and would imply to
+        // a reader that the agent knows about an integration it cannot see.
+        const yaml = generated({ composio: "none" })
+        expect(yaml).toContain("    # composio:")
+        expect(yaml).toContain(`    #   apiKeyEnv: ${COMPOSIO_KEY_ENV}`)
+        expect(yaml).toContain("    #   userId: default")
+        // Still not hidden: the reason and the route out are both in the file.
+        expect(yaml).toContain("--warm")
+    })
+
+    test("the key reaches .env only when Composio was asked for", () => {
+        expect(generated({ composio: "connected", composioKey: "cmp-live" }, ".env")).toContain(
+            `${COMPOSIO_KEY_ENV}=cmp-live`,
+        )
+        // Chosen but not typed: the variable is present and empty, so the next steps can point at it.
+        expect(generated({ composio: "connected" }, ".env")).toContain(`${COMPOSIO_KEY_ENV}=`)
+        // Not chosen: absent entirely. An empty variable nobody asked for in front of everybody is
+        // the noise this rule exists to avoid.
+        expect(generated({ composio: "none" }, ".env").includes(COMPOSIO_KEY_ENV)).toBe(false)
+        expect(generated({ composio: "none" }, ".env.example").includes(COMPOSIO_KEY_ENV)).toBe(
+            false,
+        )
+        expect(generated({ composio: "connected" }, ".env.example")).toContain(
+            `${COMPOSIO_KEY_ENV}=`,
+        )
+    })
+
+    test("the key question is asked only of someone who connected", () => {
+        const base = {
+            user: "M",
+            name: "W",
+            purpose: "x",
+            preset: "deepseek",
+            model: "m",
+            baseUrl: "https://x.example/v1",
+            apiKey: "",
+            system: "none",
+            web: "none",
+        }
+        expect(nextQuestion({ ...base, composio: "none" })?.step).toBe("dir")
+        expect(nextQuestion({ ...base, composio: "connected" })?.step).toBe("composioKey")
+    })
+
+    test("the answers are validated by name or by number", () => {
+        expect(validateAnswer("composio", "1")).toEqual({ ok: true, value: "none" })
+        expect(validateAnswer("composio", "2")).toEqual({ ok: true, value: "connected" })
+        expect(validateAnswer("composio", "CONNECTED")).toEqual({ ok: true, value: "connected" })
+        expect(validateAnswer("composio", "gmail").ok).toBe(false)
+        // Never rejected, exactly like every other secret here.
+        expect(validateAnswer("composioKey", "anything")).toEqual({
+            ok: true,
+            value: "anything",
+        })
+    })
+
+    test("the key is a secret step, so no renderer can echo it back", () => {
+        expect(SECRET_STEPS.has("composioKey")).toBe(true)
     })
 })

@@ -287,13 +287,20 @@ case-insensitive and whole-word against the current input. See `07-SPEC-WORKSPAC
 | `providerConfig` | `{}` | Goes with `provider`. Non-empty with no `provider` to apply it to earns `tools_provider_config_orphaned`. |
 | `budget.max` | 24 | Hard cap on catalogue size. |
 | `budget.reserveWrite` | 6 | Slots held for mutating tools so reads cannot starve writes. |
-| `pinned` | `[]` | Slugs resolved at load. **An unknown slug fails the load** with the slug and provider named. |
+| `pinned` | `[]` | Slugs resolved at load. **An unknown slug fails the load** with the slug and provider named — unless a provider claims it with `explainUnresolved()`, which is consulted only once a slug is missing after *every* provider has answered. A cold Composio cache reports itself and names the warm command; the generic nearest-match message would blame correct slugs. |
 | `search.enabled` | false | Exposes a provider search meta-tool as an escape hatch. Off by default: search-then-execute is two-hop reasoning and small models fail it. |
 | `local` | `[]` | Built-in tools: `memory_write`, `phase_set`, `handoff`, `now`. |
 | `policy.mode` | `allow` | What happens to a call no rule mentions. `allow` because **pinning is the primary authorization** — an agent has only the tools its manifest pinned. `ask` on an unattended run means `onNoApprover` answers it, so a schedule would do nothing. |
 | `policy.allow` / `policy.deny` | `[]` | `Tool` or `Tool(pattern)`. Evaluated **deny → allow, first match, specificity never reorders** — so a deny carries no exceptions. A rule naming a primary content field (`exec(command:…)`) is refused: a compound command defeats it. |
 | `policy.onNoApprover` | `deny` | What `ask` means with nobody to ask — a schedule, a pipe, a channel with no approver. |
 | `untrusted.onMutate` | `refuse` | What to do when untrusted content is in the turn and a mutating tool is requested: `refuse \| confirm \| allow`. A tainted mutating call needs **explicit** authorization — a matching `policy.allow` rule or a live approval; `mode: allow` is the absence of a rule, not one. `confirm` asks when an approver is reachable and refuses when none is. |
+
+**Configuring a remote provider and pinning nothing from it is a valid, startable agent** — it is
+what `init --composio connected` writes. A remote provider resolves from an on-disk cache during
+boot, where hard rule 4 permits no network call, so its tools become available only after
+`<binary> tools <ref> --warm`. Pinning one of its slugs *before* that warm fails the load naming the
+slug and the command. Listing the provider beside one whose tools are local costs nothing: the
+cold-cache failure is raised for a slug nobody resolved, never for the provider merely being present.
 
 **A tool that is both `mutating` and `untrusted` is once-per-turn unless a `policy.allow` rule names
 it**, and the load says so (`tool_gated_after_first_use`). `exec` is the whole class: its own first

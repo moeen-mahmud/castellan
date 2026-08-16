@@ -272,6 +272,8 @@ export function answeredRows(
         webBackend: "Search backend",
         webKey: "Search key",
         system: "System access",
+        composio: "Other apps",
+        composioKey: "Composio key",
         dir: "Directory",
     }
     return state.log.map((entry) => ({

@@ -169,6 +169,17 @@ export class ToolRegistry {
 
         const missing = requested.filter((slug) => !found.has(normalise(slug)))
         if (missing.length > 0) {
+            // A provider that knows *why* it came up empty gets to say so before the generic
+            // message does. Asked here rather than thrown from `resolve` because the question only
+            // makes sense once every provider has answered: each one is handed the whole pinned
+            // list, so a cold Composio is asked about `config_read` and cannot know that the system
+            // provider is about to resolve it. Throwing at that point refused an agent whose every
+            // pinned tool was resolvable — which is how a generated `--composio connected` manifest
+            // failed to boot with nothing wrong in it.
+            for (const provider of providers) {
+                const explained = provider.explainUnresolved?.(missing)
+                if (explained !== undefined) throw explained
+            }
             const first = missing[0] ?? ""
             const pinnedIndex = pinned.indexOf(first)
             throw unknownTool({

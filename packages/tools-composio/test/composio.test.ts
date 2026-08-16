@@ -246,25 +246,38 @@ test("an uncached slug is omitted, not thrown — the registry diffs and names t
     ])
 })
 
-test("an unwarmed cache fails naming the warm command, not the slugs", async () => {
+test("an unwarmed cache explains itself, naming the warm command rather than the slugs", async () => {
     // Left to the registry this surfaces as "no provider resolved GMAIL_SEND_EMAIL … Available: now,
     // memory_write" — three correct slugs blamed, and local tools offered as the alternative. Only this
     // provider knows the cache is the actual reason, so only it can say so.
     const dir = tempDir()
-    let detail: { code?: string; hint?: string } = {}
-    try {
-        await provider(dir).resolve(["GMAIL_SEND_EMAIL"])
-    } catch (error) {
-        detail = error as { code?: string; hint?: string }
-    }
-    expect(detail.code).toBe("composio_cache_miss")
-    expect(detail.hint?.includes("tools warm")).toBe(true)
+    const detail = provider(dir).explainUnresolved(["GMAIL_SEND_EMAIL"])
+    expect(detail?.code).toBe("composio_cache_miss")
+    expect(detail?.hint?.includes("--warm")).toBe(true)
+})
+
+test("a cold cache resolves to nothing instead of throwing", async () => {
+    // The behaviour this replaces refused the whole boot from inside resolve(). The registry hands
+    // EVERY provider the whole pinned list, so a cold Composio was asked about `config_read` — the
+    // system provider's, and about to resolve fine — and killed a correct manifest. Omitting is what
+    // every other provider does with a slug it does not own.
+    const dir = tempDir()
+    expect((await provider(dir).resolve(["config_read", "GMAIL_SEND_EMAIL"])).length).toBe(0)
+})
+
+test("a warm cache explains nothing — an unknown slug there really is a typo", async () => {
+    // The nearest-match message is the better one once there is a catalogue to match against, so the
+    // explanation has to fall silent rather than blaming the cache for every future mistake.
+    const dir = tempDir()
+    seed(dir, [GMAIL_SEND])
+    expect(provider(dir).explainUnresolved(["GMAIL_SEND_EMAILZ"])).toBe(undefined)
 })
 
 test("an empty request against an empty cache is not a failure", async () => {
     // An agent that pins nothing from the provider has nothing to warm.
     const dir = tempDir()
     expect((await provider(dir).resolve([])).length).toBe(0)
+    expect(provider(dir).explainUnresolved([])).toBe(undefined)
 })
 
 test("a corrupt cache is treated as empty, not as a parse error", async () => {
@@ -280,13 +293,7 @@ test("a corrupt cache is treated as empty, not as a parse error", async () => {
             .resolve([])
             .then(() => "no throw"),
     ).toBe("no throw")
-    let code = ""
-    try {
-        await provider(dir).resolve(["GMAIL_SEND_EMAIL"])
-    } catch (error) {
-        code = (error as { code?: string }).code ?? ""
-    }
-    expect(code).toBe("composio_cache_miss")
+    expect(provider(dir).explainUnresolved(["GMAIL_SEND_EMAIL"])?.code).toBe("composio_cache_miss")
 })
 
 test("a cache written by an older version is ignored", async () => {
@@ -303,13 +310,7 @@ test("a cache written by an older version is ignored", async () => {
     )
     // Ignored, then reported as unwarmed — which is the actionable reading. Misreading an older shape
     // would be worse than refusing it: the fields it was written with are not the fields read now.
-    let code = ""
-    try {
-        await provider(dir).resolve(["GMAIL_SEND_EMAIL"])
-    } catch (error) {
-        code = (error as { code?: string }).code ?? ""
-    }
-    expect(code).toBe("composio_cache_miss")
+    expect(provider(dir).explainUnresolved(["GMAIL_SEND_EMAIL"])?.code).toBe("composio_cache_miss")
 })
 
 test("describe reports what was assumed rather than leaving it silent", async () => {

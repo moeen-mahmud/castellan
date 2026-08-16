@@ -15,7 +15,7 @@
         "node": ">=22"
     },
     "scripts": {
-        "build": "bun run --filter='@castellan/core' build && bun run --filter='@castellan/cli' build && bun scripts/rewrite-dts-extensions.ts",
+        "build": "bun run --filter='@castellan/core' build && bun run --filter='@castellan/tools-*' build && bun run --filter='@castellan/cli' build && bun scripts/rewrite-dts-extensions.ts",
         "typecheck": "bun run --filter='*' typecheck",
         "test": "bun test",
         "test:node": "node --test packages/core/test/*.test.ts",

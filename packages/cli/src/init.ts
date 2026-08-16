@@ -29,6 +29,8 @@ import {
 import { EXIT_FAILURE, EXIT_OK } from "#lib/const"
 import { markTerminalDirty, onExit } from "#lib/exit"
 import {
+    COMPOSIO_KEY_ENV,
+    composioEnabled,
     type InitAnswers,
     type InitStep,
     nextQuestion,
@@ -60,6 +62,8 @@ const FLAG_FOR: Record<InitStep, string> = {
     webBackend: "--web-backend",
     // No flag, same reason as the model key.
     webKey: "(asked at the prompt only)",
+    composio: "--composio",
+    composioKey: "(asked at the prompt only)",
     dir: "<dir>",
 }
 
@@ -206,6 +210,7 @@ function fromFlags(options: InitOptions): Partial<Record<InitStep, string>> {
         ["system", options.system],
         ["web", options.web],
         ["webBackend", options.webBackend],
+        ["composio", options.composio],
         ["dir", options.dir],
     ]
     for (const [step, raw] of pairs) {
@@ -305,7 +310,7 @@ function complete(partial: Partial<Record<InitStep, string>>): InitAnswers {
     // second for anyone exporting the variable another way. Everything else is present once
     // nextQuestion returns undefined.
     const answers = partial as Record<
-        Exclude<InitStep, "apiKeyEnv" | "apiKey" | "webBackend" | "webKey">,
+        Exclude<InitStep, "apiKeyEnv" | "apiKey" | "webBackend" | "webKey" | "composioKey">,
         string
     > & {
         apiKeyEnv?: string
@@ -314,6 +319,8 @@ function complete(partial: Partial<Record<InitStep, string>>): InitAnswers {
         // so `nextQuestion` returning undefined does not mean they were answered.
         webBackend?: string
         webKey?: string
+        /** Undefined unless the Composio answer was `connected`, for the same reason. */
+        composioKey?: string
     }
     // Which variable holds the key is no longer asked — it comes from `--api-key-env`, or from the
     // preset. Defaulted HERE, at the one funnel both the wizard and the scripted path pass through:
@@ -335,6 +342,10 @@ function complete(partial: Partial<Record<InitStep, string>>): InitAnswers {
         ...(answers.webKey === undefined || answers.webKey === ""
             ? {}
             : { webKey: answers.webKey }),
+        composio: answers.composio,
+        ...(answers.composioKey === undefined || answers.composioKey === ""
+            ? {}
+            : { composioKey: answers.composioKey }),
         ...(keyVar === undefined ? {} : { apiKeyEnv: keyVar }),
         ...(answers.apiKey === undefined || answers.apiKey === ""
             ? {}
@@ -367,6 +378,23 @@ function nextSteps(
     if (searchVar !== undefined && answers.webKey === undefined) {
         steps.push(
             `Add your search key: edit ${join(targetDir, ".env")} and set ${searchVar}= — web_fetch works without it, web_search does not`,
+        )
+    }
+    // Composio is the one provider whose answer cannot finish the job here. Its slugs resolve from
+    // an on-disk cache during boot, where no request is permitted, so `init` — which makes no
+    // requests at all — has no honest way to leave a usable tool pinned. Saying so is the whole
+    // difference between a setup step and an agent that quietly has none of the apps it was
+    // promised: nothing fails, because nothing was pinned.
+    if (composioEnabled(answers)) {
+        if (answers.composioKey === undefined) {
+            steps.push(
+                `Add your Composio key: edit ${join(targetDir, ".env")} and set ${COMPOSIO_KEY_ENV}=`,
+            )
+        }
+        steps.push(
+            `Fetch the app tools once: ${BRAND.slug} tools ${runRef} --warm — then add the slugs ` +
+                `you want under tools.pinned in ${manifest}. Nothing from Composio is available ` +
+                `until that runs, and a slug pinned before it fails the load.`,
         )
     }
     steps.push(`${BRAND.slug} run ${runRef}`)

@@ -155,6 +155,8 @@ export interface InitOptions {
     readonly system?: string
     readonly web?: string
     readonly webBackend?: string
+    /** `none` or `connected` — whether the agent reaches other apps through Composio. */
+    readonly composio?: string
     /** Take every default; never ask, even at a terminal. */
     readonly yes?: boolean
     readonly plain?: boolean

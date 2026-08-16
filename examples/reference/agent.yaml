@@ -209,9 +209,13 @@ tools:
   #
   #   # @castellan/tools-composio — a remote catalogue, called over HTTP and never through MCP.
   #   #
-  #   # Run `castellan tools ./agent.yaml --warm` once before starting: resolution happens during
-  #   # boot, where no network call is permitted, so a cold cache fails the load naming the slugs and
-  #   # that command.
+  #   # Run `castellan tools ./agent.yaml --warm` once before pinning anything from it: resolution
+  #   # happens during boot, where no network call is permitted, so a Composio slug pinned against a
+  #   # cold cache fails the load naming the slugs and that command.
+  #   #
+  #   # Configuring it while pinning nothing is fine and starts normally — the cold-cache failure is
+  #   # raised only for a slug no provider resolved, never for merely being listed here beside one
+  #   # whose tools are local.
   #   composio:
   #     apiKeyEnv: COMPOSIO_API_KEY
   #     userId: me

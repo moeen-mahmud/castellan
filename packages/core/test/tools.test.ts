@@ -10,6 +10,7 @@
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { ConfigError } from "../src/errors.ts"
 import { EventBus } from "../src/events/bus.ts"
 import type { AnyEvent } from "../src/events/types.ts"
 import { coerceArgs } from "../src/tools/coerce.ts"
@@ -134,6 +135,71 @@ describe("resolution", () => {
             const detail = error as { message: string; field?: string }
             expect(detail.message).toContain("fake")
             expect(detail.field).toBe("tools.pinned[0]")
+        }
+    })
+
+    test("a provider that knows why it came up empty gets to say so", async () => {
+        // The generic message names the slugs and offers whatever the other providers have, which is
+        // right for a typo and actively misleading for a cold remote cache — it blames three correct
+        // slugs and suggests local tools instead.
+        const cold: ToolProvider = {
+            id: "cold",
+            resolve: () => Promise.resolve([]),
+            explainUnresolved: (slugs) =>
+                new ConfigError({
+                    code: "cache_cold",
+                    message: `not cached: ${slugs.join(", ")}`,
+                    hint: "warm it first",
+                }),
+        }
+        try {
+            await ToolRegistry.create({ pinned: ["GMAIL_SEND"], providers: [cold] })
+            throw new Error("expected a failure")
+        } catch (error) {
+            expect((error as { code?: string }).code).toBe("cache_cold")
+        }
+    })
+
+    test("it is asked only once a slug is missing everywhere, never per provider", async () => {
+        // The bug this pins. The registry hands EVERY provider the whole pinned list, so a cold
+        // remote is asked about slugs a local provider owns and is about to answer for. When that
+        // question was a throw inside resolve(), a manifest naming both providers refused to boot
+        // over `config_read` — nothing wrong with it, nothing unresolved, and no way to tell from
+        // the message. Only the registry can see that the slug was found somewhere.
+        let asked = 0
+        const cold: ToolProvider = {
+            id: "cold",
+            resolve: () => Promise.resolve([]),
+            explainUnresolved: (slugs) => {
+                asked += 1
+                return new ConfigError({
+                    code: "cache_cold",
+                    message: `not cached: ${slugs.join(", ")}`,
+                    hint: "warm it first",
+                })
+            },
+        }
+        const registry = await ToolRegistry.create({
+            pinned: ["owned"],
+            providers: [provider("warm", [tool({ slug: "owned", provider: "warm" })]), cold],
+        })
+        expect(registry.specs().map((entry) => entry.slug)).toEqual(["owned"])
+        expect(asked).toBe(0)
+    })
+
+    test("a provider with no explanation falls through to the nearest-match message", async () => {
+        const quiet: ToolProvider = {
+            id: "quiet",
+            resolve: () => Promise.resolve([]),
+            explainUnresolved: () => undefined,
+            list: () => Promise.resolve(["gmail_read"]),
+        }
+        try {
+            await ToolRegistry.create({ pinned: ["gmail_reed"], providers: [quiet] })
+            throw new Error("expected a failure")
+        } catch (error) {
+            expect((error as { code?: string }).code).toBe("unknown_tool")
+            expect((error as { hint?: string }).hint).toContain('Did you mean "gmail_read"')
         }
     })
 

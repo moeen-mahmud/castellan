@@ -138,8 +138,9 @@ interface ToolProviderSpec {
 }
 
 interface ToolProvider {
-  resolve(slugs: string[]): Promise<ToolSpec[]>       // throws on unknown slug
+  resolve(slugs: string[]): Promise<ToolSpec[]>       // omits what it does not own; never throws for that
   execute(call: ToolCall, signal: AbortSignal): Promise<ToolResult>
+  explainUnresolved?(slugs: string[]): ConfigError | undefined
   search?(query: string, k: number): Promise<ToolSpec[]>
 }
 
@@ -154,9 +155,20 @@ interface ToolSpec {
 }
 ```
 
-**`resolve()` must throw on an unknown slug, naming it.** Silently dropping dead slugs is
-the exact failure that starves write tools and produces "tool not found" at runtime instead
-of at load.
+**An unknown slug must fail the load, naming it — but `resolve()` is not where that happens.**
+Silently dropping dead slugs is the exact failure that starves write tools and produces "tool not
+found" at runtime instead of at load, so the registry diffs what came back against what was asked
+for and fails on the difference, naming every missing slug at once with the nearest match.
+
+`resolve()` therefore **omits** a slug it does not own rather than throwing. It has to: the registry
+hands every provider the whole pinned list, so a remote provider is routinely asked about slugs a
+local one owns. Throwing there refuses a manifest in which nothing is actually wrong.
+
+`explainUnresolved()` is the seam for a provider that knows something the registry cannot — that its
+cache is cold, say, rather than that the slug is a typo. It is consulted **only** once a slug is
+still missing after every provider has answered, and returning `undefined` falls through to the
+generic nearest-match failure. Return a reason only while it is the better explanation: a provider
+that blames its cache forever turns every future typo into a misleading message.
 
 `whenNotToUse` is not optional. If you have nothing to say, say what the adjacent tool is
 for instead.

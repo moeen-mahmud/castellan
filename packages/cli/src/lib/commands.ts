@@ -109,6 +109,13 @@ export const COMMANDS: readonly CommandSpec[] = [
                 defaultHelp: "tavily",
             },
             {
+                name: "composio",
+                kind: "string",
+                placeholder: "level",
+                help: "your other apps via Composio: none | connected",
+                defaultHelp: "none",
+            },
+            {
                 name: "yes",
                 kind: "boolean",
                 help: "take every default; never ask, even at a terminal",

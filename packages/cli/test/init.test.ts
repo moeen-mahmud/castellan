@@ -15,11 +15,12 @@ import {
     checkAuthoring,
     HarnessError,
     loadManifest,
+    Runtime,
     resolveWorkspace,
 } from "@castellan/core"
 import { initCommand } from "#init"
 import { EXIT_OK } from "#lib/const"
-import { PROVIDER_IDS } from "#lib/providers"
+import { PROVIDER_IDS, TOOL_PROVIDERS } from "#lib/providers"
 
 function scratch(): string {
     return join(mkdtempSync(join(tmpdir(), "init-test-")), "agent")
@@ -239,6 +240,57 @@ describe("initCommand", () => {
         // loud; this one carries the phase name.)
         expect(error).toBeDefined()
         expect(JSON.stringify(error?.details ?? []) + error?.message).toContain("Phase 7")
+    })
+
+    test("--composio connected writes a manifest the real loader accepts", async () => {
+        // The whole risk of adding a provider to the generated map: the block can look right and
+        // still be a document the schema refuses, or one it accepts and the runtime does not. This
+        // loads it through the same path `run` uses, with composio in knownProviders.
+        const dir = scratch()
+        expect(await initCommand({ ...FLAGS, dir, composio: "connected" })).toBe(EXIT_OK)
+
+        const loaded = loadManifest(join(dir, "agent.yaml"), {
+            env: { ...STUB_ENV, COMPOSIO_API_KEY: "(pending)" },
+            knownProviders: PROVIDER_IDS,
+        })
+        const providers = loaded.manifest.tools?.providers ?? {}
+        expect(Object.keys(providers)).toContain("composio")
+        expect(providers.composio).toEqual({ apiKeyEnv: "COMPOSIO_API_KEY", userId: "default" })
+
+        // Nothing pinned from Composio, and this is the property that matters: a slug pinned here
+        // would resolve from an empty cache during boot and fail the load. A generated agent that
+        // cannot start is worse than one with no apps wired up yet.
+        const pinned = loaded.manifest.tools?.pinned ?? []
+        expect(pinned.some((slug) => slug.toUpperCase() === slug && slug.includes("_"))).toBe(false)
+    })
+
+    test("a Composio agent boots with a cold cache — nothing pinned, nothing to resolve", async () => {
+        // The failure this rules out: `composio_cache_miss` at startup. It fires when the cache is
+        // empty AND slugs were requested, so the generated pair (provider named, nothing pinned) is
+        // the one combination that starts before anyone has run `tools --warm`.
+        const dir = scratch()
+        await initCommand({ ...FLAGS, dir, composio: "connected" })
+
+        const runtime = await Runtime.create({
+            agents: [join(dir, "agent.yaml")],
+            toolProviders: TOOL_PROVIDERS,
+            env: { ...STUB_ENV, COMPOSIO_API_KEY: "(pending)" },
+            store: ":memory:",
+        })
+        try {
+            const slugs =
+                runtime
+                    .list()[0]
+                    ?.tools.specs()
+                    .map((spec) => spec.slug) ?? []
+            // The system provider answered for both config tools, which is the half a cold
+            // Composio could not know when it used to refuse the whole boot over them.
+            expect(slugs).toContain("now")
+            expect(slugs).toContain("config_read")
+            expect(slugs).toContain("config_set")
+        } finally {
+            await runtime.stop()
+        }
     })
 })
 

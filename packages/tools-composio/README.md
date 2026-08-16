@@ -39,8 +39,16 @@ Measured on a three-tool manifest: `Runtime.create` returns in **27 ms**, and th
 follows takes **1,474 ms**. Awaiting it inside boot would have made boot sixty times slower, which is
 why it is fire-and-forget and reports through the `tools.refreshed` event instead.
 
-The consequence is that a cold agent must be warmed once. An empty cache fails the load naming the
-slugs and the command — not with a network call, and not by silently dropping the tools.
+The consequence is that a cold agent must be warmed once before anything of Composio's is pinned. A
+pinned slug that is not cached fails the load naming the slugs and the command — not with a network
+call, and not by silently dropping the tools.
+
+That failure is reported through `explainUnresolved()`, and the registry raises it only once a slug
+is missing after **every** provider has answered. It used to be thrown from `resolve()`, which was
+wrong for a reason worth keeping written down: the registry hands each provider the whole `pinned`
+list, so a cold cache saw `config_read` — the system provider's, and about to resolve fine — and
+refused the boot over it. Configuring this provider while pinning nothing from it is a normal,
+startable agent, and is exactly what `init --composio connected` writes.
 
 A warmed agent boots and serves its catalogue **with no API key present at all**. The key is needed
 to refresh and to execute, and each says so at the point it needs one.
