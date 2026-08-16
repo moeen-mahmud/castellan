@@ -138,9 +138,10 @@ packages/core/src/
 │   ├── scheduler.ts         # single timer, nearest-due
 │   └── kinds.ts             # cron | every | at
 ├── channels/
-│   ├── channel.ts           # Channel interface
-│   ├── inbox.ts             # inbound normalisation + routing
-│   └── outbox.ts            # idempotent delivery + retry
+│   ├── channel.ts           # transport interface + declared limits
+│   ├── inbox.ts             # dedupe, allowFrom, session routing
+│   ├── outbox.ts            # idempotent delivery + retry + ordering
+│   └── split.ts             # chunking: graphemes, boundaries, code fences
 ├── plugins/
 │   ├── plugin.ts            # Plugin + PluginContext
 │   ├── loader.ts            # boot-time resolution, version gate

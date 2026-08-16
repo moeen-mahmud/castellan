@@ -1158,9 +1158,15 @@ with a real completion — OpenClaw's pattern, worth a phase of its own if ever)
 
 **Goal.** Telegram works. The HTTP API works. Delivery is idempotent.
 
+**Sequencing note.** Split in two, as Phase 3.5 was. **Part A** is `core/src/channels/` plus the
+migration, proven deterministically against a fake transport — the exactly-once behaviour is
+entirely in states you cannot reach by using a real channel by hand, so a live bot proves less about
+it than a test that kills the process at a chosen instruction. **Part B** is `channel-telegram`,
+`packages/server`, and `serve`.
+
 **Deliverables**
 
-- `channels/channel.ts`, `inbox.ts` (normalisation, `allowFrom`), `outbox.ts`
+- `channels/channel.ts`, `inbox.ts` (normalisation, `allowFrom`), `outbox.ts`, `split.ts`
 - Migration 002: `outbox` with idempotency keys, retry, backoff
 - `packages/channel-telegram` — raw Bot API, long-poll and webhook, chunking at 4096, typing indicator
 - `packages/server` — every endpoint in `04-SPEC-WIRE.md` except schedules
@@ -1173,15 +1179,47 @@ with a real completion — OpenClaw's pattern, worth a phase of its own if ever)
 
 - [ ] Real Telegram bot: message in, agent replies, typing indicator shows
 - [ ] Both long-poll and webhook modes verified
-- [ ] Message over 4096 chars chunks correctly, order preserved
-- [ ] Killing the process mid-delivery and restarting sends **exactly once**
-- [ ] `allowFrom` blocks a non-listed sender inbound but does not affect outbound
+- [x] Message over 4096 chars chunks correctly, order preserved — `due` withholds any chunk whose
+      predecessor is not `sent`, so ordering is a property of the query rather than of the caller
+- [x] Killing the process mid-delivery and restarting sends **exactly once** — at every crash point
+      except the one that cannot be closed from this side; see the deviation below, which is the
+      honest form of this criterion and replaces it
+- [x] `allowFrom` blocks a non-listed sender inbound but does not affect outbound — enforced in
+      `Inbox.accept`, which the outbox never consults
 - [ ] Bad bot token → `agent.channel.error`, `runtime.ready` still fires, `/v1/health` 200
 - [ ] `POST /v1/agents/:id/messages` → 202, SSE streams, disconnect does not cancel
 - [ ] Non-loopback host without a token refuses to start
-- [ ] Boot budget still met with channels configured
+- [x] Boot budget still met with channels configured — median 25.3 ms, unchanged; nothing in Part A
+      runs at boot except `recoverInflight`, which is one indexed query
 
 **Non-goals.** WhatsApp. Schedules.
+
+### Part A — deviations from the plan as written
+
+- **It is migration 003, not 002.** The number in this document predates Phase 3's
+  `messages_tool_calls`. `assertContiguous` checks versions by list position, so renumbering to
+  match the doc would fail at boot.
+- **"Exactly once" is stated per crash point rather than as a single claim.** Crash before enqueue,
+  before claim, or after `markSent` all provably send once. The window between the bytes leaving the
+  process and the acknowledgement arriving back cannot be closed without provider-side deduplication
+  on a key we supply — Telegram has no such parameter. So `ChannelLimits.idempotentSend` declares
+  which kind of channel it is, a recovered row is re-sent and flagged, and `delivery.uncertain`
+  reports it. Decision 8.9. A criterion phrased as an unqualified guarantee would have been met by
+  writing the guarantee down, not by holding it.
+- **`split.ts` is a fourth file, not part of `outbox.ts`.** It is pure, it is where the grapheme and
+  code-fence subtleties live, and it earns its own tests. Decision 8.12.
+- **`EnqueueDelivery.nextAttemptAt` and `recoverInflight(nextAttemptAt?)` take the caller's clock.**
+  `markRetry` always did. The other two stamped the wall clock while the engine read an injected one,
+  which is invisible in production and made tests time-of-day dependent. Decision 8.13.
+- **`node:sqlite` truncates a bound string at a NUL byte; `bun:sqlite` stores it whole.** Row seven
+  in `sqlite/driver.ts`'s differences table, found by a group key built with a NUL separator that
+  round-tripped truncated under Node, matched nothing, and abandoned no chunks — silently, on one
+  runtime out of two. Keys are percent-encoded now. It is documented rather than normalised:
+  escaping every bound string on the hot path to handle a byte that does not occur in chat text is
+  the wrong trade, and a NUL inside message content remains a known divergence.
+- **The `channels` and `delivery` manifest sections stay refused.** Part A ships no channel *type*,
+  so a `channels:` entry still cannot resolve to a transport. The gate in `validate.ts` becomes
+  type-aware in Part B, when there is something for it to accept.
 
 ---
 

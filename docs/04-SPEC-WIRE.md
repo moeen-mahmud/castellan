@@ -202,7 +202,9 @@ interface Event {
 | `plugin.slow` | setup over budget | `name`, `setupMs` |
 | `agent.loaded` | per agent | `tools`, `skills`, `schedules` |
 | `agent.error` | load failure | `code`, `message`, `hint` |
-| `agent.channel.status` | connect/disconnect | `channelId`, `status`, `detail` |
+| `agent.channel.status` | connect/disconnect | `channelId`, `channelType`, `status`, `detail?` |
+| `agent.channel.error` | channel failure that did not stop the channel | `channelId`, `code`, `message`, `hint` |
+| `agent.channel.rejected` | inbound not turned into a turn | `channelId`, `reason` (`duplicate` \| `denied`), `sender`, `detail` |
 | `turn.start` | inbound accepted | `source`, `inputTokens` |
 | `context.assembled` | per turn | `slots: [{slot, label, tokens, pinned}]`, `total` |
 | `context.pressure` | per step | `used`, `window`, `fraction` |
@@ -221,8 +223,10 @@ interface Event {
 | `tools.refreshed` | after `runtime.ready` | `provider`, `ok`, `fetched`, `changed[]`, `missing[]`, `latencyMs`, `error?` |
 | `handoff.start` | delegation | `to`, `task` |
 | `handoff.result` | returned | `to`, `ok`, `steps`, `tokens` |
-| `delivery.sent` | outbox success | `channelId`, `providerMessageId` |
-| `delivery.failed` | after retries | `channelId`, `attempts`, `error` |
+| `delivery.sent` | outbox success | `channelId`, `providerMessageId?`, `chunkIndex`, `chunkTotal`, `attempts`, `uncertain` |
+| `delivery.retry` | retryable send failed | `channelId`, `chunkIndex`, `attempts`, `delayMs`, `error` |
+| `delivery.failed` | chunk abandoned | `channelId`, `chunkIndex`, `chunkTotal`, `attempts`, `exhausted`, `abandoned`, `error` |
+| `delivery.uncertain` | in-flight row recovered at boot | `channelId`, `chunkIndex`, `chunkTotal`, `attempts`, `idempotentSend` |
 | `schedule.fired` | timer | `scheduleId`, `kind`, `drift Ms` |
 | `turn.end` | complete | `reason`, `steps`, `tokens`, `durationMs` |
 | `error` | anything uncaught | `code`, `message`, `hint`, `stack?` |
@@ -232,6 +236,25 @@ deliberately the only evidence: the refresh is detached, because awaiting it wou
 trip back inside the boot path. `ok: false` is not a turn failure — the agent keeps serving the
 catalogue it resolved from disk. Watch `changed`: a slug whose schema moved under a running agent is
 one the model has already been told about in the current session's cached prefix.
+
+The delivery events describe **one chunk each**, not one reply — a reply over the channel's
+`maxMessageChars` is several rows with the same `chunkTotal`. `delivery.failed` carries `abandoned`,
+the count of later chunks in the same reply dropped as a consequence, because half a message is
+worse than none; one fault produces one failure event rather than N.
+
+`delivery.uncertain` is the honest edge of exactly-once. A row found `inflight` at boot belonged to a
+process that died between sending the bytes and recording the acknowledgement, and nothing local can
+say which happened. It is re-sent, because a lost reply in a chat reads as the agent ignoring you and
+produces no signal at all, whereas a duplicate produces both a message and this event. `uncertain`
+then rides onto the eventual `delivery.sent`, so a duplicate stays explicable after the fact.
+`idempotentSend` reports whether the channel's provider deduplicates on a key we supply — Telegram's
+`sendMessage` does not, WhatsApp Cloud API does — so the event says how much doubt there actually is
+instead of implying a fixed amount.
+
+`agent.channel.rejected` fires for a duplicate the provider replayed and for an `allowFrom` refusal.
+Refusals are reported rather than dropped silently: an allowlist that quietly discards a message is
+indistinguishable from a channel that is not receiving at all. `sender` is the handle where the
+provider exposes one and the peer id otherwise — never the message body.
 
 `tool.gated` fires when a mutating call is refused because untrusted content entered the turn. It is
 not an error: the model is told to report back and ask instead, and the turn continues. `policy` names

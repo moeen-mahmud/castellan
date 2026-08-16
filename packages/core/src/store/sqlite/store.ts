@@ -14,9 +14,12 @@
 import type { ChatMessage, ToolCallRequest } from "../../model/provider.ts"
 import { parseSessionKey } from "../session-key.ts"
 import type {
+    DeliveryRecord,
+    DeliveryStatus,
     KVStore,
     MessagePage,
     MessageStore,
+    OutboxStore,
     SessionRecord,
     SessionStore,
     SessionSummary,
@@ -105,6 +108,31 @@ interface TurnRow {
     duration_ms: number | null
 }
 
+interface DeliveryRow {
+    id: number
+    agent_id: string
+    dedupe_key: string
+    group_key: string
+    session_key: string
+    turn_id: string | null
+    channel_id: string
+    recipient: string
+    thread: string | null
+    chunk_index: number
+    chunk_total: number
+    body: string
+    status: string
+    attempts: number
+    next_attempt_at: string
+    /** SQLite has no boolean. 0 or 1. */
+    uncertain: number
+    provider_message_id: string | null
+    error_code: string | null
+    error_message: string | null
+    created_at: string
+    updated_at: string
+}
+
 function nowIso(): string {
     return new Date().toISOString()
 }
@@ -187,12 +215,39 @@ function toTurn(row: TurnRow): TurnRecord {
     }
 }
 
+function toDelivery(row: DeliveryRow): DeliveryRecord {
+    return {
+        id: row.id,
+        agentId: row.agent_id,
+        dedupeKey: row.dedupe_key,
+        groupKey: row.group_key,
+        sessionKey: row.session_key,
+        ...(row.turn_id === null ? {} : { turnId: row.turn_id }),
+        channelId: row.channel_id,
+        recipient: row.recipient,
+        ...(row.thread === null ? {} : { thread: row.thread }),
+        chunkIndex: row.chunk_index,
+        chunkTotal: row.chunk_total,
+        body: row.body,
+        status: row.status as DeliveryStatus,
+        attempts: row.attempts,
+        nextAttemptAt: row.next_attempt_at,
+        uncertain: row.uncertain !== 0,
+        ...(row.provider_message_id === null ? {} : { providerMessageId: row.provider_message_id }),
+        ...(row.error_code === null ? {} : { errorCode: row.error_code }),
+        ...(row.error_message === null ? {} : { errorMessage: row.error_message }),
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+    }
+}
+
 export interface SqliteStoreOptions extends OpenOptions {}
 
 export class SqliteStore implements Store {
     readonly sessions: SessionStore
     readonly messages: MessageStore
     readonly turns: TurnStore
+    readonly outbox: OutboxStore
     readonly kv: KVStore
     readonly location: string
     /** What `migrate` did at open. Reported by boot rather than logged and forgotten. */
@@ -298,6 +353,98 @@ export class SqliteStore implements Store {
                     SET status = 'error', ended_at = ?,
                         error_code = 'turn_abandoned', error_message = ?, error_hint = ?
                   WHERE status = 'running'`,
+            ),
+
+            outboxInsert: db.prepare(
+                `INSERT INTO outbox
+                     (agent_id, dedupe_key, group_key, session_key, turn_id, channel_id, recipient,
+                      thread, chunk_index, chunk_total, body, status, next_attempt_at,
+                      created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
+                 ON CONFLICT (agent_id, dedupe_key) DO NOTHING`,
+            ),
+            outboxById: db.prepare("SELECT * FROM outbox WHERE id = ?"),
+            outboxByKey: db.prepare("SELECT * FROM outbox WHERE agent_id = ? AND dedupe_key = ?"),
+            /**
+             * Due rows, head-of-line per group.
+             *
+             * The `NOT EXISTS` is the ordering guarantee. A chunk is withheld while any earlier
+             * chunk of its group is not `sent` — including one that is `failed`, which is the
+             * fail-closed direction: a half-message that ships because its first part gave up is
+             * worse than a queue that visibly stops. `abandonGroupAfter` is what clears it.
+             */
+            outboxDue: db.prepare(
+                `SELECT o.* FROM outbox o
+                  WHERE o.agent_id = ?
+                    AND o.status = 'pending'
+                    AND o.next_attempt_at <= ?
+                    AND NOT EXISTS (
+                        SELECT 1 FROM outbox e
+                         WHERE e.agent_id = o.agent_id
+                           AND e.group_key = o.group_key
+                           AND e.chunk_index < o.chunk_index
+                           AND e.status <> 'sent'
+                    )
+                  ORDER BY o.id ASC
+                  LIMIT ?`,
+            ),
+            outboxClaim: db.prepare(
+                `UPDATE outbox SET status = 'inflight', updated_at = ?
+                  WHERE id = ? AND status = 'pending'`,
+            ),
+            outboxSent: db.prepare(
+                `UPDATE outbox
+                    SET status = 'sent', provider_message_id = ?, attempts = attempts + 1,
+                        error_code = NULL, error_message = NULL, updated_at = ?
+                  WHERE id = ?`,
+            ),
+            outboxRetry: db.prepare(
+                `UPDATE outbox
+                    SET status = 'pending', attempts = attempts + 1, next_attempt_at = ?,
+                        error_code = ?, error_message = ?, updated_at = ?
+                  WHERE id = ?`,
+            ),
+            outboxFailed: db.prepare(
+                `UPDATE outbox
+                    SET status = 'failed', attempts = attempts + 1,
+                        error_code = ?, error_message = ?, updated_at = ?
+                  WHERE id = ?`,
+            ),
+            outboxAbandonList: db.prepare(
+                `SELECT id FROM outbox
+                  WHERE agent_id = ? AND group_key = ? AND chunk_index > ?
+                    AND status IN ('pending', 'inflight')
+                  ORDER BY chunk_index ASC`,
+            ),
+            outboxAbandon: db.prepare(
+                `UPDATE outbox
+                    SET status = 'failed', error_code = ?, error_message = ?, updated_at = ?
+                  WHERE agent_id = ? AND group_key = ? AND chunk_index > ?
+                    AND status IN ('pending', 'inflight')`,
+            ),
+            outboxInflight: db.prepare("SELECT * FROM outbox WHERE status = 'inflight'"),
+            outboxRecover: db.prepare(
+                `UPDATE outbox
+                    SET status = 'pending', uncertain = 1, next_attempt_at = ?, updated_at = ?
+                  WHERE status = 'inflight'`,
+            ),
+            outboxPrune: db.prepare(
+                "DELETE FROM outbox WHERE status IN ('sent', 'failed') AND updated_at < ?",
+            ),
+            /**
+             * One statement with optional filters rather than four prepared variants.
+             *
+             * Each filter is bound twice — once to the null test, once to the comparison. Ugly at
+             * the call site and worth it: four near-identical SELECTs are four places for the
+             * column list to drift, which is the same failure `MESSAGE_COLUMNS` exists to prevent.
+             */
+            outboxList: db.prepare(
+                `SELECT * FROM outbox
+                  WHERE agent_id = ?
+                    AND (? IS NULL OR session_key = ?)
+                    AND (? IS NULL OR status = ?)
+                  ORDER BY id DESC
+                  LIMIT ?`,
             ),
 
             kvGet: db.prepare("SELECT value FROM kv WHERE scope = ? AND key = ?"),
@@ -482,6 +629,124 @@ export class SqliteStore implements Store {
                 )
                 return ids
             },
+        }
+
+        this.outbox = {
+            enqueue: async (deliveries) => {
+                if (deliveries.length === 0) return []
+                return db.transaction(() => {
+                    const ts = nowIso()
+                    const results: { record: DeliveryRecord; inserted: boolean }[] = []
+                    for (const d of deliveries) {
+                        const result = q.outboxInsert.run(
+                            d.agentId,
+                            d.dedupeKey,
+                            d.groupKey,
+                            d.sessionKey,
+                            d.turnId ?? null,
+                            d.channelId,
+                            d.recipient,
+                            d.thread ?? null,
+                            d.chunkIndex,
+                            d.chunkTotal,
+                            d.body,
+                            // Due immediately unless the caller says otherwise. A first attempt
+                            // that waited would add latency to every reply to buy nothing —
+                            // backoff starts at the first failure.
+                            d.nextAttemptAt ?? ts,
+                            ts,
+                            ts,
+                        )
+                        const inserted = result.changes === 1
+                        // Read back by key rather than by `lastInsertRowid`: on the conflict path
+                        // there was no insert, and `lastInsertRowid` still holds whatever this
+                        // connection inserted last — a different row, returned as if it were this one.
+                        const row = q.outboxByKey.get<DeliveryRow>(d.agentId, d.dedupeKey)
+                        if (row === undefined) {
+                            throw new Error(
+                                `Delivery ${d.agentId}/${d.dedupeKey} could not be enqueued. ` +
+                                    "hint: the outbox table is not writable — check disk space and file permissions on the database.",
+                            )
+                        }
+                        results.push({ record: toDelivery(row), inserted })
+                    }
+                    return results
+                })
+            },
+            due: async (agentId, now, limit) =>
+                q.outboxDue.all<DeliveryRow>(agentId, now, limit ?? DEFAULT_PAGE).map(toDelivery),
+            claim: async (id) => {
+                const result = q.outboxClaim.run(nowIso(), id)
+                if (result.changes !== 1) return undefined
+                const row = q.outboxById.get<DeliveryRow>(id)
+                return row === undefined ? undefined : toDelivery(row)
+            },
+            markSent: async (id, providerMessageId) => {
+                q.outboxSent.run(providerMessageId ?? null, nowIso(), id)
+            },
+            markRetry: async (id, nextAttemptAt, error) => {
+                q.outboxRetry.run(nextAttemptAt, error.code, error.message, nowIso(), id)
+            },
+            markFailed: async (id, error) => {
+                q.outboxFailed.run(error.code, error.message, nowIso(), id)
+            },
+            abandonGroupAfter: async (agentId, groupKey, chunkIndex, error) =>
+                db.transaction(() => {
+                    // Ids are collected before the UPDATE, because after it the rows no longer
+                    // match its own WHERE clause and there is nothing left to report.
+                    const ids = q.outboxAbandonList
+                        .all<{ id: number }>(agentId, groupKey, chunkIndex)
+                        .map((row) => row.id)
+                    if (ids.length === 0) return []
+                    q.outboxAbandon.run(
+                        error.code,
+                        error.message,
+                        nowIso(),
+                        agentId,
+                        groupKey,
+                        chunkIndex,
+                    )
+                    return ids
+                }),
+            recoverInflight: async (nextAttemptAt) =>
+                db.transaction(() => {
+                    const rows = q.outboxInflight.all<DeliveryRow>()
+                    if (rows.length === 0) return []
+                    const ts = nextAttemptAt ?? nowIso()
+                    q.outboxRecover.run(ts, nowIso())
+                    // The pre-update rows, with the two fields the update changed applied by hand:
+                    // a caller reporting recovery wants to see the state it is about to be in, and
+                    // re-reading every row to get it would double the query count for no new fact.
+                    return rows.map((row) => ({
+                        ...toDelivery(row),
+                        status: "pending" as const,
+                        uncertain: true,
+                        nextAttemptAt: ts,
+                    }))
+                }),
+            get: async (id) => {
+                const row = q.outboxById.get<DeliveryRow>(id)
+                return row === undefined ? undefined : toDelivery(row)
+            },
+            byDedupeKey: async (agentId, dedupeKey) => {
+                const row = q.outboxByKey.get<DeliveryRow>(agentId, dedupeKey)
+                return row === undefined ? undefined : toDelivery(row)
+            },
+            list: async (agentId, options) => {
+                const session = options?.sessionKey ?? null
+                const status = options?.status ?? null
+                return q.outboxList
+                    .all<DeliveryRow>(
+                        agentId,
+                        session,
+                        session,
+                        status,
+                        status,
+                        options?.limit ?? DEFAULT_PAGE,
+                    )
+                    .map(toDelivery)
+            },
+            prune: async (before) => q.outboxPrune.run(before).changes,
         }
 
         this.kv = {

@@ -9,9 +9,9 @@
  * precisely so that later addition is a new file rather than a refactor.
  *
  * **Sub-stores arrive with their subsystems.** `toolCalls` lands in Phase 3, `schedules` in
- * Phase 8, `artifacts` with compaction in Phase 7, and the outbox in Phase 4. They are absent
- * here rather than stubbed: an empty interface that nothing implements is indistinguishable
- * from a working one at the type level, and would let a later phase quietly ship a no-op.
+ * Phase 8, and `artifacts` with compaction in Phase 7. They are absent here rather than stubbed:
+ * an empty interface that nothing implements is indistinguishable from a working one at the type
+ * level, and would let a later phase quietly ship a no-op. `outbox` arrived in Phase 4.
  */
 
 import type { TurnEndReason } from "../events/types.ts"
@@ -180,10 +180,169 @@ export interface KVStore {
     all(scope: string): Promise<Readonly<Record<string, string>>>
 }
 
+/**
+ * A delivery's lifecycle. Four states, and the two transitions that matter are the ones out of
+ * `inflight`: everything else is bookkeeping.
+ *
+ * `inflight` means *the bytes may already have left*. A row found in this state by a fresh process
+ * was owned by a process that died, and no amount of local state can say whether the provider
+ * received it. That ambiguity is the whole reason the state exists as a distinct value rather than
+ * as `pending` with a timestamp.
+ */
+export type DeliveryStatus = "pending" | "inflight" | "sent" | "failed"
+
+export interface DeliveryRecord {
+    readonly id: number
+    readonly agentId: string
+    /**
+     * The identity of this delivery, derived by the caller and unique per agent.
+     *
+     * **Derived, never generated.** A UUID minted at enqueue dedupes the outbox against itself, a
+     * problem it does not have. The duplicate that actually happens is the *enqueuer* running twice
+     * — a turn replayed after a crash, a redelivered webhook — and under a generated id each replay
+     * mints a fresh key and sends again. A derived key makes the second enqueue collide with the
+     * first row and do nothing. See `deliveryKey` in `channels/outbox.ts`.
+     */
+    readonly dedupeKey: string
+    /** Everything in one reply to one recipient. Ordering and abandonment are group-scoped. */
+    readonly groupKey: string
+    readonly sessionKey: string
+    readonly turnId?: string
+    readonly channelId: string
+    readonly recipient: string
+    readonly thread?: string
+    readonly chunkIndex: number
+    readonly chunkTotal: number
+    readonly body: string
+    readonly status: DeliveryStatus
+    readonly attempts: number
+    /** RFC 3339 UTC. A `pending` row is invisible to `due` until this passes. */
+    readonly nextAttemptAt: string
+    /**
+     * This row was found `inflight` at boot and re-queued.
+     *
+     * Sticky once set, and carried onto `delivery.sent` — a duplicate that reaches a person should
+     * be explicable from the event stream afterwards, not only from a log line at the moment it
+     * happened.
+     */
+    readonly uncertain: boolean
+    readonly providerMessageId?: string
+    readonly errorCode?: string
+    readonly errorMessage?: string
+    readonly createdAt: string
+    readonly updatedAt: string
+}
+
+export interface EnqueueDelivery {
+    readonly agentId: string
+    readonly dedupeKey: string
+    readonly groupKey: string
+    readonly sessionKey: string
+    readonly turnId?: string
+    readonly channelId: string
+    readonly recipient: string
+    readonly thread?: string
+    readonly chunkIndex: number
+    readonly chunkTotal: number
+    readonly body: string
+    /**
+     * When this row becomes visible to `due`. Defaults to now.
+     *
+     * Present so the enqueuer's clock is the one that decides, matching `markRetry`, which has
+     * always taken an explicit time. Without it a caller running on an injected clock — the outbox
+     * engine, and therefore every test of it — stamps rows from the wall clock and then asks about
+     * them from a different one. That does not fail; it produces a queue that is due or not
+     * depending on what time of day the suite runs.
+     */
+    readonly nextAttemptAt?: string
+}
+
+/** `inserted: false` means the dedupe key was already present — the re-enqueue did nothing. */
+export interface EnqueueResult {
+    readonly record: DeliveryRecord
+    readonly inserted: boolean
+}
+
+export interface OutboxStore {
+    /**
+     * Insert every delivery whose dedupe key is new, in one transaction.
+     *
+     * All-or-nothing per call, so a crash cannot leave a reply half-enqueued: three chunks either
+     * all exist or none do, and the retry re-enqueues the whole reply against the same keys.
+     */
+    enqueue(deliveries: readonly EnqueueDelivery[]): Promise<readonly EnqueueResult[]>
+    /**
+     * Rows ready to send now, oldest first.
+     *
+     * Returns at most the *head of line* per group: a chunk whose predecessor in the same group is
+     * not yet `sent` is withheld, so ordering holds without the caller tracking it. A predecessor
+     * left `failed` withholds its successors permanently, which is deliberate — `abandonGroupAfter`
+     * is what resolves that, and failing closed means a half-message never ships on its own.
+     */
+    due(agentId: string, now: string, limit?: number): Promise<readonly DeliveryRecord[]>
+    /**
+     * `pending` → `inflight`, atomically. `undefined` when another claimant won.
+     *
+     * The guard is in the `WHERE` clause rather than a read-then-write, because a read-then-write is
+     * exactly the race a second drain pass would lose.
+     */
+    claim(id: number): Promise<DeliveryRecord | undefined>
+    markSent(id: number, providerMessageId?: string): Promise<void>
+    /** `inflight` → `pending`, attempts incremented, visible again at `nextAttemptAt`. */
+    markRetry(
+        id: number,
+        nextAttemptAt: string,
+        error: { readonly code: string; readonly message: string },
+    ): Promise<void>
+    markFailed(
+        id: number,
+        error: { readonly code: string; readonly message: string },
+    ): Promise<void>
+    /**
+     * Fail every later chunk of a group after one chunk failed permanently.
+     *
+     * Half a message is worse than none: the reader gets a fragment with no indication that the
+     * rest is missing. Returns the ids it abandoned so one `delivery.failed` names the real cause
+     * and the cascade is reported as a cascade.
+     */
+    abandonGroupAfter(
+        agentId: string,
+        groupKey: string,
+        chunkIndex: number,
+        error: { readonly code: string; readonly message: string },
+    ): Promise<readonly number[]>
+    /**
+     * Re-queue everything left `inflight` by a dead process, marking it uncertain.
+     *
+     * Returns what it recovered so boot reports it. Retrying is the deliberate choice: in a
+     * conversational channel a lost reply looks like the agent ignored you, which is worse than a
+     * rare duplicate — and the duplicate is at least visible in the event stream, while the silence
+     * is not.
+     *
+     * `nextAttemptAt` defaults to now, and is a parameter for the same reason it is one on
+     * `enqueue`: the recovering caller's clock is the one that will later ask `due`, and a store
+     * that stamped its own would schedule the row into that caller's future.
+     */
+    recoverInflight(nextAttemptAt?: string): Promise<readonly DeliveryRecord[]>
+    get(id: number): Promise<DeliveryRecord | undefined>
+    byDedupeKey(agentId: string, dedupeKey: string): Promise<DeliveryRecord | undefined>
+    list(
+        agentId: string,
+        options?: {
+            readonly sessionKey?: string
+            readonly status?: DeliveryStatus
+            readonly limit?: number
+        },
+    ): Promise<readonly DeliveryRecord[]>
+    /** Drop terminal rows older than `before`. Nothing calls this on a timer yet. */
+    prune(before: string): Promise<number>
+}
+
 export interface Store {
     readonly sessions: SessionStore
     readonly messages: MessageStore
     readonly turns: TurnStore
+    readonly outbox: OutboxStore
     readonly kv: KVStore
     /** Human-readable location, for `store.ready` and the `sessions` command. */
     readonly location: string

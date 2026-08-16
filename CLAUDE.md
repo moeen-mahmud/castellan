@@ -653,6 +653,33 @@ Never claim a performance property without a number in `evals/` and a script to 
   is invisible to it. `composio_connect` carries `policyArg: "toolkit"` so `deny
   composio_connect(slack)` is expressible. The live session exposes six meta tools, not the four the
   docs list — the extra two are a remote bash and a schema fetcher.
+- **A delivery's identity is derived, never generated, and the recipient is part of it.** A UUID at
+  enqueue dedupes the outbox against itself — a problem it does not have. The duplicate that happens
+  is the *enqueuer* running twice, and only a key both runs can recompute collides. Chunking
+  therefore happens at enqueue, not at send: re-splitting later against a different
+  `maxMessageChars` produces different keys for the same reply and the collision stops happening.
+- **`node:sqlite` truncates a bound string at a NUL byte; `bun:sqlite` stores it whole.** An outbox
+  group key built with a NUL separator round-tripped as `tg%3A1` under Node, matched no rows, and
+  abandoned no chunks — no error, on one runtime out of two, and `grep` would not even search the
+  file because it read as binary. Anything used as a *key* must be printable ASCII. It is row seven
+  in `sqlite/driver.ts`'s table and is documented rather than normalised: a NUL in message content
+  is still truncated under Node, deliberately, because escaping every bound string on the hot path
+  is the wrong price for a byte chat text does not contain.
+- **Every timestamp the outbox writes comes from the caller's clock.** `markRetry` always took an
+  explicit `nextAttemptAt`; `enqueue` and `recoverInflight` stamped the wall clock while the engine
+  asked `due` with an injected one. It never failed — it made tests pass or fail depending on the
+  time of day, which for a queue whose whole contract is time is the worst available outcome.
+- **Exactly-once is stated per crash point, never as one claim.** Before enqueue, before claim, and
+  after `markSent` are all held. The window between the bytes leaving and the acknowledgement
+  arriving cannot be closed without the provider deduplicating on a key we supply, which Telegram's
+  `sendMessage` has no parameter for. `ChannelLimits.idempotentSend` says which kind of channel it
+  is; a recovered row is re-sent, flagged `uncertain`, and that flag rides onto `delivery.sent` so a
+  duplicate stays explicable afterwards. Setting the flag true without provider support turns a
+  visible ambiguity into a silent duplicate, which is worse.
+- **A failed chunk abandons the rest of its message.** `due` withholds any chunk whose predecessor
+  is not `sent` — including one that is `failed`, which is the fail-closed direction. Half a message
+  reaches a reader with nothing saying the rest is missing. The cascade is one count on one
+  `delivery.failed`, because there was one fault.
 - **Composio's published reference and its live API disagree, and the live one wins.** The docs
   describe a `summary` with `active_connections`; the response has `{message, results}` and no
   `summary`, with the link at `results.<toolkit>.redirect_url`. A renderer written to the docs

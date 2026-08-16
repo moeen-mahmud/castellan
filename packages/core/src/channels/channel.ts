@@ -1,0 +1,179 @@
+/**
+ * What a channel package implements, and what the runtime promises it in return.
+ *
+ * A channel is a *transport*, not a policy. It moves bytes to and from a messaging provider and
+ * declares two facts about itself — how long a message may be, and whether the provider accepts a
+ * client-supplied idempotency key. Everything else (allowlists, session routing, chunking,
+ * ordering, retry, deduplication) is core's, so that two channels cannot disagree about it.
+ *
+ * The split matters most for **exactly-once delivery**, which is not achievable in general and is
+ * achievable in parts. Core closes the window it owns: a re-enqueue of the same logical delivery
+ * collides on a derived key and is a no-op. The window it does not own is between the bytes leaving
+ * this process and the provider's acknowledgement arriving back — closing *that* requires the
+ * provider to deduplicate on a key we supply, and Telegram's `sendMessage` has no such parameter
+ * while WhatsApp Cloud API does. `ChannelLimits.idempotentSend` is how a channel says which it is,
+ * so the outbox can be honest per-channel instead of uniformly optimistic.
+ */
+
+import type { ErrorDetail } from "../errors.ts"
+
+/** A message as it arrived, before normalisation. Channel-shaped, not yet runtime-shaped. */
+export interface RawInbound {
+    /**
+     * The provider's own id for this message, when it has one.
+     *
+     * Used to drop a redelivery: Telegram's long-poll replays an update whose offset was never
+     * acknowledged, and a webhook is retried on any non-2xx. Absent is allowed — a channel with no
+     * message ids simply gets no inbound deduplication, which is honest, and better than
+     * synthesising an id that looks stable and is not.
+     */
+    readonly providerMessageId?: string
+    /** The provider's id for the conversation. Becomes the peer segment of the session key. */
+    readonly peerId: string
+    /**
+     * A human-facing handle for the sender: `@moeen`, a phone number, an email.
+     *
+     * Distinct from `peerId` because `allowFrom` is written by a person, who knows the handle and
+     * not the numeric id. Both are matched — see `inbox.ts`.
+     */
+    readonly senderHandle?: string
+    readonly senderName?: string
+    /** Thread, topic, or forum sub-id. Keeps a forum topic from sharing one session with its group. */
+    readonly thread?: string
+    readonly text: string
+    /** RFC 3339 UTC. The provider's timestamp when it has one, ours otherwise. */
+    readonly receivedAt: string
+}
+
+/** A `RawInbound` that passed the allowlist, with its session resolved. */
+export interface InboundMessage extends RawInbound {
+    readonly channelId: string
+    readonly channelType: string
+    /** `{channel}:{peerId}[:{thread}]` — see `store/session-key.ts`. */
+    readonly sessionKey: string
+}
+
+/** One chunk, addressed. What a transport is actually handed. */
+export interface OutboundMessage {
+    readonly channelId: string
+    /** Provider-addressable destination. Usually the `peerId` the turn came from. */
+    readonly recipient: string
+    readonly text: string
+    readonly thread?: string
+    /**
+     * The outbox's derived key for this delivery.
+     *
+     * Supplied to every transport whether or not it can use one: a transport that declares
+     * `idempotentSend` passes it to the provider, and one that cannot ignores it. Handing it over
+     * unconditionally means enabling provider-side deduplication later is a change inside the
+     * channel package rather than a new field on this interface.
+     */
+    readonly idempotencyKey: string
+    /** 0-based position within the reply. `total` lets a transport render "1/3" if it wants to. */
+    readonly chunkIndex: number
+    readonly chunkTotal: number
+}
+
+export type SendResult =
+    | {
+          readonly ok: true
+          /** The provider's id for what it just created. Recorded on the row and on `delivery.sent`. */
+          readonly providerMessageId?: string
+      }
+    | {
+          readonly ok: false
+          /**
+           * Whether trying again could plausibly work.
+           *
+           * A transport decides this because only it knows the provider's taxonomy: a 429 and a 503
+           * are retryable, "chat not found" and "bot was blocked by the user" are not. Getting it
+           * wrong in the safe direction costs a few pointless attempts; getting it wrong in the other
+           * direction abandons a message that would have gone through on the next try.
+           */
+          readonly retryable: boolean
+          readonly error: ErrorDetail
+          /** Honoured verbatim when the provider names a wait — Telegram's 429 `retry_after`. */
+          readonly retryAfterMs?: number
+      }
+
+export interface ChannelLimits {
+    /**
+     * The provider's hard cap on one message, in UTF-16 code units.
+     *
+     * Code units rather than characters because that is what providers count: Telegram's 4096 is
+     * measured the way `String.prototype.length` measures. Splitting is core's job (`split.ts`), so
+     * this number exists in exactly one place per channel.
+     */
+    readonly maxMessageChars: number
+    /**
+     * Whether `OutboundMessage.idempotencyKey` reaches the provider and is deduplicated there.
+     *
+     * `false` is the honest default and is not a defect — it means the outbox reports a recovered
+     * in-flight delivery as `delivery.uncertain` rather than claiming exactly-once it cannot
+     * deliver. Setting it `true` without provider support converts a visible ambiguity into a
+     * silent duplicate, which is strictly worse than the ambiguity.
+     */
+    readonly idempotentSend: boolean
+    /**
+     * Minimum gap between two sends on this channel, or 0 for none.
+     *
+     * Providers rate-limit per conversation. Pacing here costs a few hundred milliseconds on a
+     * chunked reply and avoids a 429 that would cost a full backoff cycle.
+     */
+    readonly minSendIntervalMs?: number
+}
+
+export type ChannelStatus = "starting" | "connected" | "disconnected" | "error"
+
+/** What the runtime hands a transport at `start`. The transport's only way back in. */
+export interface ChannelHost {
+    /**
+     * Hand a received message to the runtime. Never throws and never rejects.
+     *
+     * Fire-and-forget on purpose: a transport's read loop must not be able to stall behind turn
+     * execution, and a long-poll that awaited each turn would stop reading updates for the duration
+     * of one. Failures surface as events, not as a rejected promise the poll loop has to handle.
+     */
+    receive(message: RawInbound): void
+    /** Report a connection state change. Reaches `agent.channel.status`. */
+    status(status: ChannelStatus, detail?: string): void
+    /**
+     * Report a failure that did not stop the channel.
+     *
+     * A channel failing to connect never blocks `runtime.ready` — it says so here and keeps
+     * retrying. A runtime that refuses to boot because Telegram is down is a runtime that cannot
+     * serve its HTTP API during a Telegram outage.
+     */
+    error(detail: ErrorDetail): void
+}
+
+export interface ChannelTransport {
+    /** Unique within an agent. Becomes the channel segment of every session key it produces. */
+    readonly id: string
+    /** Registered type name: `telegram`, `whatsapp`. */
+    readonly type: string
+    readonly limits: ChannelLimits
+    /**
+     * Begin receiving. Must return once the transport is *running*, not once it is connected.
+     *
+     * The distinction is the whole reason channel failures do not block readiness: a long-poll that
+     * awaited its first successful poll would make a bad token an unbootable runtime.
+     */
+    start(host: ChannelHost): Promise<void>
+    stop(): Promise<void>
+    send(message: OutboundMessage, signal?: AbortSignal): Promise<SendResult>
+}
+
+/**
+ * A transport plus the configuration core applies around it.
+ *
+ * `allowFrom` lives here rather than on the transport because it is enforced in `inbox.ts`, before
+ * a transport-supplied message becomes a turn. A channel that policed its own allowlist would be a
+ * channel that could get it wrong privately.
+ */
+export interface ChannelBinding {
+    readonly transport: ChannelTransport
+    /** Inbound allowlist. Absent or `["*"]` permits anyone. **Inbound only.** */
+    readonly allowFrom?: readonly string[]
+    readonly enabled: boolean
+}

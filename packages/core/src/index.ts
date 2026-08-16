@@ -15,6 +15,28 @@ export {
     SLUG_PATTERN,
     titleCaseSlug,
 } from "./brand.ts"
+export type {
+    ChannelBinding,
+    ChannelHost,
+    ChannelLimits,
+    ChannelStatus,
+    ChannelTransport,
+    InboundMessage,
+    OutboundMessage,
+    RawInbound,
+    SendResult,
+} from "./channels/channel.ts"
+export { type InboundDecision, Inbox, type InboxOptions, isAllowed } from "./channels/inbox.ts"
+export {
+    type DeliveryGroupParts,
+    type DrainReport,
+    deliveryGroup,
+    deliveryKey,
+    type EnqueueReply,
+    Outbox,
+    type OutboxOptions,
+} from "./channels/outbox.ts"
+export { type SplitOptions, splitMessage } from "./channels/split.ts"
 export {
     type AssembledContext,
     type AssembleInput,
@@ -197,9 +219,14 @@ export {
 } from "./store/sqlite/migrations.ts"
 export { openMemoryStore, SqliteStore, type SqliteStoreOptions } from "./store/sqlite/store.ts"
 export type {
+    DeliveryRecord,
+    DeliveryStatus,
+    EnqueueDelivery,
+    EnqueueResult,
     KVStore,
     MessagePage,
     MessageStore,
+    OutboxStore,
     SessionRecord,
     SessionStore,
     SessionSummary,

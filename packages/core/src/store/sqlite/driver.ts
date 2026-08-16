@@ -1,7 +1,7 @@
 /**
  * The `bun:sqlite` / `node:sqlite` adapter — the only runtime-conditional code in the tree.
  *
- * The two modules are close enough to look interchangeable and differ in six ways that all
+ * The two modules are close enough to look interchangeable and differ in seven ways that all
  * produce the same bug: works under one runtime, misbehaves under the other, with the same
  * source and the same schema. Measured directly rather than read from docs:
  *
@@ -13,13 +13,23 @@
  * | row prototype | `Object.prototype` | null-prototype |
  * | binding `undefined` | accepted as NULL | throws |
  * | binding a boolean | accepted as 0/1 | throws |
+ * | binding a string containing NUL | stored whole | **truncated at the NUL** |
  * | `PRAGMA foreign_keys` default | **off** | **on** |
  *
- * The last one is the dangerous one, because it is silent in the permissive direction: with
+ * The pragma is the dangerous one, because it is silent in the permissive direction: with
  * foreign keys off, `ON DELETE CASCADE` does nothing and deleting a session leaves its messages
  * behind as orphans. Under `bun test` that passes; under `node --test` it does not. So the
- * driver sets the pragma explicitly instead of inheriting a default, and normalises the other
- * five rather than passing them through. An adapter that leaks its differences is not one.
+ * driver sets the pragma explicitly instead of inheriting a default, and normalises the others
+ * rather than passing them through. An adapter that leaks its differences is not one.
+ *
+ * **NUL is the exception, and is documented rather than normalised.** Escaping it would mean
+ * transforming every bound string and untransforming every column read, on the hot path, for a
+ * byte that does not occur in chat text. The cost of the exception is real and was paid once
+ * already: an outbox key built with a NUL separator round-tripped truncated under Node, matched
+ * nothing, and abandoned no chunks — no error, on one runtime out of two. Anything used as a
+ * *key* must therefore be printable; `channels/outbox.ts` percent-encodes for exactly this reason.
+ * A NUL inside message content is still truncated under Node and stored under Bun, which is a
+ * known and deliberate divergence rather than a handled one.
  */
 
 import { HarnessError } from "../../errors.ts"

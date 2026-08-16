@@ -117,6 +117,67 @@ ALTER TABLE messages ADD COLUMN tool_calls TEXT;
 ALTER TABLE messages ADD COLUMN tool_call_id TEXT;
 `,
     },
+    {
+        version: 3,
+        name: "outbox",
+        /**
+         * The delivery queue. `05-PLAN.md` calls this "migration 002" — that number was written
+         * before Phase 3 added one, and the list is contiguous by position, so it is 003 here.
+         *
+         * The load-bearing line is `UNIQUE (agent_id, dedupe_key)`. It is what makes a re-enqueue a
+         * no-op rather than a second message, and the key is *derived* by the caller from facts it
+         * can reproduce after a crash — see `DeliveryRecord.dedupeKey`. There is deliberately no
+         * server-generated identity column serving that role: `id` exists only to order rows and to
+         * name one in a later `UPDATE`.
+         *
+         * `session_key` carries no foreign key to `sessions`, unlike `messages` and `turns`. A
+         * delivery outlives its conversation on purpose — `sessions.clear()` must not silently
+         * discard replies that have not been sent yet, and `ON DELETE CASCADE` would do exactly
+         * that at the moment a person is least expecting it.
+         */
+        sql: `
+CREATE TABLE outbox (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent_id            TEXT NOT NULL,
+    dedupe_key          TEXT NOT NULL,
+    group_key           TEXT NOT NULL,
+    session_key         TEXT NOT NULL,
+    turn_id             TEXT,
+    channel_id          TEXT NOT NULL,
+    recipient           TEXT NOT NULL,
+    thread              TEXT,
+    chunk_index         INTEGER NOT NULL,
+    chunk_total         INTEGER NOT NULL,
+    body                TEXT NOT NULL,
+    status              TEXT NOT NULL CHECK (
+                            status IN ('pending', 'inflight', 'sent', 'failed')
+                        ),
+    attempts            INTEGER NOT NULL DEFAULT 0,
+    next_attempt_at     TEXT NOT NULL,
+    uncertain           INTEGER NOT NULL DEFAULT 0,
+    provider_message_id TEXT,
+    error_code          TEXT,
+    error_message       TEXT,
+    created_at          TEXT NOT NULL,
+    updated_at          TEXT NOT NULL
+);
+
+-- Idempotency. Enqueueing the same logical delivery twice hits this and does nothing.
+CREATE UNIQUE INDEX outbox_dedupe ON outbox (agent_id, dedupe_key);
+
+-- The drain query: pending rows whose time has come, oldest first.
+CREATE INDEX outbox_due ON outbox (agent_id, status, next_attempt_at, id);
+
+-- Head-of-line lookup. The drain asks, per candidate row, whether an earlier chunk of the same
+-- group is still unsent; without this index that question is a scan per row.
+CREATE INDEX outbox_group ON outbox (agent_id, group_key, chunk_index);
+
+-- Crash recovery at boot scans only what was in flight, so its cost does not grow with history.
+CREATE INDEX outbox_inflight ON outbox (status) WHERE status = 'inflight';
+
+CREATE INDEX outbox_by_session ON outbox (agent_id, session_key, id DESC);
+`,
+    },
 ]
 
 export interface MigrationReport {

@@ -40,8 +40,9 @@ export interface ContextSlotReport {
 }
 
 /**
- * Event type → shape of its `data`. Phase 1 covers boot, turn, and model events; tool,
- * skill, compaction, delivery, and schedule events arrive with their subsystems.
+ * Event type → shape of its `data`. Phase 1 covers boot, turn, and model events; tool events
+ * arrived in Phase 3 and channel and delivery events in Phase 4. Skill, compaction, and schedule
+ * events arrive with their subsystems.
  */
 export interface EventDataMap {
     "runtime.ready": {
@@ -143,6 +144,91 @@ export interface EventDataMap {
         latencyMs: number
         /** Present when `ok` is false. */
         error?: string
+    }
+    /**
+     * A channel's connection state changed.
+     *
+     * Never blocks readiness. A channel that cannot connect says so here and keeps trying, because
+     * a runtime that refused to boot during a Telegram outage would also be unable to serve its
+     * HTTP API during one.
+     */
+    "agent.channel.status": {
+        channelId: string
+        channelType: string
+        status: "starting" | "connected" | "disconnected" | "error"
+        detail?: string
+    }
+    /** A channel failure that did not stop the channel. A bad token lands here, not on `error`. */
+    "agent.channel.error": ErrorDetail & { channelId: string }
+    /**
+     * An inbound message was not turned into a turn.
+     *
+     * `duplicate` is routine — a provider replaying an unacknowledged update. `denied` is an
+     * `allowFrom` refusal, and is reported rather than dropped silently: an allowlist that quietly
+     * discards a message is indistinguishable from a channel that is not receiving at all, which is
+     * a support conversation nobody enjoys.
+     */
+    "agent.channel.rejected": {
+        channelId: string
+        reason: "duplicate" | "denied"
+        /** Handle where the provider exposes one, peer id otherwise. Never the message body. */
+        sender: string
+        detail: string
+    }
+    /**
+     * One chunk reached the provider.
+     *
+     * `uncertain` means this row was recovered from a dead process and may be a second copy — see
+     * `delivery.uncertain`. It is on the success event on purpose: that is where a reader
+     * investigating a duplicate will actually be looking.
+     */
+    "delivery.sent": {
+        channelId: string
+        providerMessageId?: string
+        chunkIndex: number
+        chunkTotal: number
+        attempts: number
+        uncertain: boolean
+    }
+    /** A retryable send failed and will be tried again after `delayMs`. */
+    "delivery.retry": {
+        channelId: string
+        chunkIndex: number
+        attempts: number
+        delayMs: number
+        error: ErrorDetail
+    }
+    /**
+     * A chunk was abandoned. `exhausted` distinguishes "gave up after N tries" from "the provider
+     * said no and meant it", which want different responses from whoever is reading.
+     *
+     * `abandoned` counts the later chunks of the same reply dropped as a consequence. Half a
+     * message is worse than none, so they are not sent on their own — and they are reported as one
+     * number rather than as N more failure events, because there was one fault.
+     */
+    "delivery.failed": {
+        channelId: string
+        chunkIndex: number
+        chunkTotal: number
+        attempts: number
+        exhausted: boolean
+        abandoned: number
+        error: ErrorDetail
+    }
+    /**
+     * A delivery was found in flight at boot and re-queued, and may therefore be sent twice.
+     *
+     * The window is between the bytes leaving the process and the provider's acknowledgement
+     * arriving back, and it cannot be closed from this side — only by a provider that deduplicates
+     * on a key we supply. `idempotentSend` reports whether this channel is one of those, so the
+     * event says how much doubt there actually is rather than implying a fixed amount.
+     */
+    "delivery.uncertain": {
+        channelId: string
+        chunkIndex: number
+        chunkTotal: number
+        attempts: number
+        idempotentSend: boolean
     }
     "turn.end": {
         reason: TurnEndReason
