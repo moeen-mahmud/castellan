@@ -32,6 +32,7 @@ import { runCommand } from "#run"
 import { serveCommand } from "#serve"
 import { sessionsCommand } from "#sessions"
 import { soulCommand } from "#soul"
+import { stopCommand } from "#stop"
 import { toolsCommand } from "#tools"
 import { validateCommand } from "#validate"
 import { workspaceCommand } from "#workspace"
@@ -190,6 +191,14 @@ async function dispatch(argv: readonly string[]): Promise<number> {
                 json: flags.bool("json"),
             })
         }
+
+        case "stop":
+            return await stopCommand({
+                // Optional on purpose: bare `stop` is the point of the command.
+                ...(manifestPath === undefined ? {} : { manifestPath: resolved() }),
+                dryRun: flags.bool("dry-run"),
+                json: flags.bool("json"),
+            })
 
         case "daemon": {
             const lines = flags.num("lines")

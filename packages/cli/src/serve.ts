@@ -129,6 +129,20 @@ export async function serveCommand(options: ServeOptions): Promise<number> {
     }
 
     const agents = runtime.list()
+
+    // Name the process after the agent it is serving.
+    //
+    // Without this a long-running service is a bare `node` in Activity Monitor and in `ps`, signed
+    // by the Node Foundation, indistinguishable from every other Node process on the machine — and
+    // the one place a person looks when something is eating CPU is exactly the place it was
+    // anonymous. Set here rather than at startup because the agent id is only known once the
+    // manifest has loaded, and `serve` takes one manifest so there is only ever one name.
+    //
+    // The trade, stated because it costs something real: assigning `process.title` overwrites the
+    // argv region, so `ps` shows this instead of the full command line. Kept short so it survives
+    // the 16-character `comm` truncation intact, and the arguments remain visible in
+    // `launchctl print` and in `daemon status`.
+    if (agents[0] !== undefined) process.title = `${BRAND.slug} ${agents[0].id}`
     // The port is bound now, which `Runtime.create` could not know — it returns before `serve` runs.
     // Told before the first turn, so slot 2 says "on" rather than "enabled but not listening".
     for (const agent of agents) agent.reportRuntimeState({ serverListening: true })

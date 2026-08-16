@@ -307,6 +307,27 @@ export const COMMANDS: readonly CommandSpec[] = [
         ],
     },
     {
+        // The switch that turns everything off. Separate from `daemon stop`, which needs you to
+        // know the agent: this one finds the services *and* a `serve` left in a forgotten tab.
+        name: "stop",
+        summary: "stop everything — background services and any session serving an agent",
+        args: [
+            {
+                name: "agent",
+                required: false,
+                help: "path or sandbox agent name (omit to stop every agent)",
+            },
+        ],
+        flags: [
+            {
+                name: "dry-run",
+                kind: "boolean",
+                help: "list what would be stopped; stop nothing",
+            },
+            JSON_FLAG,
+        ],
+    },
+    {
         // `serve` stays up only as long as its terminal, which makes an agent configured for a
         // channel answer only while a window is open. This installs it as a supervised service.
         //

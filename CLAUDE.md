@@ -818,6 +818,19 @@ Never claim a performance property without a number in `evals/` and a script to 
   `bootout`, `kickstart -k`, `enable`, `disable`, `print`, `print-disabled`. And `launchctl list`'s
   status column is a raw wait status (`256` is exit 1) while `print`'s `last exit code` is already
   decoded — decoding the second turns a failure into a clean stop.
+- **A stop switch consults two sources, because neither is complete.** `launchctl` knows about
+  installed services and nothing about a `serve` started by hand; the lease table knows about any
+  live process and nothing about a service that is installed but currently down. `stop` reads both,
+  and reporting success while one of them is still running is the only failure it really has. It
+  SIGTERMs before it kills — the graceful path is the only one that runs `provider.stop()` and reaps
+  backgrounded `exec` children — and it disables as well as unloading, because a safety switch that
+  comes back at the next login is not one.
+- **A long-running process sets `process.title`, or it is an anonymous `node` in Activity Monitor.**
+  `serve` names itself `<slug> <agentId>`, short enough to survive the 16-character `comm`
+  truncation intact. The cost is real and worth stating: assigning the title overwrites the argv
+  region, so `ps` shows the title instead of the command line — the arguments stay visible through
+  `launchctl print` and `daemon status`. It does *not* change the code-signing identity, which is
+  Node's, and only shipping our own signed binary would.
 - **A lease row is a claim, not a fact, and a dead pid outranks a fresh heartbeat.** A boot that
   fails *after* claiming leaves a row seconds old with no process under it, which blocked every
   retry for ninety seconds while naming a pid that no longer existed — at the moment somebody was

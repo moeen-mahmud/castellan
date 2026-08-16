@@ -81,6 +81,19 @@ castellan daemon restart milo   # after editing agent.yaml or .env
 castellan daemon logs milo
 ```
 
+If you want everything off — services *and* a `serve` you left in a tab three days ago — there is
+one switch that needs to know nothing:
+
+```bash
+castellan stop            # every agent; --dry-run lists what it would stop first
+castellan stop milo       # or just one
+```
+
+It asks each process to stop rather than killing it, because the graceful path is the only one that
+reaps commands the agent left running in the background, and it *disables* each service as well as
+unloading it — a safety switch that came back at the next login would not be one. `daemon start`
+brings an agent back.
+
 A configuration error stops the service **once** rather than restarting it forever — the generated
 job restarts on a crash signal and on nothing else, so a missing token leaves a stopped service and
 an explanation instead of a log file growing at one line every ten seconds. `status` prints the

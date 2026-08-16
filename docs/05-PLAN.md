@@ -1283,6 +1283,9 @@ anyway and this feature made unavoidable.
   rendering, `launchctl` parsing, wait-status decode), `lib/daemon-plan.ts` (pure preflight and
   status verdicts), `lib/service.ts` (the seam, the only subprocess in the package),
   `KeepAlive: {Crashed: true}`, install watches and rolls back, `enable` before `bootstrap`
+- [x] **C** `stop [agent]` — the safety switch: finds installed services *and* any process holding
+  a lease, SIGTERM before SIGKILL, disables as well as unloads, exits 0 when nothing is running;
+  `serve` sets `process.title` so an installed service is not an anonymous `node`
 - [x] **C** `lib/render.ts` — the plain path's shared vocabulary, replacing eight hand-rolled
   column widths; `ArgSpec.choices` so `--help` lists every action, pinned by a test; `/status` in
   the session menu; `agents` reports live state from the lease; `serve`'s banner names the daemon;
