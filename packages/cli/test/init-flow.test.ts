@@ -213,9 +213,11 @@ describe("planFiles", () => {
         // this runtime, and the worse answer of the two.
         expect(yaml).toContain("  providers:\n    system: {}")
         expect(yaml).toContain("\n    web: {}")
+        // All three now, including composio: the meta tools gave it an available() worth calling,
+        // so a provider left switched off can still say what it would offer.
+        expect(yaml).toContain("\n    composio: {}")
         // Commented, with phases: uncommenting early must be a load refusal, not decoration.
         for (const line of [
-            "    # composio:",
             "# phases:",
             "# skills:",
             "# memory:",
@@ -447,40 +449,60 @@ describe("the Composio question", () => {
         return planFiles({ ...ANSWERS, ...over }).find((f) => f.relPath === file)?.contents ?? ""
     }
 
+    /** The uncommented entries under `pinned:`, which is what the runtime actually resolves. */
+    function pinnedSlugs(yaml: string): readonly string[] {
+        return yaml
+            .slice(yaml.indexOf("  pinned:"))
+            .split("\n")
+            .filter((line) => /^\s+- /.test(line))
+            .map((line) => line.trim().slice(2))
+    }
+
     test("connected writes a live provider entry with the key variable and the account", () => {
         const yaml = generated({ composio: "connected" })
         expect(yaml).toContain("    composio:\n")
         expect(yaml).toContain(`      apiKeyEnv: ${COMPOSIO_KEY_ENV}`)
         expect(yaml).toContain("      userId: default")
-        // Live, not commented — the whole point of the question.
         expect(yaml.includes("    # composio:")).toBe(false)
     })
 
-    test("connected pins nothing from Composio, and says why in the file", () => {
-        // Not an omission and not a TODO: slugs resolve from an on-disk cache inside boot, where
-        // hard rule 4 forbids the network, so a slug pinned before the first warm fails the LOAD.
-        // init makes no requests, so there is no honest way for it to leave a usable pin here.
+    test("connected pins the two setup tools and no app tool", () => {
+        // The pair is the whole route: search finds a task's tools and saves their definitions,
+        // connect returns the sign-in link. An app tool cannot be pinned here — init makes no
+        // requests, so it has no slug to write and no schema to warm — and does not need to be:
+        // the agent discovers one and pins it itself.
         const yaml = generated({ composio: "connected" })
-        const pinned = yaml.slice(yaml.indexOf("  pinned:"))
-        const active = pinned
-            .split("\n")
-            .filter((line) => /^\s+- /.test(line))
-            .map((line) => line.trim().slice(2))
+        const active = pinnedSlugs(yaml)
+        expect(active).toContain("composio_search")
+        expect(active).toContain("composio_connect")
+        // No TOOLKIT_ACTION slug, which is what an unwarmed pin would be — and a load failure.
         expect(active.some((slug) => slug === slug.toUpperCase() && slug.includes("_"))).toBe(false)
-        expect(yaml).toContain("--warm")
+        // The workbench runs code under no rule this manifest can write. Never by default.
+        expect(active).not.toContain("composio_workbench")
     })
 
-    test("none leaves the block commented, with every line needed to turn it on", () => {
-        // The opposite of what `web: none` does, on purpose: naming a provider is worth doing when
-        // it makes available() run, and ComposioProvider deliberately has none — 25,000 tools have
-        // nothing useful to say there. So naming it while off would buy nothing and would imply to
-        // a reader that the agent knows about an integration it cannot see.
+    test("connected allows composio_connect, or the one useful sequence stops halfway", () => {
+        // search is untrusted and connect is mutating, so the first search taints the turn and the
+        // connect that has to follow it has no authorisation to point at. That is the write gate
+        // working as designed, and indistinguishable from a broken runtime from the outside.
+        const yaml = generated({ composio: "connected" })
+        const policy = yaml.slice(yaml.indexOf("  policy:"), yaml.indexOf("  untrusted:"))
+        expect(policy).toContain('- "composio_connect"')
+        // Not search: it is read-only, so it never needs one.
+        expect(policy.includes('- "composio_search"')).toBe(false)
+    })
+
+    test("none names the provider with nothing pinned, exactly as web does", () => {
+        // It used to be commented, because a 25,000-tool catalogue had no available() worth calling
+        // so naming it told the model nothing. Two fixed meta tools changed that premise: "I could
+        // search your apps if you enable composio_search" is the sentence available() exists for.
         const yaml = generated({ composio: "none" })
-        expect(yaml).toContain("    # composio:")
-        expect(yaml).toContain(`    #   apiKeyEnv: ${COMPOSIO_KEY_ENV}`)
-        expect(yaml).toContain("    #   userId: default")
-        // Still not hidden: the reason and the route out are both in the file.
-        expect(yaml).toContain("--warm")
+        expect(yaml).toContain("    composio: {}")
+        expect(pinnedSlugs(yaml).some((slug) => slug.startsWith("composio_"))).toBe(false)
+        // Still not hidden: the exact line to add is in the file.
+        expect(yaml).toContain(
+            `    #   composio: { apiKeyEnv: ${COMPOSIO_KEY_ENV}, userId: default }`,
+        )
     })
 
     test("the key reaches .env only when Composio was asked for", () => {

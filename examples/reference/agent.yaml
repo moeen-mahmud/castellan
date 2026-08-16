@@ -209,13 +209,19 @@ tools:
   #
   #   # @castellan/tools-composio — a remote catalogue, called over HTTP and never through MCP.
   #   #
-  #   # Run `castellan tools ./agent.yaml --warm` once before pinning anything from it: resolution
-  #   # happens during boot, where no network call is permitted, so a Composio slug pinned against a
-  #   # cold cache fails the load naming the slugs and that command.
+  #   # Three meta tools resolve from this provider with no cache and no request, so an agent can
+  #   # reach a new app without anyone opening a dashboard:
+  #   #   composio_search      finds the tools for a task and caches their real schemas
+  #   #   composio_connect     returns the sign-in link for an account
+  #   #   composio_workbench   runs Python in Composio's sandbox — under no rule written here
   #   #
-  #   # Configuring it while pinning nothing is fine and starts normally — the cold-cache failure is
-  #   # raised only for a slug no provider resolved, never for merely being listed here beside one
-  #   # whose tools are local.
+  #   # The flow is search -> connect -> pin -> restart. A slug the agent finds is written into
+  #   # tools.pinned with config_set and is an ordinary pinned tool on the next start. Nothing
+  #   # executes an arbitrary discovered slug: that would make every task two-hop, which is what
+  #   # pinning at load exists to avoid.
+  #   #
+  #   # A slug typed in by hand still needs `castellan tools ./agent.yaml --warm` first: resolution
+  #   # happens during boot where no network call is permitted, so an unwarmed slug fails the load.
   #   composio:
   #     apiKeyEnv: COMPOSIO_API_KEY
   #     userId: me

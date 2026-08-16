@@ -625,13 +625,37 @@ Never claim a performance property without a number in `evals/` and a script to 
   is missing everywhere. Silent once the cache holds anything — past the first warm it really is a
   typo, and nearest-match is the better message.
 - **Name a disabled provider when it can tell the model what it lacks; document it when it cannot.**
-  `web: {}` is named while switched off because that is what makes `available()` run. Composio is
-  left commented, because it deliberately has no `available()` — 25,000 tools have nothing useful to
-  say there — so naming it buys none of what naming `web` buys and implies to a reader that the
-  agent knows about an integration it cannot see. Not an inconsistency to iron out: the two answers
-  come from the same rule applied to providers that differ.
-- **`init --composio connected` pins nothing, and that is the honest answer rather than a TODO.**
-  Composio resolves from an on-disk cache inside boot, where hard rule 4 forbids the network, so a
-  slug pinned before the first `tools <ref> --warm` fails the load. `init` makes no requests, so it
-  cannot leave a usable pin behind. The next steps say so out loud — the failure otherwise is an
-  agent that starts perfectly and has none of the apps it was promised, with nothing reporting it.
+  `web: {}` is named while switched off because that is what makes `available()` run. Composio was
+  the exception — a 25,000-tool catalogue has nothing useful to list — until the meta tools gave it
+  two fixed entries, and it is now named like the others. The rule outlived the exception, which is
+  the point: it is about what `available()` can *say*, not about the provider.
+- **`tools --warm` refreshes the slugs already in `pinned`, so it can never discover one.** A slug
+  had to be known before it could be warmed and warmed before it could be pinned, and the only way
+  in was composio.dev in a browser. Nothing said so, and an agent asked to connect a Gmail account
+  spent 4,417 output tokens finding out. `composio_search` is the way in now; `--warm` is still
+  right for a slug someone typed in by hand.
+- **Composio's router is for discovery; schemas come from `GET /tools/{slug}`.** Every router-side
+  schema surface is thin — `tool_schemas` in a search result *and* `COMPOSIO_GET_TOOL_SCHEMAS* both
+  return `tool_slug` for `slug`, `input_schema` for `input_parameters`, and **no `tags` at all**.
+  Caching one fails three ways silently: a pinned tool reaches the model with **no arguments**;
+  everything is assumed mutating for want of a `readOnlyHint`, so reading your own inbox serialises
+  and holds a write slot; and the map does not reliably hold every slug the same response
+  recommends. The first live search tagged all eight hits "(changes things)", `OUTLOOK_GET_MAIL_TIPS`
+  included.
+- **A discovered tool becomes a pinned tool, never an executed one.** `composio_search` finds a slug
+  and caches its schema, `config_set` writes it into `tools.pinned`, and a restart makes it ordinary
+  — one hop, phase-scopable. That is why there is no `composio_execute(slug, args)`: it would make
+  every Composio task two-hop forever, which is what decision 4.7 refuses. Discovery is setup and
+  setup happens once, at a moment the person is already pausing to click an OAuth link.
+- **A meta tool that puts tool calls inside its own arguments is a hole, not a convenience.**
+  `COMPOSIO_MULTI_EXECUTE_TOOL` is not shipped for the same reason `exec` has no `env` map and
+  `memory_write` no file argument: the policy engine matches a tool plus a policy arg, and a batch
+  is invisible to it. `composio_connect` carries `policyArg: "toolkit"` so `deny
+  composio_connect(slack)` is expressible. The live session exposes six meta tools, not the four the
+  docs list — the extra two are a remote bash and a schema fetcher.
+- **Composio's published reference and its live API disagree, and the live one wins.** The docs
+  describe a `summary` with `active_connections`; the response has `{message, results}` and no
+  `summary`, with the link at `results.<toolkit>.redirect_url`. A renderer written to the docs
+  reports "no link" on a call that returned one — a failure shaped like success. Same lesson one
+  layer down: the workbench argument is `code_to_execute`, undocumented, and `code` came back
+  "Validation error". Read a field first, walk as a fallback, and verify against the endpoint.

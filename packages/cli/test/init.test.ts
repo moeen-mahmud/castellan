@@ -264,10 +264,13 @@ describe("initCommand", () => {
         expect(pinned.some((slug) => slug.toUpperCase() === slug && slug.includes("_"))).toBe(false)
     })
 
-    test("a Composio agent boots with a cold cache — nothing pinned, nothing to resolve", async () => {
-        // The failure this rules out: `composio_cache_miss` at startup. It fires when the cache is
-        // empty AND slugs were requested, so the generated pair (provider named, nothing pinned) is
-        // the one combination that starts before anyone has run `tools --warm`.
+    test("a Composio agent boots cold, with the setup tools already usable", async () => {
+        // The property the whole feature rests on. The meta tools are static specs — no cache read
+        // and no request builds them — so a freshly generated agent can search and connect an app
+        // before anyone has warmed anything. If these ever came from the cache instead, a new agent
+        // would boot with no route to Composio and no way to get one, which is the dead end this
+        // replaced: `tools --warm` refreshes the slugs already pinned, so a slug had to be known
+        // before it could be warmed and warmed before it could be pinned.
         const dir = scratch()
         await initCommand({ ...FLAGS, dir, composio: "connected" })
 
@@ -283,10 +286,16 @@ describe("initCommand", () => {
                     .list()[0]
                     ?.tools.specs()
                     .map((spec) => spec.slug) ?? []
+            // Resolved from a cold cache, by a provider holding no schemas at all.
+            expect(slugs).toContain("composio_search")
+            expect(slugs).toContain("composio_connect")
             // The system provider answered for both config tools, which is the half a cold
             // Composio could not know when it used to refuse the whole boot over them.
             expect(slugs).toContain("now")
             expect(slugs).toContain("config_read")
+            expect(slugs).toContain("config_set")
+            // config_set is what writes a discovered slug into pinned, so the loop only closes if
+            // it is authorised after a search has tainted the turn.
             expect(slugs).toContain("config_set")
         } finally {
             await runtime.stop()

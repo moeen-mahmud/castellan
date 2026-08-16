@@ -21,6 +21,7 @@
 import {
     ConfigError,
     type Tool,
+    type ToolAvailability,
     type ToolContext,
     type ToolProvider,
     type ToolProviderContext,
@@ -33,8 +34,19 @@ import {
     composioExecuteFailed,
     composioKeyMissing,
     composioNotConnected,
+    composioSessionKeyMissing,
 } from "./errors.ts"
 import { type ComposioTool, isUnannotated, mapTool } from "./map.ts"
+import {
+    CONNECT_SLUG,
+    CONNECT_SPEC,
+    META_SLUGS,
+    type MetaContext,
+    metaTools,
+    SEARCH_SLUG,
+    SEARCH_SPEC,
+} from "./meta.ts"
+import { readSession, writeSession } from "./session.ts"
 
 export interface ComposioProviderOptions {
     /**
@@ -77,6 +89,8 @@ export class ComposioProvider implements ToolProvider {
     #fetchedAt: string
     /** Recorded at resolve, reported by `describe()`. Never inferred twice. */
     #assumedMutating: readonly string[] = []
+    /** Opened lazily, after readiness. Backed by a file so it survives a restart. */
+    #sessionId: string | undefined
 
     constructor(options: ComposioProviderOptions) {
         this.#dir = options.dir
@@ -107,7 +121,16 @@ export class ComposioProvider implements ToolProvider {
     async resolve(slugs: readonly string[]): Promise<readonly Tool[]> {
         const out: Tool[] = []
         const assumed: string[] = []
+        const meta = metaTools(this.#metaContext())
         for (const slug of slugs) {
+            // The meta tools are static: three fixed specs, resolved with no cache and no request, so
+            // a fresh agent that has never been warmed can still find and connect an app. Checked
+            // first because a Composio slug can never collide with one — theirs are TOOLKIT_ACTION.
+            const builtIn = meta[slug]
+            if (builtIn !== undefined) {
+                out.push(builtIn)
+                continue
+            }
             const raw = this.#tools[slug]
             if (raw === undefined) continue
             if (isUnannotated(raw)) assumed.push(slug)
@@ -120,12 +143,33 @@ export class ComposioProvider implements ToolProvider {
     /**
      * Every known slug, for the registry's nearest-match suggestion.
      *
-     * Cache-only for the same reason as `resolve`. Before the first warm this is empty, which means a
-     * typo's suggestion is absent rather than wrong — and the cache-miss failure already names the
-     * command that fixes both.
+     * Cache-only for the same reason as `resolve`, plus the three meta tools, which are always
+     * resolvable. Before the first search this is just those three — so a typo's suggestion is thin
+     * rather than wrong, and the cache-miss failure already names the command that fixes it.
      */
     async list(): Promise<readonly string[]> {
-        return Object.keys(this.#tools)
+        return [...META_SLUGS, ...Object.keys(this.#tools)]
+    }
+
+    /**
+     * The meta tools, so the model is told the route to an app exists even when none is pinned.
+     *
+     * This provider was the one exception to "name a provider and let `available()` speak for it":
+     * with 25,000 tools there was nothing useful to list, so a Composio block generated while
+     * switched off told the model nothing and was left commented instead. Three fixed entries changes
+     * that premise — "I could search your apps if you enable composio_search" is exactly the sentence
+     * `available()` exists to make possible, and it is the sentence the agent could not say when
+     * asked to connect a Gmail account.
+     *
+     * The 25,000 are still never listed. That is what `composio_search` is for. Nor is the
+     * workbench, which resolves if pinned but is never advertised: it runs code somewhere no
+     * permission rule written here can reach, and offering that unprompted is not this method's job.
+     */
+    async available(): Promise<readonly ToolAvailability[]> {
+        return [
+            { slug: SEARCH_SLUG, summary: SEARCH_SPEC.summary },
+            { slug: CONNECT_SLUG, summary: CONNECT_SPEC.summary },
+        ]
     }
 
     /** Which pinned slugs are absent from the cache. The caller decides how loudly to fail. */
@@ -203,6 +247,70 @@ export class ComposioProvider implements ToolProvider {
         this.#fetchedAt = readCache(this.#dir).fetchedAt
 
         return { fetched: Object.keys(fetched).length, missing, changed, cachePath: path }
+    }
+
+    /**
+     * The session id for this user, opened on first use and reused thereafter.
+     *
+     * **Only ever reached from a tool handler**, which runs long after `runtime.ready` — the request
+     * this makes is precisely the kind hard rule 4 forbids at boot, and the reason `resolve()` can
+     * hand back the meta tools without one is that a spec needs no session, only a call does.
+     *
+     * Recovers from a stale id rather than failing on it: the id outlives the process, so the case
+     * that matters is a file pointing at a session the backend has since dropped. Without the retry
+     * that surfaces as a 404 on the person's first request in a week, with a fix nobody could guess.
+     */
+    async #session(signal?: AbortSignal, force = false): Promise<string> {
+        const client = this.#client
+        if (client === undefined) throw composioSessionKeyMissing(this.#keyEnv)
+        if (!force) {
+            const cached = this.#sessionId ?? readSession(this.#dir, this.#userId)
+            if (cached !== undefined) {
+                this.#sessionId = cached
+                return cached
+            }
+        }
+        const created = await client.createSession(this.#userId, signal)
+        this.#sessionId = created.session_id
+        writeSession(this.#dir, this.#userId, created.session_id)
+        return created.session_id
+    }
+
+    /** What the meta tools are given: a way to call, and a way to remember what they found. */
+    #metaContext(): MetaContext {
+        return {
+            call: async (slug, args, signal) => {
+                const client = this.#client
+                if (client === undefined) throw composioSessionKeyMissing(this.#keyEnv)
+                let id = await this.#session(signal)
+                let result = await client.executeMeta(id, slug, args, signal)
+                if ("notFound" in result) {
+                    // One retry, against a session opened fresh. Exactly one: a second 404 is the
+                    // backend saying something other than "that id expired", and looping on it would
+                    // turn a clear failure into a hang.
+                    id = await this.#session(signal, true)
+                    const retried = await client.executeMeta(id, slug, args, signal)
+                    if ("notFound" in retried) {
+                        return { ok: false, data: {}, error: "the session could not be opened" }
+                    }
+                    result = retried
+                }
+                return result
+            },
+            fetchSchemas: async (slugs, signal) => {
+                // `refresh` verbatim — the same method `--warm` calls, hitting `GET /tools/{slug}`
+                // and writing the same cache. Discovery and the hand-typed path converge here on
+                // purpose: one shape in the cache, one place that knows how to write it, and a slug
+                // the model just found resolves on the next start with no warm step of its own.
+                await this.refresh(slugs, signal)
+                const out: Record<string, ComposioTool> = {}
+                for (const slug of slugs) {
+                    const tool = this.#tools[slug]
+                    if (tool !== undefined) out[slug] = tool
+                }
+                return out
+            },
+        }
     }
 
     #toTool(spec: ToolSpec): Tool {

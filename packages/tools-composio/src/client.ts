@@ -32,8 +32,36 @@ export interface ClientOptions {
 
 const DEFAULT_BASE_URL = "https://backend.composio.dev/api/v3"
 
+/**
+ * The router lives on `v3.1`; tool schemas deliberately stay on `v3`.
+ *
+ * Not an oversight and not laziness. On `v3.1` an omitted version parameter selects the *latest*
+ * toolkit version, where `v3` pins `00000000_00` — and this provider caches schemas to disk and
+ * boots off that cache. Auto-latest means a cached copy can silently stop matching what the endpoint
+ * will accept, which is precisely the drift `refresh()` exists to report rather than absorb. Session
+ * endpoints have no cached counterpart, so the newer version costs nothing there.
+ */
+function routerBase(baseUrl: string): string {
+    return /\/v3$/.test(baseUrl) ? baseUrl.replace(/\/v3$/, "/v3.1") : baseUrl
+}
+
 /** Composio pages tool listings; 100 is its documented maximum per page. */
 const PAGE_SIZE = 100
+
+/** What `POST /tool_router/session` answers with. Only the fields this runtime reads. */
+export interface SessionCreated {
+    readonly session_id: string
+    /** The meta tools this session exposes, by slug. Reported, never used for dispatch. */
+    readonly tool_router_tools?: readonly string[]
+    readonly warnings?: readonly unknown[]
+}
+
+/** The envelope every meta-tool execution comes back in. */
+export interface MetaResult {
+    readonly ok: boolean
+    readonly data: unknown
+    readonly error?: string
+}
 
 interface Page {
     readonly items?: readonly ComposioTool[]
@@ -140,18 +168,10 @@ export class ComposioClient {
         userId: string,
         signal?: AbortSignal,
     ): Promise<{ readonly ok: boolean; readonly data: unknown; readonly error?: string }> {
-        const response = await this.#fetch(
+        const response = await this.#post(
             `${this.#baseUrl}/tools/execute/${encodeURIComponent(slug)}`,
-            {
-                method: "POST",
-                headers: {
-                    "x-api-key": this.#apiKey,
-                    "content-type": "application/json",
-                    accept: "application/json",
-                },
-                body: JSON.stringify({ user_id: userId, arguments: args }),
-                ...(signal === undefined ? {} : { signal }),
-            },
+            { user_id: userId, arguments: args },
+            signal,
         )
         if (!response.ok) {
             throw composioRequestFailed(response.status, await detailOf(response))
@@ -159,6 +179,72 @@ export class ComposioClient {
         const body = asRecord(await response.json()) ?? {}
         const ok = body.successful !== false
         const error = typeof body.error === "string" && body.error !== "" ? body.error : undefined
+        return { ok, data: body.data ?? body, ...(error === undefined ? {} : { error }) }
+    }
+
+    #post(path: string, body: unknown, signal?: AbortSignal): Promise<Response> {
+        return this.#fetch(path, {
+            method: "POST",
+            headers: {
+                "x-api-key": this.#apiKey,
+                "content-type": "application/json",
+                accept: "application/json",
+            },
+            body: JSON.stringify(body),
+            ...(signal === undefined ? {} : { signal }),
+        })
+    }
+
+    /**
+     * Open a router session for one person.
+     *
+     * **After readiness only.** The session is what makes `COMPOSIO_SEARCH_TOOLS` and
+     * `COMPOSIO_MANAGE_CONNECTIONS` reachable, and it is created lazily on the first call rather than
+     * at boot — hard rule 4 forbids the request, and an agent that never searches should never pay
+     * for one. Its id is persisted, so this runs about once per agent rather than once per turn.
+     */
+    async createSession(userId: string, signal?: AbortSignal): Promise<SessionCreated> {
+        const response = await this.#post(
+            `${routerBase(this.#baseUrl)}/tool_router/session`,
+            { user_id: userId },
+            signal,
+        )
+        if (!response.ok) throw composioRequestFailed(response.status, await detailOf(response))
+        const body = asRecord(await response.json()) ?? {}
+        const id = body.session_id
+        if (typeof id !== "string" || id === "") {
+            throw composioRequestFailed(response.status, "no session_id in the response body")
+        }
+        return body as unknown as SessionCreated
+    }
+
+    /**
+     * Run one meta tool inside a session.
+     *
+     * Returns `notFound` rather than throwing on a 404 so the caller can recreate an expired session
+     * and retry once. A session id outlives the process, so the interesting failure is not "this call
+     * broke" but "the id on disk refers to something the backend has since dropped" — indistinguishable
+     * from a transport error unless the status is read here.
+     */
+    async executeMeta(
+        sessionId: string,
+        slug: string,
+        args: Readonly<Record<string, unknown>>,
+        signal?: AbortSignal,
+    ): Promise<MetaResult | { readonly notFound: true }> {
+        const response = await this.#post(
+            `${routerBase(this.#baseUrl)}/tool_router/session/${encodeURIComponent(sessionId)}/execute_meta`,
+            { slug, arguments: args },
+            signal,
+        )
+        if (response.status === 404) return { notFound: true }
+        if (!response.ok) throw composioRequestFailed(response.status, await detailOf(response))
+        const body = asRecord(await response.json()) ?? {}
+        // Two shapes in the wild: `execute_meta` documents `{data, error, log_id}` with no boolean,
+        // while the meta tools' own schemas carry `successful`. Absent `successful` with a null error
+        // is a success; treating the missing field as false would report every good call as failed.
+        const error = typeof body.error === "string" && body.error !== "" ? body.error : undefined
+        const ok = body.successful === undefined ? error === undefined : body.successful !== false
         return { ok, data: body.data ?? body, ...(error === undefined ? {} : { error }) }
     }
 }

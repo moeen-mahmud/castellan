@@ -222,36 +222,47 @@ export function webBackendByValue(value: string): (typeof WEB_BACKENDS)[number] 
 export const COMPOSIO_KEY_ENV = "COMPOSIO_API_KEY"
 
 /**
- * Whether the agent is wired to the person's other apps, and why this question's answers are
- * shaped unlike `system`'s and `web`'s.
+ * Whether the agent is wired to the person's other apps, and what `connected` actually pins.
  *
- * **Neither answer pins a tool, and the `connected` one cannot.** Composio resolves slugs from an
- * on-disk cache during boot, where hard rule 4 forbids the network — so a pinned slug on an agent
- * that has never been warmed is a *load failure*, not a slow first call. `init` writes files and
- * makes no requests, so there is no honest way for it to hand back a manifest with `GMAIL_SEND` in
- * `pinned`. The answer configures the provider and the next steps name `tools --warm`; pinning is
- * the step after that, and `config_set` can do it once the cache exists.
+ * **It pins two tools, and neither is an app tool.** `composio_search` finds the tools a task needs
+ * and records their definitions; `composio_connect` returns the sign-in link for an account. Between
+ * them the agent gets from "connect my Gmail" to a pinned, working `GMAIL_SEND_EMAIL` without anyone
+ * opening a dashboard: it searches, hands over the link, writes the slug into `tools.pinned` with
+ * `config_set`, and asks for a restart.
  *
- * **`none` leaves the block commented, which is the opposite of what `web` does, on purpose.**
- * Naming a provider is worth doing when it makes `available()` run — that is what turns "I can't do
- * that" into "I can't do that yet, and here is the line that would let me". `ComposioProvider`
- * deliberately has no `available()`: the catalogue is ~25,000 tools and enumerating it into every
- * prompt is the thing `pinned` exists to prevent. So naming it while switched off would buy none of
- * what naming `web` buys, and would leave a reader of the manifest reasonably believing the agent
- * knows about an integration it cannot see. The generated block still carries every line needed to
- * turn it on, which is the part that actually stops a capability hiding.
+ * The restart is the design rather than a limitation worked around. Decision 4.7 fixes the working
+ * set at load because search-then-execute is two-hop reasoning and small models fail it — and that
+ * still holds, because this is *setup*, which happens once, at the moment a person is already
+ * pausing to click an OAuth link. What is deliberately absent is a `composio_execute(slug, args)`
+ * that runs anything discovered: that would make every Composio task two-hop, forever, on every
+ * model.
+ *
+ * The route this replaces was not a worse route, it was **no route**. `tools --warm` refreshes the
+ * slugs already in `pinned`, so a slug had to be known before it could be warmed and warmed before
+ * it could be pinned — the only way in was composio.dev in a browser, and nothing said so. An agent
+ * asked to connect a Gmail account spent 4,417 output tokens establishing that.
+ *
+ * `none` names the provider with nothing pinned, exactly as `web` does. It did not while this
+ * provider had no `available()` worth calling; three fixed meta tools changed that premise, and
+ * "I could search your apps if you enable composio_search" is the sentence `available()` exists for.
  */
 export const COMPOSIO_CHOICES: readonly {
     readonly value: string
     readonly label: string
+    readonly pinned: readonly string[]
 }[] = [
     {
         value: "none",
-        label: "No — the manifest shows how to add it later",
+        label: "No — but it will know the route exists and can tell you how to switch it on",
+        pinned: [],
     },
     {
         value: "connected",
         label: "Yes — Gmail, Slack, Notion and ~1,000 more, via a Composio account",
+        // Not the workbench. It runs Python somewhere no rule written in this manifest can reach —
+        // a broader grant than `exec`, and one that belongs behind a deliberate edit rather than an
+        // answer to "can it use your other apps?".
+        pinned: ["composio_search", "composio_connect"],
     },
 ]
 
@@ -818,12 +829,15 @@ function systemBlock(answers: InitAnswers): readonly string[] {
         ...webPinned.map((slug) => `    - ${slug}`),
         ...(webPinned.includes("web_search") ? [] : [`    # - web_search`]),
         ...(webPinned.includes("web_fetch") ? [] : [`    # - web_fetch`]),
+        ...composioPinned(answers).map((slug) => `    - ${slug}`),
         ...(composioEnabled(answers)
             ? [
-                  `    # Composio slugs go here once the cache exists — \`${BRAND.slug} tools . --warm\` first,`,
-                  `    # then \`${BRAND.slug} tools .\` lists what was fetched. Pinning one before the warm`,
-                  `    # fails the load, because resolution happens in boot where no request is allowed.`,
+                  `    # App tools land here once composio_search has found them — ask the agent for what`,
+                  `    # you want and it writes the slug itself. A slug typed in by hand needs`,
+                  `    # \`${BRAND.slug} tools . --warm\` first: boot resolves from a cache and makes no`,
+                  `    # request, so an unwarmed slug fails the load rather than fetching.`,
                   `    # - GMAIL_FETCH_EMAILS`,
+                  `    # - composio_workbench   # runs Python in Composio's sandbox, under no rule here`,
               ]
             : [`    # - GMAIL_FETCH_EMAILS`]),
     ]
@@ -834,38 +848,59 @@ export function composioEnabled(answers: InitAnswers): boolean {
     return answers.composio === "connected"
 }
 
+/** The Composio meta tools this answer pins. Empty for `none`. */
+export function composioPinned(answers: InitAnswers): readonly string[] {
+    return composioChoice(answers.composio)?.pinned ?? []
+}
+
 /**
- * The Composio entry in the `providers` map — live when asked for, commented otherwise.
+ * Which pinned meta tools need an allow rule.
  *
- * The commented form is not a placeholder: it carries the key variable, the account field and the
- * warm command, because "the generated file hides its own options" is the failure this whole
- * question exists to fix. What it deliberately does not do is name the provider with nothing
- * configured — see `COMPOSIO_CHOICES` for why that helps for `web` and not here.
+ * A list rather than a `!== "composio_search"` test, so adding a third meta tool is a decision
+ * someone makes here rather than a default they inherit by omission. Pinned by a test against the
+ * provider's own specs, because a tool that becomes mutating later and is not listed here goes back
+ * to stopping mid-turn with nothing explaining why.
+ */
+const MUTATING_META: readonly string[] = ["composio_connect", "composio_workbench"]
+
+function isMutatingMeta(slug: string): boolean {
+    return MUTATING_META.includes(slug)
+}
+
+/**
+ * The Composio entry in the `providers` map — named either way, configured when asked for.
+ *
+ * `none` used to leave it commented, because a provider holding 25,000 tools had no `available()`
+ * worth calling and naming it told the model nothing. The meta tools changed that premise: the agent
+ * can now say "I could search your apps if you switch this on", which is the entire reason decision
+ * 4.53 names a provider that is switched off.
  */
 function composioBlock(answers: InitAnswers): readonly string[] {
+    const shared = [
+        `    # Your other apps — Gmail, Slack, Notion, ~1,000 more — through a Composio account.`,
+        `    # Two tools do the setup: composio_search finds what a task needs and saves the`,
+        `    # definitions, composio_connect returns the sign-in link. Ask the agent for an app and it`,
+        `    # pins the slug itself with config_set; the new tool is live after a restart.`,
+    ]
+
     if (!composioEnabled(answers)) {
         return [
-            `    # Your other apps — Gmail, Slack, Notion, ~1,000 more — through a Composio account.`,
-            `    # Unlike the two above, this one is left off rather than named-and-empty: its catalogue`,
-            `    # is ~25,000 tools, so it has no available() and naming it would tell the model nothing.`,
-            `    # To turn it on: uncomment, put the key in .env, then \`${BRAND.slug} tools . --warm\``,
-            `    # once — resolution happens during boot where no request is permitted, so a slug pinned`,
-            `    # against a cold cache fails the load rather than fetching.`,
-            `    # composio:`,
-            `    #   apiKeyEnv: ${COMPOSIO_KEY_ENV}`,
-            `    #   userId: default`,
+            ...shared,
+            `    # Named with nothing pinned, so it knows the route exists and can tell you the line`,
+            `    # to add. To switch it on: pin the two tools below, put a key in .env, and give this`,
+            `    # block the two settings shown here.`,
+            `    #   composio: { apiKeyEnv: ${COMPOSIO_KEY_ENV}, userId: default }`,
+            `    composio: {}`,
         ]
     }
 
     return [
-        `    # Your other apps, through Composio. Nothing is pinned yet and that is not an omission:`,
-        `    # slugs resolve from an on-disk cache during boot, where no network call is permitted, so`,
-        `    # a slug pinned before \`${BRAND.slug} tools . --warm\` fails the load. Warm once, then add`,
-        `    # slugs under pinned below — or ask the agent to, which is what config_set is for.`,
+        ...shared,
         `    composio:`,
         `      apiKeyEnv: ${COMPOSIO_KEY_ENV}`,
-        `      # Which connected account to act as at execution time — Composio's own identifier for`,
-        `      # the person whose Gmail this is, not a name of yours. "default" is the usual answer.`,
+        `      # Whose accounts these are, in Composio's terms — not a name of yours. One person on`,
+        `      # one machine wants "default", and a connection made under it is reused by every later`,
+        `      # session. Change it only to keep two people's accounts apart on one agent.`,
         `      userId: default`,
     ]
 }
@@ -879,10 +914,14 @@ function composioBlock(answers: InitAnswers): readonly string[] {
  * alternative — a fresh agent that reads one file and then refuses to save a note — reads as a
  * broken runtime rather than as a security setting.
  */
-function policyBlock(system: string): readonly string[] {
-    const choice = systemChoice(system) ?? SYSTEM_CHOICES[0]
-    const allow = choice?.allow ?? []
+function policyBlock(answers: InitAnswers): readonly string[] {
+    const choice = systemChoice(answers.system) ?? SYSTEM_CHOICES[0]
     const shell = choice?.pinned.includes("exec") === true
+    // `composio_connect` is mutating and `composio_search` is untrusted, so the first search taints
+    // the turn and the connect that has to follow it has nothing to point at. That is the gate
+    // working exactly as designed and indistinguishable from a broken runtime while the one useful
+    // sequence — find the app, hand over the sign-in link — stops halfway through.
+    const allow = [...(choice?.allow ?? []), ...composioPinned(answers).filter(isMutatingMeta)]
 
     const lines = [
         `  # ── which calls run, which ask, and which are refused ──`,
@@ -1192,7 +1231,7 @@ function manifestFor(answers: InitAnswers): string {
         `  search:`,
         `    enabled: false`,
         ``,
-        ...policyBlock(answers.system),
+        ...policyBlock(answers),
         ``,
         `  # ── the write gate ──`,
         `  # A tool whose output came from outside this conversation taints the turn. After that, a`,

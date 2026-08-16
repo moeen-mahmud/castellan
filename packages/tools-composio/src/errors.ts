@@ -67,3 +67,33 @@ export function composioNotConnected(slug: string, toolkit: string): ToolError {
         hint: `Connect ${toolkit} for this user in Composio, then set tools.providers.composio.userId to the same identifier. The tool resolves at load whether or not an account exists, because resolution reads a schema and execution needs the account — so this surfaces on first use rather than at boot.`,
     })
 }
+
+/**
+ * A meta tool was called on an agent whose Composio key is absent.
+ *
+ * Distinct from `composioKeyMissing`, which is about refreshing or executing a *known* tool. This one
+ * fires at the moment someone asks the agent to find an app, which is where the sentence has to
+ * explain the whole route rather than name a variable.
+ */
+export function composioSessionKeyMissing(envVar: string): ToolError {
+    return new ToolError({
+        code: "composio_session_key_missing",
+        message: `Searching your apps needs a Composio key, and ${envVar} is not set.`,
+        hint: `Put the key in the .env beside this agent's manifest as ${envVar}=…, then restart. Get one from the Composio dashboard — the free tier is enough to connect an account and search the catalogue.`,
+    })
+}
+
+/**
+ * The search returned nothing for a use case.
+ *
+ * A failed call rather than an empty observation on purpose: "no results" phrased as data reads to a
+ * model as a tool that worked, and it then reports the app does not exist. Composio covers roughly a
+ * thousand toolkits, so the far likelier reading is that the phrasing was wrong.
+ */
+export function composioNoMatch(useCase: string): ToolError {
+    return new ToolError({
+        code: "composio_no_match",
+        message: `No tool matched "${useCase}".`,
+        hint: 'Describe the action and its object in plain English — "send an email", "create a calendar event", "post a message to a channel" — rather than naming a product or a tool slug. Composio matches on the use case, not on its own names.',
+    })
+}

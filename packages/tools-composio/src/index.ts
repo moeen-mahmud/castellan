@@ -7,19 +7,43 @@
  */
 
 export { type CacheFile, cachePath, readCache, writeCache } from "./cache.ts"
-export { type ClientOptions, ComposioClient, type FetchLike } from "./client.ts"
+export {
+    type ClientOptions,
+    ComposioClient,
+    type FetchLike,
+    type MetaResult,
+    type SessionCreated,
+} from "./client.ts"
 export {
     composioCacheMiss,
     composioExecuteFailed,
     composioKeyMissing,
+    composioNoMatch,
     composioNotConnected,
     composioRequestFailed,
     composioSchemaUnsupported,
+    composioSessionKeyMissing,
 } from "./errors.ts"
 export { type ComposioTool, isMutating, isUnannotated, mapParameters, mapTool } from "./map.ts"
+export {
+    CONNECT_SLUG,
+    CONNECT_SPEC,
+    findUrl,
+    META_SLUGS,
+    type MetaContext,
+    metaTools,
+    renderConnect,
+    renderSearch,
+    renderWorkbench,
+    SEARCH_SLUG,
+    SEARCH_SPEC,
+    WORKBENCH_SLUG,
+    WORKBENCH_SPEC,
+} from "./meta.ts"
 export {
     ComposioProvider,
     type ComposioProviderOptions,
     composioFromConfig,
     type RefreshReport,
 } from "./provider.ts"
+export { readSession, sessionPath, writeSession } from "./session.ts"

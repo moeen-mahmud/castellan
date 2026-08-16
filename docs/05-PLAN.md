@@ -1053,6 +1053,18 @@ configuration — those arrive with their phases.
   generated manifest, which is why it survived.
 - **The root `build` script did not build the `tools-*` packages** (decision 4.80), so the fix above
   appeared not to work twice against a stale `dist`.
+- **2026-08-16 (later) — the Composio answer had no route behind it**, and the wizard question is
+  what made that visible. `tools --warm` refreshes the slugs already in `pinned`, so a slug had to
+  be known before it could be warmed and warmed before it could be pinned; the only way in was
+  composio.dev in a browser. Moeen asked a generated agent to connect his Gmail and it burned 4,417
+  output tokens establishing there was no path. Three meta tools now close it — `composio_search`,
+  `composio_connect`, `composio_workbench` (decisions 4.81–4.87) — and `connected` pins the first
+  two plus the allow rule the sequence needs. Verified live end to end against the real API: a fresh
+  agent asked to set up Slack searched, returned an OAuth link, pinned `SLACK_SEND_MESSAGE` and
+  `SLACK_FIND_CHANNELS`, added the allow rule, and asked for a restart.
+- **Decision 4.78 was reversed within the week** — `composio: {}` is named while switched off, like
+  `web: {}`. Its reasoning was sound and its premise moved: the provider now has an `available()`
+  worth calling. The rule it established outlived it.
 
 ### Deviations from the plan as written
 

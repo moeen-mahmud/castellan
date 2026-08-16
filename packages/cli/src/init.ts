@@ -380,24 +380,21 @@ function nextSteps(
             `Add your search key: edit ${join(targetDir, ".env")} and set ${searchVar}= — web_fetch works without it, web_search does not`,
         )
     }
-    // Composio is the one provider whose answer cannot finish the job here. Its slugs resolve from
-    // an on-disk cache during boot, where no request is permitted, so `init` — which makes no
-    // requests at all — has no honest way to leave a usable tool pinned. Saying so is the whole
-    // difference between a setup step and an agent that quietly has none of the apps it was
-    // promised: nothing fails, because nothing was pinned.
-    if (composioEnabled(answers)) {
-        if (answers.composioKey === undefined) {
-            steps.push(
-                `Add your Composio key: edit ${join(targetDir, ".env")} and set ${COMPOSIO_KEY_ENV}=`,
-            )
-        }
+    // The key, and only the key. Discovering and connecting an app is now something to *ask the
+    // agent for* rather than a setup chore — which is the whole change, so a next step telling
+    // someone to go and warm a cache would be describing the flow this replaced.
+    if (composioEnabled(answers) && answers.composioKey === undefined) {
         steps.push(
-            `Fetch the app tools once: ${BRAND.slug} tools ${runRef} --warm — then add the slugs ` +
-                `you want under tools.pinned in ${manifest}. Nothing from Composio is available ` +
-                `until that runs, and a slug pinned before it fails the load.`,
+            `Add your Composio key: edit ${join(targetDir, ".env")} and set ${COMPOSIO_KEY_ENV}=`,
         )
     }
     steps.push(`${BRAND.slug} run ${runRef}`)
+    if (composioEnabled(answers)) {
+        steps.push(
+            `Ask it for an app — "connect my Gmail" — and it finds the tools, gives you the ` +
+                `sign-in link, and pins what you need. New tools go live on the next restart.`,
+        )
+    }
     steps.push(
         `Make workspace/SOUL.md yours, then re-derive SOUL.compact.md to match — ` +
             `\`${BRAND.slug} workspace ${manifest}\` shows exactly what still reads as a template.`,

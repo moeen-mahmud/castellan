@@ -295,12 +295,27 @@ case-insensitive and whole-word against the current input. See `07-SPEC-WORKSPAC
 | `policy.onNoApprover` | `deny` | What `ask` means with nobody to ask — a schedule, a pipe, a channel with no approver. |
 | `untrusted.onMutate` | `refuse` | What to do when untrusted content is in the turn and a mutating tool is requested: `refuse \| confirm \| allow`. A tainted mutating call needs **explicit** authorization — a matching `policy.allow` rule or a live approval; `mode: allow` is the absence of a rule, not one. `confirm` asks when an approver is reachable and refuses when none is. |
 
-**Configuring a remote provider and pinning nothing from it is a valid, startable agent** — it is
-what `init --composio connected` writes. A remote provider resolves from an on-disk cache during
-boot, where hard rule 4 permits no network call, so its tools become available only after
-`<binary> tools <ref> --warm`. Pinning one of its slugs *before* that warm fails the load naming the
-slug and the command. Listing the provider beside one whose tools are local costs nothing: the
-cold-cache failure is raised for a slug nobody resolved, never for the provider merely being present.
+**Configuring a remote provider and pinning nothing from it is a valid, startable agent.** A remote
+provider resolves from an on-disk cache during boot, where hard rule 4 permits no network call, so
+its app tools become available only after their schemas are cached. Pinning such a slug *before*
+that fails the load naming the slug and the command. Listing the provider beside one whose tools are
+local costs nothing: the cold-cache failure is raised for a slug nobody resolved, never for the
+provider merely being present.
+
+**Composio's three meta tools are the exception, and resolve with no cache and no request.**
+`composio_search` finds the tools for a task in plain English and writes their real schemas to the
+cache; `composio_connect` returns the sign-in link for an account; `composio_workbench` runs Python
+in a Composio-hosted sandbox. `init --composio connected` pins the first two and adds
+`composio_connect` to `policy.allow` — without that rule the first search taints the turn and the
+connect that must follow it has no authorisation to point at.
+
+The workbench is never generated. It runs code somewhere no `tools.policy` rule can reach, which is
+a broader grant than `exec`; pin it by hand or not at all.
+
+A slug found by `composio_search` is *pinned*, not executed — the model writes it into
+`tools.pinned` with `config_set` and it is an ordinary tool on the next start. There is deliberately
+no tool that executes an arbitrary discovered slug: that would make every Composio task two-hop, the
+shape small models fail, which is what fixing the catalogue at load exists to avoid.
 
 **A tool that is both `mutating` and `untrusted` is once-per-turn unless a `policy.allow` rule names
 it**, and the load says so (`tool_gated_after_first_use`). `exec` is the whole class: its own first
