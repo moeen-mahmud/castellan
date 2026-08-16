@@ -136,6 +136,13 @@ export const COMMANDS: readonly CommandSpec[] = [
                 defaultHelp: "none",
             },
             {
+                name: "daemon",
+                kind: "string",
+                placeholder: "level",
+                help: "keep it running in the background: none | service",
+                defaultHelp: "none",
+            },
+            {
                 name: "yes",
                 kind: "boolean",
                 help: "take every default; never ask, even at a terminal",

@@ -830,7 +830,22 @@ export function validateAnswer(step: InitStep, raw: string): Answered {
             if (/\s/.test(handle)) {
                 return { ok: false, reason: "is one handle, with no spaces — for example @moeen." }
             }
-            return { ok: true, value: handle.startsWith("@") ? handle : `@${handle}` }
+            // Checked against Telegram's actual username rule — letters, digits and underscores,
+            // five to thirty-two of them. Not pedantry: a hyphen cannot occur in a real handle, so
+            // `@ada-lovelace` matches nobody, and the *only* symptom is the bot silently refusing
+            // every message from the one person it was set up for. That refusal names the problem
+            // perfectly and writes it to a log file, which under a background service nobody opens.
+            // Catching the impossible handle at the moment it is typed is the only cheap place.
+            const bare = handle.startsWith("@") ? handle.slice(1) : handle
+            if (!/^[A-Za-z0-9_]{5,32}$/.test(bare)) {
+                return {
+                    ok: false,
+                    reason: /-/.test(bare)
+                        ? "contains a hyphen, and a Telegram handle cannot — they are letters, digits and underscores only. Did you mean an underscore?"
+                        : "is not a Telegram handle: 5-32 characters, letters, digits and underscores only. Leave it empty to allow nobody for now.",
+                }
+            }
+            return { ok: true, value: `@${bare}` }
         }
 
         case "telegram": {

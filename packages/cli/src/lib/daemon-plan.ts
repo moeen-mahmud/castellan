@@ -170,6 +170,67 @@ export interface ServiceFacts {
     readonly uptimeMs?: number
 }
 
+/**
+ * Things a *running* service is saying that a person needs to see.
+ *
+ * `status` reporting "running" was true and useless: the bot was up, connected, and refusing every
+ * message from the one person it had been set up for, because a handle in `allowFrom` was mistyped.
+ * The refusal names the sender and the exact line to paste — and writes it to a log file, which is
+ * the failure mode this whole phase is a reaction to, reached from a new direction.
+ *
+ * Health is not the only question. "Is it running" and "is it working" are different, and only the
+ * second one is why anybody typed the command.
+ */
+export interface Attention {
+    readonly code: string
+    readonly summary: string
+    readonly fix: string
+}
+
+/**
+ * Only the current run.
+ *
+ * launchd *appends* to a service's log, so a denial from before you fixed the allowlist would
+ * otherwise be reported forever — a warning that outlives its cause is one people learn to scroll
+ * past, which is how you end up with a screen full of things that are all fine. Each start writes
+ * the serving banner, so everything after the last one is this process and nothing else.
+ */
+export function currentRun(log: string, marker = "serving on"): string {
+    const at = log.lastIndexOf(marker)
+    return at === -1 ? log : log.slice(at)
+}
+
+/** Lines a running service wrote that mean it is up and not doing its job. */
+export function attentionFrom(rawLog: string): readonly Attention[] {
+    const log = currentRun(rawLog)
+    const out: Attention[] = []
+
+    // Every distinct sender it has turned away. Deduplicated, because a person who messages three
+    // times produces three identical lines and a status screen should say it once.
+    const denied = new Set<string>()
+    for (const match of log.matchAll(/denied — Sender "([^"]+)" is not in channel "([^"]+)"/g)) {
+        if (match[1] !== undefined) denied.add(`${match[1]}|${match[2] ?? ""}`)
+    }
+    for (const entry of denied) {
+        const [sender, channel] = entry.split("|")
+        out.push({
+            code: "inbound_denied",
+            summary: `messages from ${sender} are being refused — they are not on channel "${channel}"'s allowFrom list`,
+            fix: `add ${sender} to allowFrom in agent.yaml, then restart. An allowlist that is empty, or that has a typo in it, refuses silently from the sender's side: they see nothing at all.`,
+        })
+    }
+
+    if (/channel_telegram_unauthorized|telegram_token_missing/.test(log)) {
+        out.push({
+            code: "channel_unauthorized",
+            summary: "the channel rejected its token",
+            fix: "check the token in the .env beside the manifest, then restart.",
+        })
+    }
+
+    return out
+}
+
 export interface StatusReport {
     readonly verdict: Verdict
     readonly healthy: boolean

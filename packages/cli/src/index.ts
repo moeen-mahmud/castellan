@@ -99,6 +99,7 @@ async function dispatch(argv: readonly string[]): Promise<number> {
             const telegram = flags.str("telegram")
             const telegramAllow = flags.str("telegram-allow")
             const server = flags.str("server")
+            const daemon = flags.str("daemon")
             return await initCommand({
                 ...(dir === undefined ? {} : { dir }),
                 ...(user === undefined ? {} : { user }),
@@ -115,6 +116,7 @@ async function dispatch(argv: readonly string[]): Promise<number> {
                 ...(telegram === undefined ? {} : { telegram }),
                 ...(telegramAllow === undefined ? {} : { telegramAllow }),
                 ...(server === undefined ? {} : { server }),
+                ...(daemon === undefined ? {} : { daemon }),
                 yes: flags.bool("yes"),
                 plain: flags.bool("plain"),
             })

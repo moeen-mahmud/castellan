@@ -26,6 +26,7 @@ import {
     ruleBudgetFailure,
     VERSION,
 } from "@castellan/core"
+import { daemonCommand } from "#daemon"
 import { EXIT_FAILURE, EXIT_OK } from "#lib/const"
 import { markTerminalDirty, onExit } from "#lib/exit"
 import {
@@ -138,6 +139,7 @@ async function runInit(options: InitOptions): Promise<InitResult> {
 
     const answers = complete(partial)
     const targetDir = resolve(process.cwd(), answers.dir)
+    const manifestPath = join(targetDir, "agent.yaml")
     const files = planFiles(answers)
 
     // Per-target checks rather than "directory not empty": a fresh `git init`'d directory must
@@ -210,7 +212,36 @@ async function runInit(options: InitOptions): Promise<InitResult> {
         throw error
     }
 
-    process.stdout.write(nextSteps(answers, files.length, targetDir, distilled))
+    // Installed *before* the next steps are printed, so the last screen can say what happened
+    // rather than instructing someone to do the thing that just happened. The first version had it
+    // the other way round and read as a contradiction.
+    //
+    // The very first version did not install at all, reasoning that the .env would still be empty
+    // and the install check would refuse. True of a scripted `--yes` run and false of the one that
+    // matters: at a terminal the wizard *asks* for the bot token and writes it, so by this line the
+    // agent is complete. Telling someone who just answered "yes, keep it running" to go and type
+    // another command is answering a question with homework.
+    //
+    // Guarded rather than assumed — `daemon install` runs its own checks and refuses if something
+    // is missing, and a refusal falls back to naming the command. The one outcome that must not
+    // happen is a silent skip after somebody said yes.
+    process.stdout.write(`wrote ${files.length} files to ${targetDir} — validated ok\n`)
+
+    let installed = false
+    if (answers.daemon === "service") {
+        process.stdout.write("\n")
+        try {
+            installed = (await daemonCommand({ action: "install", manifestPath })) === EXIT_OK
+        } catch (error) {
+            process.stderr.write(
+                `the background service was not installed: ${
+                    error instanceof HarnessError ? error.message : String(error)
+                }\n`,
+            )
+        }
+    }
+
+    process.stdout.write(nextSteps(answers, targetDir, distilled, installed))
     return { kind: "ok", manifestPath: join(targetDir, "agent.yaml") }
 }
 
@@ -232,6 +263,7 @@ function fromFlags(options: InitOptions): Partial<Record<InitStep, string>> {
         ["telegram", options.telegram],
         ["telegramAllow", options.telegramAllow],
         ["server", options.server],
+        ["daemon", options.daemon],
         ["dir", options.dir],
     ]
     for (const [step, raw] of pairs) {
@@ -406,9 +438,9 @@ function randomToken(): string {
 
 function nextSteps(
     answers: InitAnswers,
-    count: number,
     targetDir: string,
     distilled: boolean,
+    installed = false,
 ): string {
     // An agent inside the sandbox runs by bare name from anywhere; anything else by path.
     const inSandbox = dirname(targetDir) === agentsDir()
@@ -447,24 +479,39 @@ function nextSteps(
                 `${join(targetDir, ".env")} and set ${TELEGRAM_TOKEN_ENV}=`,
         )
     }
-    steps.push(`${BRAND.slug} run ${runRef}`)
     // `run` never starts a channel and never binds a port, so an agent configured for either has a
-    // second command to know about. Said here rather than discovered — the whole reason these
-    // capabilities became questions is that a generated file was hiding them.
-    if (answers.telegram === "connected" || answers.server === "local") {
-        const what =
-            answers.telegram === "connected" && answers.server === "local"
-                ? "the Telegram bot and the HTTP API"
-                : answers.telegram === "connected"
-                  ? "the Telegram bot"
-                  : "the HTTP API"
-        steps.push(`${BRAND.slug} serve ${runRef} — starts ${what}; \`run\` starts neither`)
+    // second thing to know. Said here rather than discovered — the whole reason these capabilities
+    // became questions is that a generated file was hiding them. One step rather than two once the
+    // service is up: "run it" and "and by the way run starts nothing" are the same sentence, and
+    // printing both made steps 1 and 2 read as duplicates of each other.
+    const reachable = answers.telegram === "connected" || answers.server === "local"
+    const what =
+        answers.telegram === "connected" && answers.server === "local"
+            ? "the Telegram bot and the HTTP API"
+            : answers.telegram === "connected"
+              ? "the Telegram bot"
+              : "the HTTP API"
+    if (reachable && installed) {
+        steps.push(
+            `${BRAND.slug} run ${runRef} — talks to it right here. It starts no channel and binds ` +
+                `no port; ${what} belongs to the service, which is already up.`,
+        )
+    } else {
+        steps.push(`${BRAND.slug} run ${runRef}`)
+    }
+    if (reachable) {
+        if (!installed) {
+            steps.push(`${BRAND.slug} serve ${runRef} — starts ${what}; \`run\` starts neither`)
+        }
         // And the half `serve` does not cover: it lives and dies with its terminal. Printed only
         // when they asked for it, and only as a command — `init` deliberately does not install,
         // because the token in step 1 is usually still missing at this moment and the check that
         // exists to catch that would refuse. A service that fails from birth is the exact failure
         // this capability was built against.
-        if (answers.daemon === "service") {
+        if (answers.daemon === "service" && !installed) {
+            // Only when the install did not happen. Printed unconditionally it read as a
+            // contradiction — a next step telling you to run the command whose output was two
+            // lines above.
             steps.push(
                 `${BRAND.slug} daemon install ${runRef} — the same thing, supervised: starts at ` +
                     `login and survives a reboot. Do this once the key and token above are in .env; ` +
@@ -489,12 +536,18 @@ function nextSteps(
             `\`${BRAND.slug} workspace ${manifest}\` shows exactly what still reads as a template.`,
     )
 
+    // Said before the numbered list, because it changes what the list means: with a service
+    // installed, `serve` is not something you need to run and the agent is already answering.
+    const serviceNote = installed
+        ? `\nit is running in the background now — \`${BRAND.slug} daemon status ${runRef}\` at any time,\nand \`${BRAND.slug} stop\` turns everything off.\n`
+        : ""
+
     const soulNote = distilled
         ? `\nthis model ships SOUL.compact.md — the full SOUL.md needs a 200k+ window on a\nfrontier-class model, and activates automatically if you upgrade.\n`
         : ""
 
     return (
-        `wrote ${count} files to ${targetDir} — validated ok\n${soulNote}\n` +
+        `${soulNote}${serviceNote}\n` +
         steps.map((step, index) => `  ${index + 1}. ${step}\n`).join("")
     )
 }

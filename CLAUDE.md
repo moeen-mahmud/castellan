@@ -831,6 +831,18 @@ Never claim a performance property without a number in `evals/` and a script to 
   region, so `ps` shows the title instead of the command line — the arguments stay visible through
   `launchctl print` and `daemon status`. It does *not* change the code-signing identity, which is
   Node's, and only shipping our own signed binary would.
+- **"Running" and "working" are different questions, and `status` has to answer the second.** A
+  freshly installed bot was connected, healthy, and refusing every message from the one person it
+  was set up for, because a handle in `allowFrom` had a hyphen where an underscore belonged. The
+  refusal names the sender and the exact line to add — into a log file. It is not only *errors*
+  that get written where nobody looks, which is the generalisation of the 57 MB lesson.
+  `attentionFrom` reads the current run's stdout for up-and-not-working states; scope it to the
+  run (slice at the last serving banner) or launchd's appending log reports a fixed problem
+  forever.
+- **Validate an identifier against the system that issues it, at the moment it is typed.** A
+  Telegram username is `[A-Za-z0-9_]{5,32}`, so `@ada-lovelace` cannot exist and matching nobody is
+  the only possible outcome. Everything downstream was correct behaviour applied to a wrong fact,
+  which is the hardest kind of bug to see: nothing failed anywhere.
 - **A lease row is a claim, not a fact, and a dead pid outranks a fresh heartbeat.** A boot that
   fails *after* claiming leaves a row seconds old with no process under it, which blocked every
   retry for ninety seconds while naming a pid that no longer existed — at the moment somebody was

@@ -9,6 +9,9 @@
 
 import { describe, expect, test } from "bun:test"
 import {
+    type Attention,
+    attentionFrom,
+    currentRun,
     type Finding,
     isLoopbackHost,
     type PreflightFacts,
@@ -214,5 +217,67 @@ describe("status verdicts", () => {
         const report = summariseStatus("milo", { installed: false, disabled: false })
         expect(report.verdict).toBe("absent")
         expect(report.healthy).toBe(false)
+    })
+})
+
+/**
+ * "Running" was true and useless.
+ *
+ * The service was up, connected, and refusing every message from the one person it had been set up
+ * for, because a handle in `allowFrom` had a hyphen where an underscore belonged. The refusal names
+ * the sender and says exactly what to do — into a log file, which under a background service nobody
+ * opens. `status` said `running`, and it was right, and that was the whole problem: is it up and is
+ * it working are different questions, and only the second is why anyone typed the command.
+ */
+describe("things a healthy service is saying that you need to hear", () => {
+    const DENIED = `Castellan serving on http://127.0.0.1:7420
+  tg: connected — @milothecat_bot, long-poll
+  tg: denied — Sender "@moeen_mahmud" is not in channel "tg"'s allowFrom list.`
+
+    test("a refused sender is surfaced, with the sender and the fix", () => {
+        const found = attentionFrom(DENIED)
+        expect(found.length).toBe(1)
+        expect(found[0]?.code).toBe("inbound_denied")
+        expect(found[0]?.summary).toContain("@moeen_mahmud")
+        expect(found[0]?.summary).toContain("tg")
+        expect(found[0]?.fix).toContain("allowFrom")
+    })
+
+    test("the same sender knocking five times is said once", () => {
+        const repeated = `${DENIED}\n${'  tg: denied — Sender "@moeen_mahmud" is not in channel "tg"\'s allowFrom list.\n'.repeat(4)}`
+        expect(attentionFrom(repeated).length).toBe(1)
+    })
+
+    test("two different senders are two findings", () => {
+        const two = `${DENIED}\n  tg: denied — Sender "@someone_else" is not in channel "tg"'s allowFrom list.`
+        expect(attentionFrom(two).length).toBe(2)
+    })
+
+    /**
+     * launchd appends, so without this a denial from before you fixed the allowlist would be
+     * reported forever — and a warning that outlives its cause is one people learn to scroll past.
+     */
+    test("a denial from a previous run is not reported after a restart", () => {
+        const restarted = `${DENIED}
+stopping
+Castellan serving on http://127.0.0.1:7420
+  tg: connected — @milothecat_bot, long-poll`
+        expect(attentionFrom(restarted)).toEqual([])
+        expect(currentRun(restarted)).not.toContain("denied")
+    })
+
+    test("a healthy log says nothing", () => {
+        expect(
+            attentionFrom("Castellan serving on http://127.0.0.1:7420\n  tg: connected"),
+        ).toEqual([])
+    })
+
+    test("every finding carries a fix", () => {
+        const all: Attention[] = [
+            ...attentionFrom(DENIED),
+            ...attentionFrom("serving on x\ntelegram_token_missing: nope"),
+        ]
+        expect(all.length).toBeGreaterThan(1)
+        for (const item of all) expect(item.fix.length).toBeGreaterThan(20)
     })
 })

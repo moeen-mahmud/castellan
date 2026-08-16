@@ -33,6 +33,8 @@ import {
 import { ambientEnv } from "#lib/ambient"
 import { EXIT_FAILURE, EXIT_OK } from "#lib/const"
 import {
+    type Attention,
+    attentionFrom,
     type BinaryFacts,
     type Finding,
     isLoopbackHost,
@@ -417,6 +419,12 @@ async function statusAction(
     } else {
         for (const report of reports) {
             process.stdout.write(`${renderStatus(report.report)}\n`)
+            // Before the log tail and before the fix line, because "running" plus this is the
+            // combination someone is actually here to resolve: the service is up and the agent is
+            // still not answering them.
+            for (const item of report.attention) {
+                process.stdout.write(`\n  needs you  ${item.summary}\n             ${item.fix}\n`)
+            }
             if (report.report.wantsStderrTail && report.tail !== "") {
                 process.stdout.write(`\n  last lines of stderr:\n${indent(report.tail, 4)}\n`)
             }
@@ -456,7 +464,12 @@ async function installedAgentIds(
 async function gatherStatus(
     agentId: string,
     manager: ReturnType<typeof resolveServiceManager> | undefined,
-): Promise<{ agentId: string; report: ReturnType<typeof summariseStatus>; tail: string }> {
+): Promise<{
+    agentId: string
+    report: ReturnType<typeof summariseStatus>
+    tail: string
+    attention: readonly Attention[]
+}> {
     const label = labelFor(BRAND.slug, agentId)
     const unit = manager?.unitPath(label)
     const state = manager?.state(label)
@@ -499,7 +512,17 @@ async function gatherStatus(
     }
 
     const report = summariseStatus(agentId, facts)
-    return { agentId, report, tail: report.wantsStderrTail ? tail(stderrPath, 20) : "" }
+    // Read from *stdout*, not stderr: a refused sender is not an error, it is the runtime working
+    // exactly as configured — which is why it never reaches the failure path and why a service can
+    // be perfectly healthy and completely useless at the same time.
+    const attention = attentionFrom(tail(logs.out, 200))
+
+    return {
+        agentId,
+        report,
+        tail: report.wantsStderrTail ? tail(stderrPath, 20) : "",
+        attention,
+    }
 }
 
 function logsAction(options: DaemonOptions): number {

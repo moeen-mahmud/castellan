@@ -121,6 +121,44 @@ describe("nextQuestion", () => {
 })
 
 describe("validateAnswer", () => {
+    /**
+     * The bug this was written for cost a working bot and looked like a broken runtime.
+     *
+     * `@moeen-mahmud` was accepted into `allowFrom`. A Telegram username cannot contain a hyphen,
+     * so it matched nobody — and the only symptom was the bot silently refusing every message from
+     * the person it had just been set up for, while `daemon status` correctly reported it running.
+     * The moment the handle is typed is the only cheap place to catch a handle that cannot exist.
+     */
+    test("a handle that Telegram could not issue is refused at the prompt", () => {
+        const hyphen = validateAnswer("telegramAllow", "@moeen-mahmud")
+        expect(hyphen.ok).toBe(false)
+        if (!hyphen.ok) {
+            expect(hyphen.reason).toContain("hyphen")
+            // Names the likely intent, because a hyphen here is almost always a mistyped underscore.
+            expect(hyphen.reason).toContain("underscore")
+        }
+        expect(validateAnswer("telegramAllow", "@ab").ok).toBe(false)
+        expect(validateAnswer("telegramAllow", "@has space").ok).toBe(false)
+        expect(validateAnswer("telegramAllow", "@dots.not.allowed").ok).toBe(false)
+    })
+
+    test("a real handle passes, with or without the @", () => {
+        expect(validateAnswer("telegramAllow", "@moeen_mahmud")).toEqual({
+            ok: true,
+            value: "@moeen_mahmud",
+        })
+        // Normalised to a leading @ so the generated file reads the way a person writes it.
+        expect(validateAnswer("telegramAllow", "moeen_mahmud")).toEqual({
+            ok: true,
+            value: "@moeen_mahmud",
+        })
+        expect(validateAnswer("telegramAllow", "Ada2000")).toEqual({ ok: true, value: "@Ada2000" })
+    })
+
+    test("empty still permits nobody, which is the safe default and a real answer", () => {
+        expect(validateAnswer("telegramAllow", "")).toEqual({ ok: true, value: "" })
+    })
+
     test("presets accept a number or a name", () => {
         expect(validateAnswer("preset", "3")).toEqual({ ok: true, value: "deepseek" })
         expect(validateAnswer("preset", "OLLAMA")).toEqual({ ok: true, value: "ollama" })
