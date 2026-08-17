@@ -87,6 +87,9 @@ export const GLYPH = {
     check: "✓ ",
     ellipsis: "…",
     create: "+ ",
+    /** Multi-select boxes. Two glyphs so a ticked row reads as ticked without colour. */
+    checked: "◉ ",
+    unchecked: "◯ ",
 } as const
 
 /** Braille spinner. Ten glyphs in a const, not a dependency — decision 11.10 holds. */

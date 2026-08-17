@@ -71,13 +71,13 @@ export function activateSkills(options: ActivateSkillsOptions): Activation {
     const above = ranked.filter((scored) => scored.score >= catalogue.threshold)
     const chosen = activate(
         above.map((scored) => scored.skill),
-        { maxActive: catalogue.maxActive, budget: catalogue.budget },
+        // No budget: `maxActive` is the whole limit for skills (decision 11.59).
+        { maxActive: catalogue.maxActive },
     )
     const scoreOf = new Map(above.map((scored) => [scored.skill.name, scored.score]))
 
     const active: ActiveSkill[] = []
     const notes: ErrorDetail[] = []
-    let spent = 0
 
     for (const skill of chosen) {
         let content: string
@@ -97,20 +97,10 @@ export function activateSkills(options: ActivateSkillsOptions): Activation {
             continue
         }
 
-        // Re-measured rather than trusted. The catalogue's figure was taken at the last cold scan, and
-        // a body edited since could have grown past the budget — in which case the honest outcome is
-        // to drop it and say so, not to quietly overspend a budget somebody chose.
+        // Re-measured rather than trusted: the catalogue's figure was taken at the last cold scan and the
+        // file may have been edited since. Nothing refuses on size any more — the number is carried so a
+        // caller can report what a turn actually spent.
         const tokens = estimateTokens(content)
-        if (spent + tokens > catalogue.budget) {
-            notes.push(
-                skillNotApplied(
-                    skill.name,
-                    `its body is now ${tokens} tokens against the ${catalogue.budget - spent} remaining in skills.budget, and it was ${skill.tokens} when the catalogue was scanned`,
-                    "The file has grown since the last scan. Raise skills.budget or shorten the body — a restart re-scans and would refuse the load outright if it exceeds the whole budget, which is the louder version of this.",
-                ),
-            )
-            continue
-        }
 
         active.push({
             name: skill.name,
@@ -119,7 +109,6 @@ export function activateSkills(options: ActivateSkillsOptions): Activation {
             tokens,
             dir: skill.dir,
         })
-        spent += tokens
     }
 
     return { active, notes }

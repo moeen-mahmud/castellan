@@ -19,8 +19,15 @@ export interface Activatable {
 
 export interface ActivationLimits {
     readonly maxActive: number
-    /** Total across everything active in one turn, not per entry. */
-    readonly budget: number
+    /**
+     * Total across everything active in one turn, not per entry. **Absent means uncapped.**
+     *
+     * Optional because the two tiers that share this walk answer the question differently. Knowledge is
+     * many small entries competing for one slot, so a total is what stops the slot growing without bound.
+     * Skills are one procedure the harness picked, and `maxActive` already bounds them to one — a second
+     * limit there only ever turned "the right skill" into "no skill", which is the worse of the two.
+     */
+    readonly budget?: number
 }
 
 /**
@@ -30,7 +37,8 @@ export interface ActivationLimits {
  * worse-ranked entry displace a better-ranked one purely by being shorter, and the selection would stop
  * being explainable from the ranking, which is the same quiet-reordering the tool registry refuses.
  * A caller that wants an over-budget entry to be impossible rather than unselectable refuses it at
- * load instead; that is what `knowledgeEntryOverBudget` and `skillOverBudget` are for.
+ * load instead; that is what `knowledgeEntryOverBudget` is for. With no budget the walk is a plain
+ * `maxActive` take, which is what skills use.
  */
 export function activate<T extends Activatable>(
     ranked: readonly T[],
@@ -42,7 +50,7 @@ export function activate<T extends Activatable>(
     let spent = 0
     for (const entry of ranked) {
         if (active.length >= limits.maxActive) break
-        if (spent + entry.tokens > limits.budget) break
+        if (limits.budget !== undefined && spent + entry.tokens > limits.budget) break
         active.push(entry)
         spent += entry.tokens
     }

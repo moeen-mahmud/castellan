@@ -26,6 +26,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { HarnessError } from "@castellan/core"
+import { CURATED_COMMUNITY_SKILLS } from "#lib/curated"
 import { sandboxRoot } from "#lib/sandbox"
 
 /** A repository to look for skills in. */
@@ -51,6 +52,19 @@ export interface SourceSpec {
     readonly ref?: string
     /** Shipped rather than added. Never written to the registry file. */
     readonly builtin?: boolean
+    /**
+     * Folder names to show when *browsing*, or absent to show everything.
+     *
+     * A filter on the catalogue rather than on the checkout. Narrowing the clone was the obvious
+     * optimisation and does not work: `git sparse-checkout set` given twenty `skills/<name>` paths in cone
+     * mode (git 2.55) writes them as root-level patterns and materialises one folder out of twenty. The
+     * whole `skills/` tree is 22 MB fetched once per machine and shared by every agent on it, which is not
+     * worth a git edge case.
+     *
+     * Never applied to `sources search`. Curation is a recommendation, and a search that refused to find a
+     * skill somebody named would make it a restriction.
+     */
+    readonly curated?: readonly string[]
 }
 
 /**
@@ -73,6 +87,8 @@ export const DEFAULT_SOURCES: readonly SourceSpec[] = [
         url: "https://github.com/github/awesome-copilot",
         path: "skills",
         builtin: true,
+        // 425 skills upstream, mostly developer tooling. See `curated.ts` for what this keeps and why.
+        curated: CURATED_COMMUNITY_SKILLS,
     },
 ]
 

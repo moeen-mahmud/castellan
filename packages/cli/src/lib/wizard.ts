@@ -281,6 +281,7 @@ export function answeredRows(
         // showed "starter  starter" for the default answer and "starter  none" for the other one.
         skills: "Skills",
         skillsSearch: "Skill search",
+        skillsPick: "Skills picked",
         daemon: "Background service",
         serverToken: "API token",
         composioKey: "Composio key",

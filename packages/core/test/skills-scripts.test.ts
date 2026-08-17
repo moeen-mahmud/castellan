@@ -138,7 +138,6 @@ function load(dir: string, runner: ScriptRunner = RUNNER) {
     return loadSkills({
         dir,
         maxActive: 1,
-        budget: 5000,
         threshold: 0.35,
         style: DEFAULT_PROMPT_STYLE,
         host: "bun",
@@ -157,7 +156,6 @@ function loadWithoutRunner(dir: string) {
     return loadSkills({
         dir,
         maxActive: 1,
-        budget: 5000,
         threshold: 0.35,
         style: DEFAULT_PROMPT_STYLE,
         host: "bun",

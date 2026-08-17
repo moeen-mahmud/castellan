@@ -180,11 +180,34 @@ describe("third-party files load", () => {
         ).toContain("501 characters")
     })
 
-    test("description over 1024 characters is refused", () => {
+    test("description over 1024 characters loads, because Anthropic's own catalogue has one", () => {
+        // Was a refusal. `anthropics/skills`' `claude-api` carries a 1,068-character description against
+        // the spec's documented 1,024 — so enforcing it here dropped a flagship skill written by the
+        // people who wrote the spec, for a length that breaks nothing. `checkSkillAuthoring` warns instead.
         const long = "x".repeat(1025)
-        expect(failure("charts", skill(`name: charts\ndescription: ${long}`)).message).toContain(
-            "1025 characters",
+        const parsed = parseSkillFile("charts", skill(`name: charts\ndescription: ${long}`))
+        expect(parsed.frontmatter.description.length).toBe(1025)
+    })
+
+    test("allowed-tools may be a YAML list, which is what awesome-copilot writes", () => {
+        // Six of its skills do. Refusing them made six real skills "unusable" over the shape of a field
+        // that is read and never acted on.
+        const parsed = parseSkillFile(
+            "charts",
+            skill("name: charts\ndescription: A thing.\nallowed-tools:\n  - Read\n  - Write"),
         )
+        expect(parsed.frontmatter.allowedTools).toBe("Read, Write")
+    })
+
+    test("a nested allowed-tools still fails rather than being stringified", () => {
+        expect(
+            failure(
+                "charts",
+                skill(
+                    "name: charts\ndescription: A thing.\nallowed-tools:\n  - name: Read\n    ok: true",
+                ),
+            ).message,
+        ).toContain("not a string")
     })
 })
 

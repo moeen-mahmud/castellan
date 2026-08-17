@@ -310,14 +310,12 @@ export const SkillsSchema = z
          * changing that formula invalidates this default, and both sides say so.
          */
         threshold: z.number().default(0.35),
-        /**
-         * Tokens across every skill active in one turn.
-         *
-         * Defaults to the spec's own recommended ceiling for a `SKILL.md` body, because a smaller
-         * default would refuse to load skills written to the published guidance. A ceiling, not a
-         * target: what a window fits and what a model follows are different numbers.
-         */
-        budget: z.number().int().positive().default(5000),
+        // No `budget`, and its absence is the design (decision 11.59). A per-turn token cap on skills
+        // only ever converted "the right procedure" into "no procedure": `maxActive` already bounds a
+        // turn to one body, so the second limit added no protection and produced a refusal at install,
+        // at load *and* mid-turn for a file somebody had deliberately chosen. Size is shown where the
+        // choice is made — the catalogue prints every body's token count — and `skills validate` warns
+        // above the spec's advised 5,000. Nothing refuses.
         // No `sources` field, and its absence is the design (decision 11.46). Where skills come from is
         // a machine-level list the CLI owns, not a property of one agent — and a fetchable URL inside the
         // document `Runtime.create` reads is an invitation to resolve it there, which is hard rule 4 and

@@ -30,7 +30,6 @@ import { basename, isAbsolute, join, relative, resolve } from "node:path"
 import {
     checkSkillAuthoring,
     type ErrorDetail,
-    estimateTokens,
     HarnessError,
     isSkillName,
     loadManifest,
@@ -108,6 +107,27 @@ export interface SkillsOptions {
      * check has always done this; the command it calls needed the same courtesy.
      */
     readonly envOverlay?: Readonly<Record<string, string | undefined>>
+    /**
+     * Report nothing and let the caller summarise. Set by a batch install.
+     *
+     * Eleven ticked skills produced **eleven** `from/installed/this installed code/next` blocks — a screenful
+     * of repeated narrative for one action, which is what "the TUI should be everything" was objecting to.
+     * The per-skill report is right for `skills install <one>` and wrong the moment there are eleven, so the
+     * caller decides. `collect` is how it gets the facts it needs to write one summary instead.
+     */
+    readonly quiet?: boolean
+    /** Appended to, when given: what happened to each skill this call touched. */
+    readonly collect?: InstallOutcome[]
+}
+
+/** What one install did, for a caller aggregating several. */
+export interface InstallOutcome {
+    readonly name: string
+    readonly ok: boolean
+    /** Why not, when `ok` is false. */
+    readonly reason?: string
+    /** Files that would run, relative to the skills directory. */
+    readonly runnable: readonly string[]
 }
 
 export function skillsCommand(options: SkillsOptions): number {
@@ -148,7 +168,6 @@ export function skillsCommand(options: SkillsOptions): number {
         const catalogue = loadSkills({
             dir: resolvedDir,
             maxActive: configured.maxActive,
-            budget: configured.budget,
             threshold: configured.threshold,
             style: capabilities.promptStyle,
             agentDir: loaded.dir,
@@ -161,7 +180,7 @@ export function skillsCommand(options: SkillsOptions): number {
             case "show":
                 return show(catalogue.skills, options)
             case "install":
-                return install(resolvedDir, configured.budget, options)
+                return install(resolvedDir, options)
             default:
                 // `validate` is the fallback rather than a named case because the parser has already
                 // rejected anything outside `SKILLS_ACTIONS`, and the safest thing to do with an action
@@ -214,7 +233,6 @@ function list(
     skills: readonly Skill[],
     catalogue: {
         readonly maxActive: number
-        readonly budget: number
         readonly threshold: number
         readonly cached: boolean
     },
@@ -231,7 +249,6 @@ function list(
                     configured: true,
                     cached: catalogue.cached,
                     maxActive: catalogue.maxActive,
-                    budget: catalogue.budget,
                     threshold: catalogue.threshold,
                     skills: skills.map((skill) => ({
                         ...summarise(skill),
@@ -257,10 +274,7 @@ function list(
     process.stdout.write(
         `${keyValue([
             { label: "skills", value: String(skills.length) },
-            {
-                label: "per turn",
-                value: `at most ${catalogue.maxActive}, within ${catalogue.budget} tokens`,
-            },
+            { label: "per turn", value: `at most ${catalogue.maxActive}` },
             { label: "threshold", value: catalogue.threshold.toFixed(2) },
             { label: "index", value: catalogue.cached ? "cached" : "scanned" },
         ])}\n`,
@@ -475,7 +489,7 @@ function enable(
 }
 
 /** Written once, so what is stored and what is printed cannot disagree. */
-const DEFAULTS = { maxActive: 1, threshold: 0.35, budget: 5000 } as const
+const DEFAULTS = { maxActive: 1, threshold: 0.35 } as const
 
 function block(dir: string): Record<string, unknown> {
     return { dir, ...DEFAULTS }
@@ -496,7 +510,6 @@ function uncomment(source: string, dir: string): string {
         `  dir: ${dir}`,
         `  maxActive: ${DEFAULTS.maxActive}`,
         `  threshold: ${DEFAULTS.threshold}`,
-        `  budget: ${DEFAULTS.budget}`,
     ]
     if (at === -1) return [...lines, "", ...written, ""].join("\n")
     // The heading above it goes too, when there is one: "# Phase 5 — skills" over a live block reads as
@@ -562,7 +575,7 @@ function create(dir: string, options: SkillsOptions): number {
  *
  * Modes are preserved, because an executable bit is what makes a script runnable at all.
  */
-function install(dir: string, budget: number, options: SkillsOptions): number {
+function install(dir: string, options: SkillsOptions): number {
     const from = options.name
     if (from === undefined) {
         process.stdout.write(
@@ -627,14 +640,12 @@ function install(dir: string, budget: number, options: SkillsOptions): number {
         // The destination is the skill's declared `name`, not the source folder's — the spec requires
         // them to match, so a mismatched source is a skill that would fail to load wherever it landed.
         let name: string
-        let body: string
         try {
             const parsed = parseSkillFile(
                 basename(candidate),
                 readFileSync(join(candidate, SKILL_FILE), "utf8"),
             )
             name = parsed.frontmatter.name
-            body = parsed.body
         } catch (error) {
             skipped.push(
                 `${basename(candidate)} — ${error instanceof Error ? error.message : String(error)}`,
@@ -646,17 +657,11 @@ function install(dir: string, budget: number, options: SkillsOptions): number {
             skipped.push(`${name} — already installed at ${target}`)
             continue
         }
-        // Checked before copying, because a body over the budget **fails the load** — so installing one
-        // would break `skills list`, `validate` and every turn the agent takes, to add a skill that could
-        // never have activated. `skill-creator` from `anthropics/skills` is 9,065 tokens and is exactly
-        // this case.
-        const tokens = estimateTokens(body)
-        if (tokens > budget) {
-            skipped.push(
-                `${name} — its body is ${tokens} tokens against skills.budget ${budget}, and installing it would stop this agent loading. Raise the budget first, or split the body into references/.`,
-            )
-            continue
-        }
+        // No size check. There was one, against `skills.budget`, and it is what turned a person ticking
+        // eleven skills into "9 of 11 installed" — refusing `pptx` at 5,441 tokens and `skill-creator` at
+        // 9,065 against a default of 5,000 they never chose. The budget is gone (decision 11.59): the
+        // catalogue prints every body's size on the row where the choice is made, and a large skill that
+        // somebody picked on purpose is not a configuration error.
         cpSync(candidate, target, { recursive: true, preserveTimestamps: true })
         installed.push(name)
         if (origin !== undefined) {
@@ -675,6 +680,26 @@ function install(dir: string, budget: number, options: SkillsOptions): number {
     }
 
     if (Object.keys(origins).length > 0) recordOrigins(dir, origins)
+
+    if (options.collect !== undefined) {
+        for (const name of installed) {
+            options.collect.push({
+                name,
+                ok: true,
+                runnable: runnable.filter((file) => file.startsWith(`${name}/`)),
+            })
+        }
+        for (const entry of skipped) {
+            const cut = entry.indexOf(" — ")
+            options.collect.push({
+                name: cut === -1 ? entry : entry.slice(0, cut),
+                ok: false,
+                reason: cut === -1 ? entry : entry.slice(cut + 3),
+                runnable: [],
+            })
+        }
+    }
+    if (options.quiet === true) return installed.length === 0 ? EXIT_FAILURE : EXIT_OK
 
     process.stdout.write(
         `${keyValue([

@@ -113,6 +113,42 @@ export type ListIntent =
     | { readonly kind: "none" }
 
 /**
+ * A checklist adds two verbs a single-select list does not have: tick a row, and finish.
+ *
+ * Space ticks and enter finishes, which is the convention every multi-select in a terminal uses — and
+ * getting it the other way round is the mistake that makes a picker feel broken, because enter on a
+ * highlighted row is such a strong habit that people submit with one thing ticked and never see the rest.
+ * `a` and `n` are all/none, worth having when the list is fifty rows long.
+ */
+export type CheckIntent =
+    | { readonly kind: "move"; readonly move: SelectMove }
+    | { readonly kind: "toggle" }
+    | { readonly kind: "all" }
+    | { readonly kind: "none-selected" }
+    | { readonly kind: "confirm" }
+    | { readonly kind: "cancel" }
+    | { readonly kind: "none" }
+
+export function keyToCheckIntent(input: string, key: KeyState): CheckIntent {
+    if (key.ctrl) {
+        return input.toLowerCase() === "c" || input.toLowerCase() === "d"
+            ? { kind: "cancel" }
+            : { kind: "none" }
+    }
+    if (key.return) return { kind: "confirm" }
+    if (key.escape) return { kind: "cancel" }
+    // Ink reports the space bar as the input string " " with no flag of its own.
+    if (input === " ") return { kind: "toggle" }
+    if (input === "a") return { kind: "all" }
+    if (input === "n") return { kind: "none-selected" }
+
+    const list = keyToListIntent(input, key)
+    // Movement is shared so the two lists cannot drift apart; `choose` cannot arrive, because `key.return`
+    // is handled above, and the remaining kinds are not this screen's.
+    return list.kind === "move" ? list : { kind: "none" }
+}
+
+/**
  * List navigation: arrows or j/k, g/G for ends, enter chooses, esc backs out, ^C/^D leave.
  *
  * A digit jumps the cursor — visibly and reversibly — and deliberately does not choose: a stray

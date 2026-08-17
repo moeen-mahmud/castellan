@@ -55,7 +55,7 @@ export interface SourcesOptions {
 /** How many search hits are printed before the rest are counted. */
 const TOP = 12
 
-export function sourcesCommand(options: SourcesOptions): number {
+export async function sourcesCommand(options: SourcesOptions): Promise<number> {
     try {
         switch (options.action) {
             case "list":
@@ -65,9 +65,9 @@ export function sourcesCommand(options: SourcesOptions): number {
             case "remove":
                 return drop(options)
             case "update":
-                return update(options)
+                return await update(options)
             case "search":
-                return search(options)
+                return await search(options)
             default:
                 // Unreachable through the dispatcher, which checks against the spec's choices.
                 throw new HarnessError({
@@ -259,7 +259,7 @@ function drop(options: SourcesOptions): number {
     return EXIT_OK
 }
 
-function update(options: SourcesOptions): number {
+async function update(options: SourcesOptions): Promise<number> {
     const configured = loadSources(options.env)
     const wanted =
         options.rest.length === 0
@@ -295,7 +295,7 @@ function update(options: SourcesOptions): number {
         // is how a person decides a command has hung.
         if (options.json !== true) process.stdout.write(`fetching ${spec.name} … `)
         try {
-            const result = fetchSource(spec, {
+            const result = await fetchSource(spec, {
                 ...(options.env === undefined ? {} : { env: options.env }),
                 ...(options.git === undefined ? {} : { git: options.git }),
             })
@@ -331,7 +331,7 @@ function update(options: SourcesOptions): number {
  * activate there. A separate search ranking would let a skill look like the obvious answer in the
  * catalogue and never fire once installed, and nothing would report the discrepancy.
  */
-function search(options: SourcesOptions): number {
+async function search(options: SourcesOptions): Promise<number> {
     const query = options.rest.join(" ").trim()
     const configured = loadSources(options.env)
     if (configured.length === 0) {
@@ -344,7 +344,7 @@ function search(options: SourcesOptions): number {
         if (options.json !== true)
             process.stdout.write(`fetching ${spec.name} for the first time … `)
         try {
-            const result = fetchSource(spec, {
+            const result = await fetchSource(spec, {
                 ...(options.env === undefined ? {} : { env: options.env }),
                 ...(options.git === undefined ? {} : { git: options.git }),
             })

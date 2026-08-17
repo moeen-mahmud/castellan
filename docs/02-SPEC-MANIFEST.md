@@ -524,7 +524,12 @@ Phase state persists per session.
 | `dir` | `./skills` | Scanned for `*/SKILL.md`. Frontmatter only at boot; a configured directory that does not exist is a load failure. |
 | `maxActive` | 1 | Skill bodies injected per turn, into `SLOT.skill`. |
 | `threshold` | 0.35 | Normalised BM25 floor. Below it, no skill activates. Calibrated to the normalisation in `skills/select.ts`, where the shipped fixtures score 0.369–0.600 — **changing that formula invalidates this default**. |
-| `budget` | 5000 | Tokens across every skill active in one turn. Defaults to the agentskills.io recommended ceiling for a `SKILL.md` body, because a smaller default would refuse skills written to the published guidance. A body over the whole budget fails the load rather than sitting unselectable. |
+
+There is deliberately **no `budget` field** either. `maxActive` is the only limit on skills: a turn activates
+at most that many bodies, so a token cap added no protection and produced a refusal at install, at load and
+mid-turn for a file somebody had chosen on purpose — it turned eleven ticked skills into nine installed. A
+skill's size is shown in the catalogue on the row where it is chosen, and `skills validate` warns above the
+spec's advised 5,000 tokens. Nothing refuses. See decision 11.59.
 
 There is deliberately **no `sources` field**. Where skills come from is a machine-level list — `sources
 add`, stored at `~/<stateDir>/sources.json` — and not a property of one agent. Two reasons, and the second

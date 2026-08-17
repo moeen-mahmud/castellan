@@ -941,3 +941,70 @@ Never claim a performance property without a number in `evals/` and a script to 
   Write the fallback as a *name*, never `"1"`, or the two are the same thing forever. And a new text step
   needs a fallback that exists: an empty one makes enter-through stall, which is the one thing a default
   must never do — this one defaults to the purpose, and an empty phrase means "do not search" and says so.
+- **`raw.githubusercontent.com` rate-limits, whatever a reference implementation says.** 26 parallel
+  reads returned `429: Too Many Requests` with a 199-byte error body — and a catalogue built on that
+  degrades to *silently partial*, which in a browse list is indistinguishable from a small catalogue.
+  One `git clone --depth 1 --filter=blob:none --sparse` per source is atomic, cached, and works behind
+  the user's own credential helper. When a transport's failure mode is "fewer results", prefer the one
+  whose failure mode is "an error".
+- **A spec limit that upstream violates is a warning, never a load failure.** `anthropics/skills`'
+  `claude-api` carries a **1,068**-character description against the spec's 1,024, and `awesome-copilot`
+  writes `allowed-tools` as a YAML list in six skills where the spec says string. Both were refusals, so
+  both quietly dropped real skills — one of them Anthropic's own — for shapes that break nothing.
+  **Refuse what the runtime cannot use; warn about what a different client might reject.** A list of
+  scalars is joined for display and a *nested* one still fails, so nothing becomes `[object Object]`.
+- **Space ticks, enter confirms — never the other way round.** Enter-on-a-highlighted-row is a strong
+  enough habit that the reverse binding makes people submit with one item ticked and never discover the
+  rest of the list. And a cursor must skip unselectable rows (group headings) in the direction it was
+  moving, bounded by the row count: a cursor parked on a heading where enter does nothing reads as a
+  broken keyboard, and an unbounded skip walk hangs the process on a list with no selectable rows.
+- **A browse list and a search see different catalogues on purpose.** Curation is a recommendation, so
+  it filters *browsing*; `sources search` reaches everything, because a search that could not find a
+  skill somebody named would make curation a restriction. Two questions — "what should I look at" and
+  "is this thing here" — and one filter applied in the wrong place answers neither.
+- **Verify an allowlist against the remote by hand, and say so in the file.** 1 of 38 drafted curated
+  names did not exist upstream, and a name that matches no folder is **silently absent** from the list
+  rather than an error. The test asserts the list's *shape*, never the remote: a test that fetched would
+  start failing when somebody else renames a directory, which is a fact about GitHub and not about this
+  code.
+- **When a pure module cannot host a screen, move the screen — not the question.** `init`'s skills step
+  was implemented as a text box asking what the agent does often, because `nextQuestion` is a pure
+  synchronous reducer over static option tables and a fetched list does not fit it. That is a true fact
+  about the wizard and not a reason to ask a worse question: the catalogue picker existed in the same
+  commit. The fix touches the reducer not at all — the answer stays a static three-way choice and `find`
+  mounts the existing checklist *after* the files are written. Two sequential Ink mounts in one command is
+  already the pattern `run` uses (picker, then the chat app).
+- **A wizard answer that costs money or time gets its own screen, and its scripted twin needs a
+  different mechanism.** `--skills "<phrase>"` survives as a flag-only answer precisely because a picker
+  cannot run in CI, so the interactive path and the scripted path reach the same catalogue by different
+  routes — and the step is removed from `STEP_ORDER` while staying in `InitAnswers`, which is how a
+  flag-only answer is spelled here.
+- **`skills` has no token budget, and must not grow one back.** `skills.budget` refused at install, at load
+  and mid-turn, and its first real use turned eleven ticked skills into **"9 of 11 installed"** — `pptx` at
+  5,441 tokens and `skill-creator` at 9,065 against a 5,000 default nobody chose. `maxActive` already bounds
+  a turn to one body, so the second limit only ever converted the right procedure into no procedure. The
+  replacement is **show the size where the choice is made**: every catalogue row prints its token count, and
+  `skills validate` warns above the spec's advised 5,000. Same shape as `exec` having no `env` and
+  `memory_write` no file argument — the field looks like protection and is a refusal.
+- **A row that wraps is a broken list, and the width arithmetic belongs in a pure module.** Handing a name,
+  a size and a full description to Ink in one `<Text>` wrapped every long row onto two or three lines and
+  destroyed the checkbox alignment. `lib/rows.ts` clips each column, and **name and meta shrink before the
+  description** — otherwise the fixed part of the row exceeds the terminal on its own (at 40 columns with a
+  34-character name it came to 60, so every row wrapped whatever the description did). `wrap="truncate"` is
+  a backstop, not a layout. Verify by character count, never with `awk`: `…` and `·` are multi-byte, so
+  `length()` reports 69 overlong lines where there are none.
+- **A blocking call under a renderer is not slow, it is broken.** `spawnSync` inside Ink froze the app: no
+  spinner frame advanced *and* the keys pressed during a twenty-second clone were echoed by the tty instead
+  of consumed, printing `^[[B^[[A` into the middle of the output. The fetch path is async throughout, and
+  progress is reported through a **callback** — writing to stdout while Ink owns the frame paints over it.
+- **A per-item report is right at one and wrong at eleven, so the caller decides.** Eleven ticked skills
+  printed eleven `from / installed / this installed code / next` blocks, with 130 script paths inside them.
+  `quiet` suppresses the narrative, `collect` returns what happened, and the batch prints one summary with a
+  count and a pointer to `skills show`. Disclosure by count plus a way to see the names discloses *more*
+  than 130 lines nobody reads.
+- **"In the flow" means between two questions, not after the last one.** The catalogue was mounted after the
+  wizard completed — questions, files written, then a list — and that is still a separate screen. It is an
+  interlude in the wizard root now, and the pure reducer never changed: `nextQuestion` returns static options
+  only, and the root holds the fetch and the selection because those are the two things a pure synchronous
+  function cannot do. Trigger off the answer **log**, not `partialOf`, or a `--skills find` flag opens the
+  picker before the first question.

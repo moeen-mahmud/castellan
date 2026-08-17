@@ -1481,6 +1481,27 @@ site, moved out of `lib/service.ts`)
       scripts it brought, and named `github/pdftk-server`, `github/convert-pdf-to-md` and `anthropic/docx`
       as runners-up. A scripted `init --yes` still reaches no network: 0.13 s, no cache directory created
 - [x] Slot 2 names the skills rather than counting them, so "what skills do you have?" costs no tool calls
+- [x] **Bare `skills` browses a curated catalogue and installs several at once.** 69 skills across the
+      configured sources — 18 from `anthropics/skills` whole, 37 curated from `github/awesome-copilot`'s
+      425, grouped by purpose — ticked with space, then an agent picked on a second screen. `--plain` and
+      `--json` print the same list from the same `browseRows`, with the non-interactive install command
+      underneath, because a picker is not scriptable
+- [x] **`init`'s skills answer opens that catalogue**, not a text box. At a terminal `find` mounts the same
+      checklist with the agent screen skipped; a scripted `--skills "<phrase>"` ranks and installs the best
+      match, because a picker cannot run in CI. Asserted in `wizard.test.ts`: choosing `find` asks no
+      follow-up question, and `find` and `starter` ask the same number of questions
+- [x] **The catalogue is a step inside the wizard**, not a screen after it: answer `find`, it fetches with a
+      spinner, you tick, and the remaining questions carry on. The pure reducer is untouched — `skillsPick`
+      is in `InitAnswers` and not in `STEP_ORDER`
+- [x] One row is one line at every terminal width. `lib/rows.ts` clips each column and shrinks name and meta
+      before the description; asserted at 40, 60, 80, 100 and 140 columns, and the piped list has **zero**
+      lines over its width. Before this every long description wrapped and the checkboxes stopped aligning
+- [x] `skills.budget` is gone (decision 11.59), so ticking eleven skills installs eleven. Size is shown on
+      the row instead of refused after it
+- [x] A batch install reports once, with a runnable-file count, instead of one full report per skill
+- [x] Upstream catalogues load as they actually are, not as the spec describes them: a description over
+      1,024 characters warns instead of refusing (`anthropic/claude-api` is 1,068) and `allowed-tools`
+      may be a YAML list (six `awesome-copilot` skills write one). Both were silently costing real skills
 - [x] The failures a source surface has are each reported honestly: an unfetched cache is distinguished
       from a mistyped name; a skill in two sources refuses and names both; an over-budget skill is refused
       before it is copied; a skill whose frontmatter will not load is listed with its problem rather than

@@ -41,7 +41,6 @@ function load(
     return loadSkills({
         dir: skillsDir,
         maxActive: options.maxActive ?? 1,
-        budget: options.budget ?? 5000,
         threshold: 0.35,
         style: DEFAULT_PROMPT_STYLE,
         ...(options.agentDir === undefined ? {} : { agentDir: options.agentDir }),
@@ -88,17 +87,15 @@ describe("the scan", () => {
         expect(skill?.tokens).toBeGreaterThan(100)
     })
 
-    test("a body over the whole budget fails at load, naming both numbers", () => {
+    test("a huge body loads, because size is shown rather than refused", () => {
+        // Was a refusal against `skills.budget`, and the budget is gone (decision 11.59). A cap on skills
+        // only ever turned "the right procedure" into "no procedure": `maxActive` already bounds a turn to
+        // one body, and the size of that body is printed in the catalogue where the choice is made.
         const dir = root()
-        write(dir, "alpha", "word ".repeat(2000))
-        try {
-            load(dir, { budget: 50 })
-            throw new Error("expected a throw")
-        } catch (error) {
-            expect((error as ConfigError).code).toBe("skill_over_budget")
-            expect((error as ConfigError).message).toContain("alpha")
-            expect((error as ConfigError).message).toContain("50")
-        }
+        write(dir, "alpha", "word ".repeat(20_000))
+        const catalogue = load(dir)
+        expect(catalogue.skills.length).toBe(1)
+        expect(catalogue.skills[0]?.tokens).toBeGreaterThan(10_000)
     })
 })
 
@@ -134,12 +131,11 @@ describe("the cache", () => {
         const dir = root()
         const agent = root()
         write(dir, "alpha", "Do alpha things.")
-        loadSkills({ dir, maxActive: 1, budget: 5000, threshold: 0.35, agentDir: agent })
+        loadSkills({ dir, maxActive: 1, threshold: 0.35, agentDir: agent })
 
         const other = loadSkills({
             dir,
             maxActive: 1,
-            budget: 5000,
             threshold: 0.35,
             agentDir: agent,
             style: { ...DEFAULT_PROMPT_STYLE, delimiters: "xml" },
@@ -205,8 +201,8 @@ describe("fifty skills", () => {
 })
 
 describe("activation", () => {
-    function catalogueOf(dir: string, maxActive = 1, budget = 5000) {
-        return load(dir, { maxActive, budget })
+    function catalogueOf(dir: string, maxActive = 1) {
+        return load(dir, { maxActive })
     }
 
     test("the body is read on activation, not at scan time", () => {
@@ -243,13 +239,17 @@ describe("activation", () => {
         expect(active[0]?.content).toContain("Replaced body.")
     })
 
-    test("a body that grew past the budget is dropped with a named reason, not silently", () => {
+    test("a body that grew since the scan still activates, and the turn is charged what it really costs", () => {
+        // Was a drop against `skills.budget`, which is gone (decision 11.59). The re-measure stays: the
+        // catalogue's figure is from the last cold scan, and the activation reports what the file costs
+        // *now* rather than what it cost then. Nothing refuses on size.
         const dir = root()
         write(dir, "alpha", "Small body.")
         write(dir, "beta", "Unrelated.")
         write(dir, "gamma", "Unrelated.")
         write(dir, "delta", "Unrelated.")
-        const catalogue = catalogueOf(dir, 1, 60)
+        const catalogue = catalogueOf(dir)
+        const scanned = catalogue.skills.find((skill) => skill.name === "alpha")?.tokens ?? 0
 
         write(dir, "alpha", "word ".repeat(500))
         const { active, notes } = activateSkills({
@@ -257,11 +257,9 @@ describe("activation", () => {
             catalogue,
             style: DEFAULT_PROMPT_STYLE,
         })
-        expect(active).toEqual([])
-        expect(notes.length).toBe(1)
-        expect(notes[0]?.code).toBe("skill_not_applied")
-        expect(notes[0]?.message).toContain("alpha")
-        expect(notes[0]?.hint.length).toBeGreaterThan(0)
+        expect(active.length).toBe(1)
+        expect(notes).toEqual([])
+        expect(active[0]?.tokens).toBeGreaterThan(scanned)
     })
 
     test("a deleted body is dropped with a named reason rather than failing the turn", () => {

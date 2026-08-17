@@ -17,7 +17,7 @@
  * operating system the caller thought it was. A shared error message would be wrong for both.
  */
 
-import { spawnSync } from "node:child_process"
+import { spawn, spawnSync } from "node:child_process"
 
 export interface SpawnRequest {
     readonly command: string
@@ -55,4 +55,63 @@ export function spawnCapture(request: SpawnRequest): SpawnResult {
         signalled: result.signal !== null,
         notFound: code === "ENOENT",
     }
+}
+
+/**
+ * The same thing, without blocking the event loop.
+ *
+ * Exists because `spawnSync` inside an Ink app freezes the whole terminal: no spinner frame advances, and
+ * the keypresses that arrive during a twenty-second `git clone` are echoed by the tty instead of being
+ * consumed by the app — which is how `^[[B^[[A` ended up printed in the middle of a fetch progress line.
+ * Anything a rendered screen waits on has to be awaited, not blocked on.
+ */
+export function spawnCaptureAsync(request: SpawnRequest): Promise<SpawnResult> {
+    return new Promise((resolve) => {
+        const child = spawn(request.command, [...request.args], {
+            ...(request.cwd === undefined ? {} : { cwd: request.cwd }),
+            ...(request.env === undefined ? {} : { env: request.env as NodeJS.ProcessEnv }),
+            // Never inherit: a child that writes to the terminal would paint over the rendered frame, and
+            // one that reads from it would steal the keys the app is listening for.
+            stdio: ["ignore", "pipe", "pipe"],
+        })
+        let stdout = ""
+        let stderr = ""
+        let signalled = false
+        const cap = request.maxBuffer ?? 32 * 1024 * 1024
+        child.stdout?.on("data", (chunk: Buffer) => {
+            if (stdout.length < cap) stdout += chunk.toString("utf8")
+        })
+        child.stderr?.on("data", (chunk: Buffer) => {
+            if (stderr.length < cap) stderr += chunk.toString("utf8")
+        })
+        const timer =
+            request.timeoutMs === undefined
+                ? undefined
+                : setTimeout(() => {
+                      signalled = true
+                      // The group, not the pid: `git clone` spawns helpers, and killing only the parent
+                      // leaves them running with nothing referencing them.
+                      child.kill("SIGTERM")
+                  }, request.timeoutMs)
+        child.on("error", (error: NodeJS.ErrnoException) => {
+            if (timer !== undefined) clearTimeout(timer)
+            resolve({
+                code: 1,
+                stdout,
+                stderr: error.message,
+                signalled,
+                notFound: error.code === "ENOENT",
+            })
+        })
+        child.on("close", (code, signal) => {
+            if (timer !== undefined) clearTimeout(timer)
+            resolve({
+                code: code ?? 1,
+                stdout,
+                stderr,
+                signalled: signalled || signal !== null,
+                notFound: false,
+            })
+        })
+    })
 }

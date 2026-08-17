@@ -26,6 +26,7 @@ import {
     ruleBudgetFailure,
     VERSION,
 } from "@castellan/core"
+import { installRefs } from "#browse"
 import { daemonCommand } from "#daemon"
 import { EXIT_FAILURE, EXIT_OK } from "#lib/const"
 import { markTerminalDirty, onExit } from "#lib/exit"
@@ -75,6 +76,7 @@ const FLAG_FOR: Record<InitStep, string> = {
     server: "--server",
     skills: "--skills",
     skillsSearch: "--skills",
+    skillsPick: "--skills",
     daemon: "--daemon",
     // Never asked and never a flag — generated, because it is ours rather than a third party's.
     serverToken: "(generated)",
@@ -239,11 +241,28 @@ async function runInit(options: InitOptions): Promise<InitResult> {
     // After the load check, so a skill is only ever added to an agent already known to be valid; before
     // the service install, so what gets started is the finished agent rather than one a skill lands in a
     // second later. Cannot fail the init: every failure path inside reports and returns.
-    findAndInstallSkill({
-        answers,
-        manifestPath,
-        ...(envOverlay === undefined ? {} : { envOverlay }),
-    })
+    //
+    // Nothing is *chosen* here. At a terminal the wizard already showed the catalogue between two of its
+    // questions and collected refs into `skillsPick`; this installs them, with one summary rather than one
+    // report per skill. A scripted run has no picker, so `--skills "<phrase>"` ranks and installs the best
+    // match instead — the same interactive/scripted split this command makes everywhere else.
+    if (answers.skills === "find") {
+        const refs = (answers.skillsPick ?? "")
+            .split(",")
+            .map((ref) => ref.trim())
+            .filter((ref) => ref !== "")
+        if (refs.length > 0) {
+            installRefs(refs, manifestPath, {
+                ...(envOverlay === undefined ? {} : { envOverlay }),
+            })
+        } else if (!interactive) {
+            await findAndInstallSkill({
+                answers,
+                manifestPath,
+                ...(envOverlay === undefined ? {} : { envOverlay }),
+            })
+        }
+    }
 
     let installed = false
     if (answers.daemon === "service") {
@@ -404,12 +423,20 @@ function complete(partial: Partial<Record<InitStep, string>>): InitAnswers {
     const answers = partial as Record<
         Exclude<
             InitStep,
-            "apiKeyEnv" | "apiKey" | "webBackend" | "webKey" | "composioKey" | "skillsSearch"
+            | "apiKeyEnv"
+            | "apiKey"
+            | "webBackend"
+            | "webKey"
+            | "composioKey"
+            | "skillsSearch"
+            | "skillsPick"
         >,
         string
     > & {
         /** Undefined unless the skills answer was `find`; its question is skipped otherwise. */
         skillsSearch?: string
+        /** Undefined unless the wizard's catalogue step ran and something was ticked. */
+        skillsPick?: string
         apiKeyEnv?: string
         apiKey?: string
         // Both stay undefined unless the web answer was `search` — the flow skips their questions,
@@ -462,6 +489,9 @@ function complete(partial: Partial<Record<InitStep, string>>): InitAnswers {
         ...(answers.skillsSearch === undefined || answers.skillsSearch === ""
             ? {}
             : { skillsSearch: answers.skillsSearch }),
+        ...(answers.skillsPick === undefined || answers.skillsPick === ""
+            ? {}
+            : { skillsPick: answers.skillsPick }),
         daemon: answers.daemon,
         // Minted here rather than in the flow, which is a PURE module and must stay deterministic.
         // Only for an agent that asked for a server: an unused 64-hex string in every generated

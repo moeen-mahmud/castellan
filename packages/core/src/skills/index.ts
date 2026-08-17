@@ -10,10 +10,9 @@
  * not open the files at all. Fifty skills of prose held in memory and re-tokenised every boot is the
  * cost being avoided, not fifty `read()` calls.
  *
- * Measuring at index time is what makes `skillOverBudget` possible. A skill whose body exceeds the whole
- * activation budget can never be selected, and this codebase refuses that shape at load everywhere it
- * appears rather than leaving something silently unreachable — which means the size has to be known
- * before anything is selected, so it is measured here and cached.
+ * Measuring at index time is what lets the catalogue print every body's size before anybody installs
+ * it, which is where the cost of a large skill belongs — at the choice, not as a refusal afterwards.
+ * Nothing here rejects a skill for its length (decision 11.59).
  *
  * ## The cache
  *
@@ -34,7 +33,7 @@ import { mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSy
 import { dirname, join } from "node:path"
 import { BRAND } from "../brand.ts"
 import { estimateTokens } from "../context/tokens.ts"
-import { skillOverBudget, skillRuntimeMissing, skillsDirMissing } from "../errors.ts"
+import { skillRuntimeMissing, skillsDirMissing } from "../errors.ts"
 import { DEFAULT_PROMPT_STYLE, type PromptStyle, renderPromptStyle } from "../model/prompt-style.ts"
 import type { ScriptRunner } from "../tools/types.ts"
 import { parseSkillFile, type SkillFrontmatter } from "./frontmatter.ts"
@@ -74,7 +73,6 @@ export interface SkillCatalogue {
     /** Sorted by name, so ranking ties break the same way on every machine. */
     readonly skills: readonly Skill[]
     readonly maxActive: number
-    readonly budget: number
     readonly threshold: number
     /** True when every entry came from the cache — reported by `skills list`, and what the boot
      * criterion measures. */
@@ -85,7 +83,6 @@ export interface LoadSkillsOptions {
     /** Absolute. The caller resolves it against the manifest directory. */
     readonly dir: string
     readonly maxActive: number
-    readonly budget: number
     readonly threshold: number
     /** The same style the workspace rendered with, so the two cannot drift. */
     readonly style?: PromptStyle
@@ -203,14 +200,6 @@ export function loadSkills(options: LoadSkillsOptions): SkillCatalogue {
         skills.push({ name, dir, frontmatter: parsed.frontmatter, tokens, ...found })
     }
 
-    // Checked after the scan rather than inside it so one oversized skill is reported against the
-    // budget it broke, with every skill's size already known.
-    for (const skill of skills) {
-        if (skill.tokens > options.budget) {
-            throw skillOverBudget(skill.name, skill.tokens, options.budget)
-        }
-    }
-
     // Probed on every load, warm cache included: a machine can gain or lose an interpreter between
     // boots, and a cached "python3 was here last week" is exactly the kind of stale fact that turns into
     // a failure at the moment the model finally reaches for the script.
@@ -242,7 +231,6 @@ export function loadSkills(options: LoadSkillsOptions): SkillCatalogue {
     return {
         skills,
         maxActive: options.maxActive,
-        budget: options.budget,
         threshold: options.threshold,
         cached: allCached && skills.length > 0,
     }

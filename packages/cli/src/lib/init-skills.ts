@@ -70,7 +70,7 @@ export interface FindSkillOptions {
 /** How many alternatives are named when the top match is installed, so the choice is inspectable. */
 const ALTERNATIVES = 3
 
-export function findAndInstallSkill(options: FindSkillOptions): void {
+export async function findAndInstallSkill(options: FindSkillOptions): Promise<void> {
     if (options.answers.skills !== "find") return
     const words = options.answers.skillsSearch?.trim() ?? ""
     if (words === "") {
@@ -99,7 +99,7 @@ export function findAndInstallSkill(options: FindSkillOptions): void {
     for (const spec of sources) {
         if (!isCached(spec.name, options.env)) {
             try {
-                fetchSource(spec, {
+                await fetchSource(spec, {
                     ...(options.env === undefined ? {} : { env: options.env }),
                     ...(options.git === undefined ? {} : { git: options.git }),
                 })
@@ -223,7 +223,6 @@ function brokenBy(
         loadSkills({
             dir: isAbsolute(configured.dir) ? configured.dir : resolve(loaded.dir, configured.dir),
             maxActive: configured.maxActive,
-            budget: configured.budget,
             threshold: configured.threshold,
             style: capabilities.promptStyle,
             agentDir: loaded.dir,

@@ -20,6 +20,7 @@
 
 import { HarnessError, VERSION } from "@castellan/core"
 import { agentsCommand } from "#agents"
+import { browseCommand } from "#browse"
 import { daemonCommand } from "#daemon"
 import { initCommand } from "#init"
 import { parse } from "#lib/args"
@@ -181,6 +182,14 @@ async function dispatch(argv: readonly string[]): Promise<number> {
         }
 
         case "skills": {
+            // Bare `skills` is the catalogue. Checked before the manifest is resolved, because browsing
+            // is not about an agent — the agent is chosen on the second screen.
+            if (positionals.length === 0) {
+                return await browseCommand({
+                    plain: flags.bool("plain"),
+                    json: flags.bool("json"),
+                })
+            }
             // Positional 0 is the action, so the manifest is positional 1 — the same shape `soul` uses
             // and the reason `resolved()` is not called here.
             const skill = positionals[2]
@@ -198,7 +207,7 @@ async function dispatch(argv: readonly string[]): Promise<number> {
             // this command answers about the machine, not about an agent.
             const path = flags.str("path")
             const ref = flags.str("ref")
-            return sourcesCommand({
+            return await sourcesCommand({
                 action: manifestPath,
                 rest: positionals.slice(1),
                 ...(path === undefined ? {} : { path }),

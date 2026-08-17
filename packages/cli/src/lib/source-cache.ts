@@ -42,7 +42,7 @@ import {
 import { join, relative } from "node:path"
 import { estimateTokens, HarnessError, parseSkillFile } from "@castellan/core"
 import { cacheDir, cacheRoot, type SourceSpec } from "#lib/sources"
-import { spawnCapture } from "#lib/spawn"
+import { spawnCaptureAsync } from "#lib/spawn"
 
 const SKILL_FILE = "SKILL.md"
 
@@ -57,11 +57,17 @@ export interface GitResult {
     readonly timedOut?: boolean
 }
 
-/** Injected by the tests, which never reach a network. */
-export type Git = (args: readonly string[], cwd?: string) => GitResult
+/**
+ * Injected by the tests, which never reach a network.
+ *
+ * Async, and that is load-bearing rather than stylistic: `spawnSync` inside a rendered screen freezes the
+ * whole app — no spinner frame advances, and the keys pressed during a twenty-second clone are echoed by
+ * the tty instead of being consumed, which is how `^[[B^[[A` was printed into a fetch progress line.
+ */
+export type Git = (args: readonly string[], cwd?: string) => Promise<GitResult>
 
-export const realGit: Git = (args, cwd) => {
-    const result = spawnCapture({
+export const realGit: Git = async (args, cwd) => {
+    const result = await spawnCaptureAsync({
         command: "git",
         args,
         ...(cwd === undefined ? {} : { cwd }),
@@ -168,13 +174,13 @@ export interface FetchResult {
  * name, a repository that needs credentials, a host that is down — and paraphrasing it would lose the
  * one sentence that says which.
  */
-export function fetchSource(
+export async function fetchSource(
     spec: SourceSpec,
     options: {
         readonly env?: Readonly<Record<string, string | undefined>>
         readonly git?: Git
     } = {},
-): FetchResult {
+): Promise<FetchResult> {
     const git = options.git ?? realGit
     const env = options.env
     const target = cacheDir(spec.name, env)
@@ -193,13 +199,13 @@ export function fetchSource(
     const sparse = spec.path !== undefined
     let unfiltered = !sparse
     let result = sparse
-        ? git([...base, "--filter=blob:none", "--sparse", spec.url, partial])
-        : git([...base, spec.url, partial])
+        ? await git([...base, "--filter=blob:none", "--sparse", spec.url, partial])
+        : await git([...base, spec.url, partial])
 
     if (result.code !== 0 && sparse) {
         // Some servers refuse a partial clone. Retrying full is a bigger download, never a failure.
         rmSync(partial, { recursive: true, force: true })
-        const retry = git([...base, spec.url, partial])
+        const retry = await git([...base, spec.url, partial])
         if (retry.code === 0) {
             unfiltered = true
             result = retry
@@ -211,7 +217,7 @@ export function fetchSource(
     }
 
     if (spec.path !== undefined && !unfiltered) {
-        const narrowed = git(["sparse-checkout", "set", spec.path], partial)
+        const narrowed = await git(["sparse-checkout", "set", spec.path], partial)
         if (narrowed.code !== 0) {
             rmSync(partial, { recursive: true, force: true })
             throw new HarnessError({
@@ -222,7 +228,7 @@ export function fetchSource(
         }
     }
 
-    const head = git(["rev-parse", "--short", "HEAD"], partial)
+    const head = await git(["rev-parse", "--short", "HEAD"], partial)
     const commit = head.code === 0 ? head.stdout.trim() : "unknown"
 
     rmSync(target, { recursive: true, force: true })

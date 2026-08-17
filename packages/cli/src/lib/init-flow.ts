@@ -13,8 +13,8 @@
  * voice, so the `workspace` command keeps warning until a person writes real exchanges.
  */
 
-import { fillTemplate, SKILL_TEMPLATE, WORKSPACE_TEMPLATES } from "#lib/templates"
 import { BRAND, whenNotToUseKey } from "@castellan/core"
+import { fillTemplate, SKILL_TEMPLATE, WORKSPACE_TEMPLATES } from "#lib/templates"
 
 /**
  * The local tools every generated agent starts with, and the one line of guidance each carries
@@ -209,13 +209,23 @@ export interface InitAnswers {
      */
     readonly skills: string
     /**
-     * Words to search the skill sources for, when `skills` is `find`.
+     * Words to search the skill sources for. **Set by `--skills "<phrase>"` and never asked.**
      *
-     * Words rather than a slug, because a slug is something you only have if you already know the
-     * catalogue — which is the state this question exists to fix. The ranking is the same
-     * `bm25Selector` that decides activation at runtime, so what init installs is what will fire.
+     * It was a wizard question for exactly one commit, and that was the wrong answer to "ask about skills
+     * during init": a text box asking what the agent does often, in a tree that already had a catalogue
+     * picker. At a terminal `find` now shows the real list and this stays empty. It survives for the
+     * scripted path, where a picker cannot run — the ranking is the same `bm25Selector` that decides
+     * activation, so what a CI run installs is what will fire.
      */
     readonly skillsSearch?: string
+    /**
+     * Comma-separated `<source>/<skill>` refs the person ticked in the wizard's catalogue step.
+     *
+     * Not in `STEP_ORDER` and never produced by `nextQuestion`: the catalogue is a *screen*, not a question,
+     * and `nextQuestion` is pure and synchronous. The wizard root fetches, shows the checklist, and writes
+     * the answer here — which keeps the reducer static-option-only while the flow still contains the list.
+     */
+    readonly skillsPick?: string
     /** Target directory, as given — the command resolves it against the cwd. */
     readonly dir: string
 }
@@ -422,7 +432,7 @@ export const SKILLS_CHOICES: readonly {
         // what it costs, since the catalogues are ~40 MB fetched once per machine and shared by every
         // agent on it, not per agent.
         value: "find",
-        label: "Yes — search the catalogues and install the best match (~40 MB, once)",
+        label: "Yes — pick from the catalogue: real skills, tick as many as you want",
     },
     { value: "starter", label: "Yes — with one worked example to copy" },
     { value: "none", label: "An empty directory — the concept is there, the procedures are not" },
@@ -536,7 +546,6 @@ const STEP_ORDER: readonly InitStep[] = [
     "telegramToken",
     "server",
     "skills",
-    "skillsSearch",
     "daemon",
     "dir",
 ]
@@ -627,8 +636,6 @@ export function nextQuestion(
         // The backend and its key are only questions for someone who asked for search. Skipped
         // rather than asked-and-ignored: an answer the flow discards is a question that lies.
         if ((step === "webBackend" || step === "webKey") && partial.web !== "search") continue
-        // Same conditional shape as `webBackend`: asked only when the answer above asked for it.
-        if (step === "skillsSearch" && partial.skills !== "find") continue
         // Same rule: nobody who said no to Composio is asked for a Composio key.
         if (step === "composioKey" && partial.composio !== "connected") continue
         // And nobody who said no to Telegram is asked for a bot token or an allowlist.
@@ -796,17 +803,6 @@ export function nextQuestion(
                         label: choice.label,
                     })),
                 }
-            case "skillsSearch":
-                return {
-                    step,
-                    prompt: 'What does it do often? Words a skill\'s own description would use — "pdf tables", "release notes"',
-                    // The purpose, which is the one-line answer to "what is this agent for" given a few
-                    // questions ago — so enter-through works and lands on something relevant rather than
-                    // stalling on a question with no default. An empty fallback would make the *default*
-                    // path of an interactive wizard un-completable by pressing enter, which is the one
-                    // thing a default has to be.
-                    fallback: "pdf tables, release notes",
-                }
             case "daemon":
                 return {
                     step,
@@ -945,12 +941,13 @@ export function validateAnswer(step: InitStep, raw: string): Answered {
                 : { ok: true, value: chosen.value }
         }
 
+        case "skillsPick":
+            // Refs the wizard collected from its own checklist. Nothing to validate: they came from the
+            // catalogue this process just read, not from a person typing.
+            return { ok: true, value: value.trim() }
         case "skillsSearch":
-            // Never a refusal, including empty. Two reasons: there is nothing to validate a phrase
-            // against without a network call, and this step's fallback is the *purpose*, which is itself
-            // optional — so refusing empty would make enter-through impossible for anyone who skipped it.
-            // An empty phrase means "do not search", and the command says so rather than doing nothing
-            // quietly.
+            // Flag-only, and never refused. `--skills "pdf tables"` is the scripted path where a picker
+            // cannot run; at a terminal this step is not asked at all, because `find` shows the catalogue.
             return { ok: true, value: value.trim() }
         case "skills": {
             const byNumber = SKILLS_CHOICES[Number(value) - 1]
@@ -1713,7 +1710,8 @@ function manifestFor(answers: InitAnswers): string {
         `  dir: ./skills`,
         `  maxActive: 1`,
         `  threshold: 0.35        # normalised floor; below it nothing activates`,
-        `  budget: 5000           # tokens across every active skill`,
+        `  #                      # there is no token budget: maxActive is the only limit, and a`,
+        `  #                      # skill's size is shown in the catalogue where you choose it`,
         ``,
         `# Phase 3.5 — knowledge, keyword-gated and never pinned (create ./knowledge first)`,
         `# knowledge: { dir: ./knowledge, maxActive: 2, budget: 600 }`,

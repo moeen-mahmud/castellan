@@ -290,7 +290,6 @@ export class Agent {
                           ? skillsConfig.dir
                           : resolve(loaded.dir, skillsConfig.dir),
                       maxActive: skillsConfig.maxActive,
-                      budget: skillsConfig.budget,
                       threshold: skillsConfig.threshold,
                       style,
                       agentDir: loaded.dir,

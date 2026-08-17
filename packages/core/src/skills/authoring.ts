@@ -2,7 +2,7 @@
  * How well a skill is *written*, as distinct from whether it loads.
  *
  * Every finding here is a warning and nothing in this file can refuse a skill. That split is the same one
- * `validate` and `workspace` already draw: a budget bust stops the runtime and belongs in the loader, and
+ * `validate` and `workspace` already draw: a file the loader cannot parse stops the runtime and belongs there, and
  * "your description rests on one word" is a note from a careful reader. A heuristic judgement that
  * refuses to load a file is a heuristic nobody keeps.
  *
@@ -18,10 +18,11 @@
  */
 
 import { type ErrorDetail, skillAuthoring } from "../errors.ts"
+import { DESCRIPTION_MAX } from "./frontmatter.ts"
 import type { Skill } from "./index.ts"
 import { terms } from "./select.ts"
 
-/** The spec's own recommendation for a `SKILL.md` body. Above it, a warning; the loader's budget refuses. */
+/** The spec's own recommendation for a `SKILL.md` body. Above it, a warning — and only ever a warning. */
 const BODY_TOKENS_ADVISED = 5_000
 
 /**
@@ -99,6 +100,19 @@ export function checkSkillAuthoring(skills: readonly Skill[]): readonly ErrorDet
             )
         }
 
+        if (frontmatter.description.length > DESCRIPTION_MAX) {
+            // A warning rather than a refusal, and the reason is in `readDescription`: `anthropics/skills`'
+            // own `claude-api` is 1,068 characters against a documented 1,024, so enforcing it at load
+            // would drop a flagship skill written by the people who wrote the spec.
+            findings.push(
+                skillAuthoring(
+                    skill.name,
+                    `its description is ${frontmatter.description.length} characters, over the spec's ${DESCRIPTION_MAX}`,
+                    "Nothing here refuses it — the string is ranked, shown and budgeted whatever its length — but a client that enforces the cap will reject the skill, and every character is in the cache-stable prefix of every turn.",
+                ),
+            )
+        }
+
         if (frontmatter.description.length < DESCRIPTION_MIN) {
             findings.push(
                 skillAuthoring(
@@ -137,7 +151,7 @@ export function checkSkillAuthoring(skills: readonly Skill[]): readonly ErrorDet
                 skillAuthoring(
                     skill.name,
                     `its body is ${skill.tokens} tokens`,
-                    `The spec recommends keeping a SKILL.md body under ${BODY_TOKENS_ADVISED} tokens and moving detail into references/, which the model reads on demand rather than on every activation. Above skills.budget it stops being a warning and fails the load.`,
+                    `The spec recommends keeping a SKILL.md body under ${BODY_TOKENS_ADVISED} tokens and moving detail into references/, which the model reads on demand rather than on every activation. Nothing refuses it — there is no skills budget — so this is the only place the cost is reported before a turn pays it.`,
                 ),
             )
         }

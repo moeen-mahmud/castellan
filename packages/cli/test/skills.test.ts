@@ -283,10 +283,11 @@ describe("install", () => {
         expect(written).toContain("already installed")
     })
 
-    test("a body over skills.budget is refused before anything is copied", () => {
-        // The dead end this prevents: a body over the budget **fails the load**, so installing one would
-        // break `list`, `validate` and every turn — to add a skill that could never have activated.
-        // `skill-creator` from anthropics/skills is 9,065 tokens and is exactly this case.
+    test("a very large body installs — size is shown at the choice, never refused after it", () => {
+        // The inverse of what this asserted. There *was* a check against `skills.budget`, and it is what
+        // turned somebody ticking eleven skills in the catalogue into "9 of 11 installed": `pptx` at 5,441
+        // tokens and `skill-creator` at 9,065 refused against a 5,000 default they never chose. The budget
+        // is gone (decision 11.59) and the catalogue prints every body's size on the row you tick.
         const manifest = agent({ skills: false })
         const dir = mkdtempSync(join(tmpdir(), "cli-skills-big-"))
         dirs.push(dir)
@@ -295,9 +296,10 @@ describe("install", () => {
             join(dir, "huge", "SKILL.md"),
             `---\nname: huge\ndescription: A very large skill. Use when nothing else fits.\n---\n\n${"word ".repeat(6000)}\n`,
         )
-        expect(run({ manifestPath: manifest, action: "install", name: dir })).toBe(1)
-        expect(written).toContain("would stop this agent loading")
-        expect(existsSync(join(dirname(manifest), "skills", "huge"))).toBe(false)
+        expect(run({ manifestPath: manifest, action: "install", name: dir })).toBe(0)
+        expect(existsSync(join(dirname(manifest), "skills", "huge"))).toBe(true)
+        // And it loads afterwards, which is the half the old refusal existed to protect.
+        expect(run({ manifestPath: manifest, action: "list" })).toBe(0)
     })
 
     test("a path with no SKILL.md anywhere says so", () => {
@@ -322,17 +324,19 @@ describe("remove", () => {
     })
 
     test("it works when the catalogue cannot load at all", () => {
-        // The ordering that fixes the dead end: with `remove` behind `loadSkills`, a skill over the budget
-        // made the one command that could undo it the one that could not run.
+        // The ordering that fixes a dead end: with `remove` behind `loadSkills`, an unloadable skill makes
+        // the one command that could undo it the one that cannot run. The original cause was a body over
+        // `skills.budget`; that budget is gone, and a broken file is the case that remains — a `SKILL.md`
+        // whose `name` does not match its directory, which the spec requires and the loader enforces.
         const manifest = agent()
-        mkdirSync(join(dirname(manifest), "skills", "huge"), { recursive: true })
+        mkdirSync(join(dirname(manifest), "skills", "broken"), { recursive: true })
         writeFileSync(
-            join(dirname(manifest), "skills", "huge", "SKILL.md"),
-            `---\nname: huge\ndescription: A very large skill. Use when nothing else fits.\n---\n\n${"word ".repeat(6000)}\n`,
+            join(dirname(manifest), "skills", "broken", "SKILL.md"),
+            "---\nname: something-else\ndescription: Its name does not match its directory.\n---\n\nBody.\n",
         )
         // `list` is expected to fail here — that is the load contract doing its job.
         expect(() => run({ manifestPath: manifest, action: "list" })).toThrow()
-        expect(run({ manifestPath: manifest, action: "remove", name: "huge" })).toBe(0)
+        expect(run({ manifestPath: manifest, action: "remove", name: "broken" })).toBe(0)
     })
 
     test("an unknown name lists the known ones", () => {

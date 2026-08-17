@@ -54,8 +54,7 @@ describe("the happy path", () => {
         state = commit(state) // composio: select step, default "no other apps"
         state = commit(state) // telegram: select step, default "not on Telegram"
         state = commit(state) // server: select step, default "no HTTP API"
-        state = commit(state) // skills: select step, index 0 is "search the catalogues"
-        state = commit(state) // skillsSearch: text step, defaults to the purpose
+        state = commit(state) // skills: select step, index 0 opens the catalogue picker after the wizard
         state = commit(state) // dir: derived from name
         expect(state.phase).toBe("confirm")
 
@@ -86,8 +85,7 @@ describe("the happy path", () => {
         state = commit(state) // composio default
         state = commit(state) // telegram default
         state = commit(state) // server default
-        state = commit(state) // skills — index 0 searches the catalogues
-        state = commit(state) // skillsSearch — defaults to the purpose
+        state = commit(state) // skills — index 0 opens the catalogue picker after the wizard
         state = commit(state) // dir — apiKeyEnv was skipped
         expect(state.phase).toBe("confirm")
         expect(partialOf(state).apiKeyEnv).toBe(undefined)
@@ -142,8 +140,7 @@ describe("back navigation", () => {
         state = commit(state) // composio
         state = commit(state) // telegram
         state = commit(state) // server
-        state = commit(state) // skills — index 0 searches the catalogues
-        state = commit(state) // skillsSearch — defaults to the purpose
+        state = commit(state) // skills — index 0 opens the catalogue picker after the wizard
         state = commit(state) // dir
         expect(state.phase).toBe("confirm")
         state = reduceWizard(state, {
@@ -212,5 +209,39 @@ describe("flags answering everything", () => {
             "endpoint",
             "directory",
         ])
+    })
+})
+
+describe("the skills question never becomes a text box", () => {
+    /**
+     * The regression guard for a real complaint. `find` was implemented as a wizard *question* — "What
+     * does it do often? Words a skill's own description would use" — in a tree that already had a
+     * catalogue picker, so init asked somebody to describe a skill instead of showing them the skills.
+     * The answer opens the picker after the wizard; the wizard itself asks nothing more.
+     */
+    test("choosing `find` asks no follow-up question", () => {
+        let state = startWizard({ user: "M", name: "Pip", purpose: "x", preset: "ollama" }, {})
+        state = commit(state) // model
+        state = commit(state) // baseUrl
+        state = commit(state) // system
+        state = commit(state) // web
+        state = commit(state) // composio
+        state = commit(state) // telegram
+        state = commit(state) // server
+        expect(currentQuestion(state)?.step).toBe("skills")
+        state = commit(state) // index 0 is `find`
+        expect(partialOf(state).skills).toBe("find")
+        // Straight to the next real question. A `skillsSearch` step here is the defect.
+        expect(currentQuestion(state)?.step).toBe("dir")
+        expect(partialOf(state).skillsSearch).toBe(undefined)
+    })
+
+    test("`find` and `starter` ask the same number of questions", () => {
+        // If one answer added a step, the step counter would jump mid-flow — and the reason it used to was
+        // that the expensive answer asked for words it did not need.
+        const base = { user: "M", name: "Pip", purpose: "x", preset: "ollama" } as const
+        const withFind = stepCounts(startWizard({ ...base, skills: "find" }, {})).total
+        const withStarter = stepCounts(startWizard({ ...base, skills: "starter" }, {})).total
+        expect(withFind).toBe(withStarter)
     })
 })

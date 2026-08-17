@@ -754,15 +754,6 @@ export function skillAuthoring(name: string, detail: string, hint: string): Erro
     }
 }
 
-export function skillOverBudget(name: string, tokens: number, budget: number): ConfigError {
-    return new ConfigError({
-        code: "skill_over_budget",
-        message: `The skill ${name} has a ${tokens}-token body against skills.budget ${budget}, so it could never activate.`,
-        hint: "Split the body, move detail into references/ for the model to read on demand, or raise skills.budget. The spec recommends keeping a SKILL.md body under 5,000 tokens for this reason. Refused at load rather than left unselectable, which is the same starved-by-configuration shape as a knowledge entry over its budget.",
-        field: "skills.budget",
-    })
-}
-
 // ─── Unsupported ─────────────────────────────────────────────────────────────────────────
 
 export function notImplementedYet(feature: string, phase: string): ConfigError {

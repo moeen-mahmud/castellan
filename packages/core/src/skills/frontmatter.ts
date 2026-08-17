@@ -84,7 +84,8 @@ export function isSkillName(name: string): boolean {
 }
 
 const NAME_MAX = 64
-const DESCRIPTION_MAX = 1024
+/** The spec's cap. Warned about by `checkSkillAuthoring`, never enforced at load — see `readDescription`. */
+export const DESCRIPTION_MAX = 1024
 const COMPATIBILITY_MAX = 500
 
 /**
@@ -128,10 +129,14 @@ export function parseSkillFile(dirName: string, raw: string): ParsedSkillFile {
                 COMPATIBILITY_MAX,
                 "compatibility",
             ),
+            // A list as well as a string. `github/awesome-copilot` writes `allowed-tools` as a YAML
+            // sequence in 6 of its skills, and refusing them meant six real skills were "unusable" over
+            // the shape of a field decision 11.45 says is *read and never acted on*. Joined for display,
+            // which is the only thing that happens to it.
             ...optionalText(
                 dirName,
                 "allowed-tools",
-                record["allowed-tools"],
+                flatten(record["allowed-tools"]),
                 undefined,
                 "allowedTools",
             ),
@@ -172,12 +177,12 @@ function readDescription(dirName: string, value: unknown): string {
             "it declares no description, which the spec requires and which is the only thing selection has to go on.",
         )
     }
-    if (value.length > DESCRIPTION_MAX) {
-        throw skillFileInvalid(
-            dirName,
-            `its description is ${value.length} characters, and the spec allows at most ${DESCRIPTION_MAX}.`,
-        )
-    }
+    // Over the spec's cap is **not** a load failure, and real data is why. `anthropics/skills`' own
+    // `claude-api` carries a 1,068-character description against a documented limit of 1,024 — so
+    // enforcing the letter here drops a flagship skill from the catalogue of the people who wrote the
+    // spec, for a length that breaks nothing: the string is ranked, shown and budgeted whatever it is.
+    // This is the `validate`-versus-`workspace` split applied to third-party files. `checkSkillAuthoring`
+    // warns about it, which is where a judgement belongs.
     return value.trim()
 }
 
@@ -200,6 +205,19 @@ function readMetadata(dirName: string, value: unknown): Readonly<Record<string, 
         out[key] = typeof entry === "string" ? entry.trim() : String(entry)
     }
     return out
+}
+
+/**
+ * A YAML sequence of scalars, rendered as a comma-separated string; anything else untouched.
+ *
+ * Narrow on purpose: only a list of scalars is flattened, so a nested structure still fails and says so
+ * rather than being stringified into `[object Object]` and displayed as if it were meaningful.
+ */
+function flatten(value: unknown): unknown {
+    if (!Array.isArray(value)) return value
+    if (!value.every((entry) => typeof entry === "string" || typeof entry === "number"))
+        return value
+    return value.join(", ")
 }
 
 function optionalText<K extends string>(

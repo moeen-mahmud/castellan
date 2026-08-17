@@ -276,12 +276,15 @@ export const COMMANDS: readonly CommandSpec[] = [
         // Three questions rather than one. `validate` warns and exits 0 like `workspace` does, because
         // everything it reports is a judgement — a skill that does not load has already failed by then.
         name: "skills",
-        summary: "this agent's skills: install from a source, scaffold, list, check",
+        summary: "browse the catalogue and install — or list, scaffold, check one agent's skills",
         args: [
             {
                 name: "action",
-                required: true,
-                help: "what to do",
+                // Optional, so bare `skills` is the browse screen. That is the entry point somebody who
+                // wants a skill actually has: every other form needs an agent, a query or a slug they
+                // have not seen yet.
+                required: false,
+                help: "what to do — omit to browse the catalogue and tick what you want",
                 choices: [
                     { value: "list", help: "every skill, its size, and whether it ships scripts" },
                     {
@@ -300,7 +303,11 @@ export const COMMANDS: readonly CommandSpec[] = [
                     { value: "validate", help: "authoring warnings — never a refusal" },
                 ],
             },
-            MANIFEST,
+            {
+                ...MANIFEST,
+                required: false,
+                help: "path or sandbox agent name (not used when browsing)",
+            },
             {
                 name: "name",
                 required: false,
