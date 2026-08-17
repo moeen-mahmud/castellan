@@ -62,4 +62,8 @@ export {
     reapBackgrounded,
     runCommand,
 } from "./run.ts"
+export {
+    SystemScriptRunner,
+    type SystemScriptRunnerOptions,
+} from "./scripts.ts"
 export { ShellSessions } from "./session.ts"

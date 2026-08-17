@@ -14,9 +14,9 @@
  */
 
 import { telegramChannel } from "@castellan/channel-telegram"
-import type { ChannelFactory, ToolProviderFactory } from "@castellan/core"
+import type { ChannelFactory, ScriptRunner, ToolProviderFactory } from "@castellan/core"
 import { composioFromConfig } from "@castellan/tools-composio"
-import { systemFromConfig } from "@castellan/tools-system"
+import { SystemScriptRunner, systemFromConfig } from "@castellan/tools-system"
 import { webFromConfig } from "@castellan/tools-web"
 
 export const TOOL_PROVIDERS: Readonly<Record<string, ToolProviderFactory>> = {
@@ -30,6 +30,23 @@ export const TOOL_PROVIDERS: Readonly<Record<string, ToolProviderFactory>> = {
     // that runs commands are different grants, and a manifest should be able to make one and not the
     // other.
     web: webFromConfig,
+}
+
+/**
+ * How a skill's script runs, from the one package allowed to start a process.
+ *
+ * Supplied by every command that builds a runtime, and unconditionally — unlike a tool provider, which a
+ * manifest has to select. There is no grant here to be careful with: a script only becomes callable once
+ * a skill ships one *and* that skill activates, and both of those are the workspace's decision. Omitting
+ * it would mean a skill's `scripts/` is silently never discovered, which reads to whoever wrote the skill
+ * as the runtime being broken.
+ *
+ * `env` is `process.env` rather than the manifest's, because this is constructed before any manifest is
+ * loaded. It is used for the `PATH` walk in `has()`; the *run* inherits the process environment the same
+ * way `exec` does.
+ */
+export function scriptRunner(): ScriptRunner {
+    return new SystemScriptRunner({ env: process.env })
 }
 
 /** For an error that has to say what *is* available. */

@@ -1418,19 +1418,23 @@ budgets, which exist by then. Skills only add the when-not-to-use check to it.
 
 **Acceptance**
 
-- [ ] 50 skills index in under 50 ms cold, under 5 ms cached; a touched file re-reads and the other 49
-      do not
-- [ ] Selection picks the right skill on ≥20 fixture inputs; below-threshold inputs select none — the
-      half that catches a scorer which always returns something
+- [x] 50 skills index in under 50 ms cold, under 5 ms cached; a touched file re-reads and the other 49
+      do not — measured **12.74 ms / 0.39 ms**
+- [x] Selection picks the right skill on ≥20 fixture inputs; below-threshold inputs select none — the
+      half that catches a scorer which always returns something. 17 positives all top-1 correct, scoring
+      0.369–0.600 against the 0.35 default; two negatives score 0.000. Measurement is what found the
+      normalisation defect — see the corrections below
 - [ ] Active skill's scripts appear in the catalogue the model was shown; inactive ones do not
-- [ ] **Slot 1 is byte-identical across a turn that activates a skill and one that does not**, asserted
+- [x] **Slot 1 is byte-identical across a turn that activates a skill and one that does not**, asserted
       on the assembled prefix rather than trusted
-- [ ] A skill body over the whole budget fails at load, naming the skill and both numbers
+- [x] A skill body over the whole budget fails at load, naming the skill and both numbers
 - [ ] A skill vendored unmodified from `anthropics/skills` loads with a warning, not an error — which
       is the whole of decision 6.1's compliance claim, and only a real third-party skill can check it
 - [ ] Python script skill runs end to end with `uv`
-- [ ] Skill declaring Python with no runtime fails **at load**, naming both
-- [ ] Adding a skill file and reloading picks it up without restart
+- [x] Skill declaring Python with no runtime fails **at load**, naming both — probed once per distinct
+      interpreter, on every load including a warm cache, since a machine can lose one between boots
+- [x] Adding a skill file and reloading picks it up without restart; an edited *body* takes effect on
+      the next turn without even that, because bodies are read on activation
 - [ ] `castellan skills validate` rejects a missing `description`; **warns** on a missing
       when-not-to-use
 - [ ] Boot budget met with 50 skills
@@ -1441,6 +1445,30 @@ to refuse. Honouring `allowed-tools` as a grant: it is read and displayed, never
 downloaded folder that could widen the agent's authority is the thing the `config_set` floor refuses.
 A second index. Nested `references/` loading — the harness injects `SKILL.md` and nothing else; a
 referenced file is the model's to read through `file_read`.
+
+### Corrections found while building
+
+- **BM25's normalisation cancelled idf, and only measurement showed it.** Dividing by `Σ idf(q)` over the
+  same terms the score sums means a one-term query scores a match on `the` exactly as well as a match on
+  `pdf` — idf survives only as relative weighting *between* several terms. "what's the weather in dhaka
+  tomorrow" reduced to `{the}` and scored **0.771** against `git-release`, above all seventeen true
+  positives. `discriminating()` — present in the corpus, and in at most half of it — takes it to 0.000.
+  Reasoning produced the bug; a calibration script printing scores for inputs expected to be boring found
+  it.
+- **`when_not_to_use` is scored by nothing, against what this plan first said.** A lexical match on a
+  field describing non-applicability is evidence *for* the skill: "not for scanned images — use
+  `ocr-extract`" would win a query about scanned images, and one meant for `ocr-extract`. Decision 6.3's
+  73% → 85% measures **the model's** routing with negative examples in front of it, not a scorer's, so
+  the field ships in the injected body and stays out of the ranking. Scoring it negatively is the better
+  answer and needs a weighting constant nobody has measured.
+- **`TurnInput` had no `skills` field, so `send` dropped them.** `assembleContext` was right,
+  `previewContext` called it directly and was right, and the object literal reaching `runTurn` passed
+  `skills` through a spread — which TypeScript does not excess-property-check. Green everywhere, connected
+  nowhere. Found while wiring Part B, fixed, and now covered by `skills-turn.test.ts`, which reads the
+  recorded request body rather than any intermediate function's return value.
+- **A skill script's deadline must clamp under `limits.toolTimeoutMs`.** The harness *abandons* a handler
+  at its own timeout rather than killing it, so a tie leaves a process with nothing referencing it. Five
+  seconds under, the same margin `exec` uses.
 
 ### Corrections to this phase as first written
 

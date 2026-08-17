@@ -25,7 +25,7 @@ import { TurnStreams } from "../store/buffer.ts"
 import { SqliteStore } from "../store/sqlite/store.ts"
 import type { RuntimeMode, Store } from "../store/store.ts"
 import { ToolRegistry } from "../tools/registry.ts"
-import type { ToolProvider, ToolProviderFactory } from "../tools/types.ts"
+import type { ScriptRunner, ToolProvider, ToolProviderFactory } from "../tools/types.ts"
 import { Agent } from "./agent.ts"
 import { type ChannelFactory, ChannelHub } from "./channels.ts"
 import { claimLeases, LEASE_BEAT_MS } from "./lease.ts"
@@ -70,6 +70,14 @@ export interface RuntimeOptions {
      * nothing and blaming the slugs.
      */
     readonly toolProviders?: Readonly<Record<string, ToolProviderFactory>>
+    /**
+     * How a skill's script runs. Same shape and same reasoning as `toolProviders`: core starts no
+     * processes, so the one package allowed to supplies this.
+     *
+     * Omitted means skills carry prose and their `scripts/` is never discovered, which is the right
+     * default for an embedder with no shell rather than a degraded version of having one.
+     */
+    readonly scriptRunner?: ScriptRunner
     /**
      * Channel transport factories, by the `type` a manifest's `channels[]` entry names.
      *
@@ -274,6 +282,9 @@ export class Runtime {
             loaded.map((entry: LoadedManifest, index) =>
                 Agent.create(entry, bus, store, {
                     ...(registries[index] === undefined ? {} : { tools: registries[index] }),
+                    ...(options.scriptRunner === undefined
+                        ? {}
+                        : { scriptRunner: options.scriptRunner }),
                     // The manifest's live env, not the ambient one: it layers the real environment
                     // over any `.env` beside the manifest, which is what the load-time key check
                     // validated against. Passing `process.env` here instead is how `validate` and

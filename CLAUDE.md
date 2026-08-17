@@ -464,6 +464,21 @@ Never claim a performance property without a number in `evals/` and a script to 
   `tool_calls`/`tool_call_id` columns. Each of the three dropped them at some point during Phase 3,
   and none of the three failed loudly: the endpoint accepts the request and the model simply never
   sees the call it made.
+- **A field threaded through a pipeline needs one test at the *end* of it, because a spread is not
+  excess-property-checked.** `assembleContext` handled `skills` correctly and `previewContext` called
+  it directly, so both were green — while `TurnInput` had no `skills` field at all and `Agent.send`
+  passed one through `...(x ? {} : { skills })`, which TypeScript accepts silently. The block was
+  dropped on the only path that matters, with the preview still reporting it perfectly. Same shape as
+  `ChatMessage.toolCalls` above: every layer individually right and one of them not connected. The
+  cheap guard is a test that reads the *request body* — `skills-turn.test.ts` records `fetch` and
+  greps the prompt. A related way to be green for the wrong reason: a default parameter fires on an
+  explicitly passed `undefined`, so `load(dir, undefined)` used the runner it was meant to omit, and
+  the no-runner test passed while testing nothing.
+- **`uv run` materialises `.venv/` and `uv.lock` inside the skill directory.** Verified live: a
+  `page-count` skill with a `pyproject.toml` gained both on its first call, and the first run's
+  observation carries uv's own `Creating virtual environment` chatter. Neither is a bug — it is what
+  declaring a Python environment means — but a skill shipping Python needs those two paths in a
+  `.gitignore`, and an author reading a first observation should know the noise is one-time.
 - **Both dialects must put the same guidance in front of the model.** `native`'s
   `function.description` carries `whenToUse` and `whenNotToUse`, not just the summary. Trimming it to
   the summary makes `evals/tools` measure the guidance and report it as a property of the dialect.

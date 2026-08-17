@@ -264,6 +264,32 @@ export class ToolRegistry {
         return this.#order.length
     }
 
+    /**
+     * A new registry with per-turn tools layered on top. Never mutates, and never re-runs the budget.
+     *
+     * For an active skill's scripts, which exist for one turn and must not reach the slot-1 catalogue.
+     * Immutability is what makes that safe: the base registry is the one slot 1 was rendered from at
+     * load, it keeps existing untouched, and a turn's overlay cannot leak into the cached prefix even by
+     * accident.
+     *
+     * The budget is deliberately not reapplied. `applyBudget` exists to stop a large provider catalogue
+     * from crowding out write tools in a prompt paid for on every turn; these entries are described in
+     * the skill's own block, are bounded by `skills.maxActive`, and dropping one silently would leave the
+     * model reading an instruction naming a tool the executor would then refuse.
+     */
+    withTurnTools(extra: readonly Tool[]): ToolRegistry {
+        if (extra.length === 0) return this
+        const base = this.#order
+            .map((spec) => this.#bySlug.get(spec.slug))
+            .filter((tool): tool is Tool => tool !== undefined)
+        return new ToolRegistry({
+            tools: [...base, ...extra],
+            dropped: this.dropped,
+            warnings: this.warnings,
+            notEnabled: this.notEnabled,
+        })
+    }
+
     /** In catalogue order, which is manifest order. Feeds slot 1 and must stay stable. */
     specs(): readonly ToolSpec[] {
         return this.#order

@@ -29,12 +29,14 @@ import type { ChatMessage } from "../model/provider.ts"
 import { type ResolvedRoles, type ResolveRolesOptions, resolveRoles } from "../model/roles.ts"
 import { loadSkills, type SkillCatalogue } from "../skills/index.ts"
 import { activateSkills } from "../skills/load.ts"
+import { renderScripts, skillScriptTools } from "../skills/tools.ts"
 import type { SessionSummary, Store, TurnRecord } from "../store/store.ts"
 import { passThroughFilter, type StreamFilter } from "../tools/dialect/dialect.ts"
 import { nativeDialect, nativeWireTokens } from "../tools/dialect/native.ts"
 import { nltDialect } from "../tools/dialect/nlt.ts"
 import { onceOnlyTools } from "../tools/policy.ts"
 import { ToolRegistry } from "../tools/registry.ts"
+import type { ScriptRunner, Tool } from "../tools/types.ts"
 import { activateKnowledge, type KnowledgeBase, loadKnowledge } from "../workspace/knowledge.ts"
 import {
     loadWorkspace,
@@ -61,6 +63,14 @@ export interface AgentCreateOptions extends ResolveRolesOptions {
      * asynchronous — a provider is consulted, and `Agent.create` is not the place to await one.
      */
     readonly tools?: ToolRegistry
+    /**
+     * How a skill's script runs, supplied from outside because core starts no processes.
+     *
+     * Omitted means skills are read for their prose and their `scripts/` is not discovered at all —
+     * coherent, and what an embedder with no shell wants. Discovered-but-unrunnable would be worse: the
+     * model would be told about a tool that refuses.
+     */
+    readonly scriptRunner?: ScriptRunner
 }
 
 export interface AgentSendOptions {
@@ -131,6 +141,8 @@ export class Agent {
 
     #bus: EventBus
     #toolRuntime: ToolRuntime | undefined
+    /** Absent when the embedder supplied none; then a skill's scripts are never discovered. */
+    readonly #scriptRunner: ScriptRunner | undefined
     /**
      * Slot 2, rendered **lazily and once**.
      *
@@ -163,6 +175,7 @@ export class Agent {
         tools: ToolRegistry
         knowledge: KnowledgeBase | undefined
         skills: SkillCatalogue | undefined
+        scriptRunner: ScriptRunner | undefined
     }) {
         this.id = init.loaded.manifest.id
         this.manifest = init.loaded.manifest
@@ -177,6 +190,7 @@ export class Agent {
         this.tools = init.tools
         this.knowledge = init.knowledge
         this.skills = init.skills
+        this.#scriptRunner = init.scriptRunner
 
         this.#manifestPath = init.loaded.path
         this.#manifestMtime = mtimeOf(init.loaded.path)
@@ -280,6 +294,9 @@ export class Agent {
                       threshold: skillsConfig.threshold,
                       style,
                       agentDir: loaded.dir,
+                      ...(options.scriptRunner === undefined
+                          ? {}
+                          : { runner: options.scriptRunner }),
                   })
 
         // Read here rather than threaded in from `Runtime.create`, which calls the same function for
@@ -305,6 +322,7 @@ export class Agent {
             tools: options.tools ?? ToolRegistry.empty(),
             knowledge,
             skills,
+            scriptRunner: options.scriptRunner,
         })
     }
 
@@ -576,13 +594,19 @@ export class Agent {
     #activateSkills(
         input: string,
         history: readonly ChatMessage[],
-    ): readonly { name: string; content: string; role: "system" | "user" }[] {
-        if (this.skills === undefined) return []
+    ): readonly {
+        name: string
+        content: string
+        role: "system" | "user"
+        tools: readonly Tool[]
+    }[] {
+        const catalogue = this.skills
+        if (catalogue === undefined) return []
 
         const previous = [...history].reverse().find((message) => message.role === "assistant")
         const { active, notes } = activateSkills({
             input: previous === undefined ? input : `${input}\n${previous.content}`,
-            catalogue: this.skills,
+            catalogue,
             style: this.roles.main.capabilities.promptStyle,
         })
 
@@ -591,7 +615,25 @@ export class Agent {
         }
 
         const role = this.roles.main.capabilities.promptStyle.skillsIn
-        return active.map((skill) => ({ name: skill.name, content: skill.content, role }))
+        const runner = this.#scriptRunner
+        return active.map((entry) => {
+            // The catalogue record, for the scripts. `ActiveSkill` deliberately carries only what the
+            // block needs; looking the record up here keeps the activation result from growing a second
+            // copy of it that could drift.
+            const record = catalogue.skills.find((skill) => skill.name === entry.name)
+            const scripts = record === undefined ? "" : renderScripts(record, runner !== undefined)
+            return {
+                name: entry.name,
+                // The scripts section is appended, never interleaved — the authored body stays
+                // byte-identical, which is the line decision 4.19 draws.
+                content: scripts === "" ? entry.content : `${entry.content}\n\n${scripts}`,
+                role,
+                tools:
+                    record === undefined || runner === undefined
+                        ? []
+                        : skillScriptTools({ skill: record, runner }),
+            }
+        })
     }
 
     #configBlock(): string {

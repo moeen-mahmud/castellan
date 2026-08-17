@@ -25,7 +25,7 @@ import { type ApprovalRequest, executeIntents } from "../tools/execute.ts"
 import type { PolicyConfig } from "../tools/policy.ts"
 import type { ToolRegistry } from "../tools/registry.ts"
 import type { OnMutate } from "../tools/trust.ts"
-import type { ToolResult, WorkspaceWriteTarget } from "../tools/types.ts"
+import type { Tool, ToolResult, WorkspaceWriteTarget } from "../tools/types.ts"
 import { newStepId, newTurnId } from "./ids.ts"
 import { runStep } from "./step.ts"
 
@@ -98,10 +98,26 @@ export interface TurnInput {
     /** Workspace `volatile` tier, slot 3 — after the cache breakpoint. */
     readonly volatile?: string
     /**
-     * Activated knowledge entries, slot 5. Selected by the caller *per turn* — activation depends
-     * on the turn's input and nothing else, so it is stable across the steps within one.
+     * Activated knowledge entries, `SLOT.knowledge`. Selected by the caller *per turn* — activation
+     * depends on the turn's input and nothing else, so it is stable across the steps within one.
      */
     readonly knowledge?: readonly { readonly name: string; readonly content: string }[]
+    /**
+     * Activated skills: the body for `SLOT.skill`, and the script tools callable for this turn.
+     *
+     * Both halves travel together on purpose. A body describing `skill.pdf-processing.extract` while the
+     * executor has never heard of it is an agent that reads an instruction it cannot follow, and the
+     * reverse — a callable tool nothing told the model about — is a capability it cannot know it has.
+     *
+     * `tools` are layered onto the registry for the duration of the turn and are **never** rendered into
+     * slot 1, which is built once at load and must stay byte-identical.
+     */
+    readonly skills?: readonly {
+        readonly name: string
+        readonly content: string
+        readonly role: "system" | "user"
+        readonly tools: readonly Tool[]
+    }[]
     /** Workspace `reminder` tier, slot 9 — after the history. */
     readonly reminder?: string
     readonly role: ResolvedRole
@@ -212,7 +228,14 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
 
     try {
         const history: ChatMessage[] = [...input.history]
-        const tools = input.tools
+        // The active skills' script tools, layered on for this turn only. `withTurnTools` returns a new
+        // registry and leaves the one slot 1 was rendered from untouched, which is what keeps the cached
+        // prefix out of reach — `tools.blocks` is still the catalogue built at load.
+        const turnScripts = (input.skills ?? []).flatMap((skill) => skill.tools)
+        const tools =
+            input.tools === undefined || turnScripts.length === 0
+                ? input.tools
+                : { ...input.tools, registry: input.tools.registry.withTurnTools(turnScripts) }
 
         while (steps < input.limits.maxSteps) {
             if (link.signal.aborted) break
@@ -228,6 +251,15 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
                 ...(input.knowledge === undefined || input.knowledge.length === 0
                     ? {}
                     : { knowledge: input.knowledge }),
+                ...(input.skills === undefined || input.skills.length === 0
+                    ? {}
+                    : {
+                          skills: input.skills.map((skill) => ({
+                              name: skill.name,
+                              content: skill.content,
+                              role: skill.role,
+                          })),
+                      }),
                 ...(input.reminder === undefined ? {} : { reminder: input.reminder }),
                 history,
                 input: input.input,

@@ -232,11 +232,24 @@ export {
     activateSkills,
 } from "./skills/load.ts"
 export {
+    type InterpreterInput,
+    interpreterFor,
+    type ScriptPlan,
+    type ScriptResolution,
+    scriptSlug,
+} from "./skills/scripts.ts"
+export {
     bm25Selector,
     type ScoredSkill,
     type SkillSelector,
     terms as skillTerms,
 } from "./skills/select.ts"
+export {
+    renderScripts,
+    type SkillToolOptions,
+    scriptSpec,
+    skillScriptTools,
+} from "./skills/tools.ts"
 export {
     type TurnAttachment,
     type TurnBufferState,
@@ -372,6 +385,9 @@ export type {
     FieldError,
     JsonSchemaNode,
     JsonType,
+    ScriptRunner,
+    ScriptRunRequest,
+    ScriptRunResult,
     Tool,
     ToolAvailability,
     ToolContext,

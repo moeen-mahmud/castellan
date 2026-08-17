@@ -20,7 +20,7 @@ import { serve } from "@castellan/server"
 import { ambientEnv } from "#lib/ambient"
 import { EXIT_FAILURE, EXIT_OK } from "#lib/const"
 import { claimSignals, onExit } from "#lib/exit"
-import { CHANNEL_IDS, CHANNELS, PROVIDER_IDS, TOOL_PROVIDERS } from "#lib/providers"
+import { CHANNEL_IDS, CHANNELS, PROVIDER_IDS, scriptRunner, TOOL_PROVIDERS } from "#lib/providers"
 import { storePath } from "#lib/sandbox"
 
 export interface ServeOptions {
@@ -87,6 +87,7 @@ export async function serveCommand(options: ServeOptions): Promise<number> {
         env,
         bus,
         toolProviders: TOOL_PROVIDERS,
+        scriptRunner: scriptRunner(),
         channels: CHANNELS,
         // The one call site that passes this. See the file comment.
         startChannels: true,

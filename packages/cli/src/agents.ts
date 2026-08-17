@@ -9,7 +9,7 @@ import { processAlive, Runtime } from "@castellan/core"
 import { ambientEnv } from "#lib/ambient"
 import { EXIT_OK } from "#lib/const"
 import { onExit } from "#lib/exit"
-import { CHANNELS, TOOL_PROVIDERS } from "#lib/providers"
+import { CHANNELS, scriptRunner, TOOL_PROVIDERS } from "#lib/providers"
 import { duration, keyValue, type Row } from "#lib/render"
 import { storePath } from "#lib/sandbox"
 import type { AgentsOptions } from "#lib/schema"
@@ -18,6 +18,7 @@ export async function agentsCommand(options: AgentsOptions): Promise<number> {
     const runtime = await Runtime.create({
         agents: [...options.manifestPaths],
         toolProviders: TOOL_PROVIDERS,
+        scriptRunner: scriptRunner(),
         channels: CHANNELS,
         env: ambientEnv(options.manifestPaths),
         // The shared store, so the lease rows below are visible at all — and `lease: false`, so

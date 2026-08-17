@@ -679,6 +679,66 @@ export function skillNotApplied(name: string, detail: string, hint: string): Err
     }
 }
 
+/**
+ * A skill needs an interpreter this machine does not have.
+ *
+ * **At load, not at use.** A skill that reaches the catalogue and fails the first time the model calls
+ * its script has already been offered to whoever asked, and the refusal arrives after the agent has
+ * effectively promised to do the job. Probing is a filesystem walk of `PATH`, so it costs nothing at
+ * boot and hard rule 4 is untouched.
+ */
+export function skillRuntimeMissing(name: string, file: string, command: string): ConfigError {
+    return new ConfigError({
+        code: "skill_runtime_missing",
+        message: `The skill ${name} ships scripts/${file}, which needs ${command}, and ${command} is not on PATH.`,
+        hint:
+            command === "uv"
+                ? "The skill declares its own Python environment (pyproject.toml or requirements.txt), so it runs under `uv run`. Install uv, or remove the metadata file to fall back to python3."
+                : `Install ${command}, or remove the script. A skill whose script cannot run is refused at load rather than offered and then declined, because by the time the model reaches for it the agent has already told someone it can do the job.`,
+        field: "skills.dir",
+    })
+}
+
+/**
+ * A skill script ran and did not succeed.
+ *
+ * A `ToolError`, so it becomes the observation the model reads rather than ending the turn: a failed
+ * script is information — the wrong argument, a missing input file — and the model is the one who can act
+ * on it. The output is included because a non-zero exit with its stderr thrown away is the least useful
+ * possible report.
+ */
+export function skillScriptFailed(
+    skill: string,
+    file: string,
+    result: { readonly output: string; readonly code?: number; readonly timedOut: boolean },
+    interpreter?: string,
+): ToolError {
+    const how = result.timedOut
+        ? "did not finish inside its deadline"
+        : `exited ${result.code ?? "abnormally"}`
+    return new ToolError({
+        code: "skill_script_failed",
+        message: `scripts/${file} from the ${skill} skill ${how}.\n\n${result.output}`,
+        hint: result.timedOut
+            ? "It was left running rather than discarded, so its output keeps accumulating at the path above. Raise limits.toolTimeoutMs if the work genuinely takes longer, or give the script less to do in one call."
+            : `Read the output above — it is the script's own stderr. ${interpreter === undefined ? "The script runs through its own shebang." : `It runs under ${interpreter}.`} If the arguments were wrong, the skill's steps say what it expects.`,
+    })
+}
+
+/**
+ * A script slug was called with no runner behind it.
+ *
+ * Should be unreachable — a catalogue built without a runner contains no script tools — and named anyway,
+ * because "unreachable" plus a silent return is how a tool comes to do nothing at all.
+ */
+export function skillScriptUnavailable(slug: string): ToolError {
+    return new ToolError({
+        code: "skill_script_unavailable",
+        message: `${slug} cannot run: this runtime has no script runner.`,
+        hint: "The embedder did not supply one, so skills carry prose only. This should not have been offered — report it, because a tool in the catalogue that cannot run is a bug rather than a configuration.",
+    })
+}
+
 export function skillOverBudget(name: string, tokens: number, budget: number): ConfigError {
     return new ConfigError({
         code: "skill_over_budget",

@@ -34,14 +34,17 @@ import { mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSy
 import { dirname, join } from "node:path"
 import { BRAND } from "../brand.ts"
 import { estimateTokens } from "../context/tokens.ts"
-import { skillOverBudget, skillsDirMissing } from "../errors.ts"
+import { skillOverBudget, skillRuntimeMissing, skillsDirMissing } from "../errors.ts"
 import { DEFAULT_PROMPT_STYLE, type PromptStyle, renderPromptStyle } from "../model/prompt-style.ts"
+import type { ScriptRunner } from "../tools/types.ts"
 import { parseSkillFile, type SkillFrontmatter } from "./frontmatter.ts"
+import { interpreterFor, type ScriptPlan } from "./scripts.ts"
 
 /** Bumped when the cached shape changes, so an old file is ignored rather than misread. */
 const CACHE_VERSION = 1
 const CACHE_FILE = "skills.idx.json"
 const SKILL_FILE = "SKILL.md"
+const SCRIPTS_DIR = "scripts"
 
 export interface Skill {
     /** Spec-validated and equal to the directory's basename, so it is safe in a tool slug. */
@@ -51,6 +54,20 @@ export interface Skill {
     readonly frontmatter: SkillFrontmatter
     /** What the rendered body will cost. Measured on a cold scan, then carried in the cache. */
     readonly tokens: number
+    /**
+     * Runnable entries in `scripts/`, exposed as tools only while this skill is active.
+     *
+     * Empty when the skill ships none, or when no `ScriptRunner` was supplied — an embedder without one
+     * gets skills without scripts, which is coherent: a skill carrying only prose is a valid skill.
+     */
+    readonly scripts: readonly ScriptPlan[]
+    /**
+     * Files in `scripts/` that nothing here can run, with the reason.
+     *
+     * Carried so `skills validate` can warn. `scripts/deploy.sh` with no executable bit looks installed
+     * and never runs, which is the shape that has to be said out loud rather than dropped.
+     */
+    readonly ignoredScripts: readonly { readonly file: string; readonly reason: string }[]
 }
 
 export interface SkillCatalogue {
@@ -77,6 +94,13 @@ export interface LoadSkillsOptions {
      * is what a test wants, and what a read-only workspace gets.
      */
     readonly agentDir?: string
+    /**
+     * How a script gets run, and how an interpreter gets probed. Omitted means scripts are not
+     * discovered at all rather than discovered and unrunnable.
+     */
+    readonly runner?: ScriptRunner
+    /** Which runtime hosts a `.ts` or `.js` script. Defaults to whichever is executing.  */
+    readonly host?: "bun" | "node"
 }
 
 export function cachePath(agentDir: string): string {
@@ -88,6 +112,18 @@ interface CachedSkill {
     readonly size: number
     readonly tokens: number
     readonly frontmatter: SkillFrontmatter
+    /**
+     * The `scripts/` directory's own mtime, or 0 when there is none.
+     *
+     * Separate from `SKILL.md`'s because adding `scripts/new.py` does not touch `SKILL.md`, so keying the
+     * entry on that alone would leave a new script undiscovered until something unrelated changed. The
+     * gap that remains is a `chmod +x` on an existing file, which changes neither mtime — documented
+     * rather than solved, because the fix is stat-ing every script on every warm boot to catch a case
+     * that a restart already handles.
+     */
+    readonly scriptsMtimeMs: number
+    readonly scripts: readonly ScriptPlan[]
+    readonly ignoredScripts: readonly { readonly file: string; readonly reason: string }[]
 }
 
 interface CacheFile {
@@ -136,18 +172,35 @@ export function loadSkills(options: LoadSkillsOptions): SkillCatalogue {
             continue
         }
 
+        const scriptsMtimeMs = directoryMtime(join(dir, SCRIPTS_DIR))
         const hit = cache?.skills[name]
-        if (hit !== undefined && hit.mtimeMs === stat.mtimeMs && hit.size === stat.size) {
+        if (
+            hit !== undefined &&
+            hit.mtimeMs === stat.mtimeMs &&
+            hit.size === stat.size &&
+            hit.scriptsMtimeMs === scriptsMtimeMs
+        ) {
             fresh[name] = hit
-            skills.push({ name, dir, frontmatter: hit.frontmatter, tokens: hit.tokens })
+            skills.push({
+                name,
+                dir,
+                frontmatter: hit.frontmatter,
+                tokens: hit.tokens,
+                scripts: hit.scripts,
+                ignoredScripts: hit.ignoredScripts,
+            })
             continue
         }
 
         allCached = false
         const parsed = parseSkillFile(name, readFileSync(path, "utf8"))
         const tokens = estimateTokens(renderPromptStyle(parsed.body, style))
-        fresh[name] = { ...stat, tokens, frontmatter: parsed.frontmatter }
-        skills.push({ name, dir, frontmatter: parsed.frontmatter, tokens })
+        const found =
+            options.runner === undefined
+                ? { scripts: [], ignoredScripts: [] }
+                : discoverScripts(name, dir, options.host ?? hostRuntime())
+        fresh[name] = { ...stat, scriptsMtimeMs, tokens, frontmatter: parsed.frontmatter, ...found }
+        skills.push({ name, dir, frontmatter: parsed.frontmatter, tokens, ...found })
     }
 
     // Checked after the scan rather than inside it so one oversized skill is reported against the
@@ -155,6 +208,26 @@ export function loadSkills(options: LoadSkillsOptions): SkillCatalogue {
     for (const skill of skills) {
         if (skill.tokens > options.budget) {
             throw skillOverBudget(skill.name, skill.tokens, options.budget)
+        }
+    }
+
+    // Probed on every load, warm cache included: a machine can gain or lose an interpreter between
+    // boots, and a cached "python3 was here last week" is exactly the kind of stale fact that turns into
+    // a failure at the moment the model finally reaches for the script.
+    const runner = options.runner
+    if (runner !== undefined) {
+        const seen = new Set<string>()
+        for (const skill of skills) {
+            for (const script of skill.scripts) {
+                const required = script.requires
+                if (required === undefined) continue
+                if (!seen.has(required)) {
+                    seen.add(required)
+                    if (!runner.has(required)) {
+                        throw skillRuntimeMissing(skill.name, script.file, required)
+                    }
+                }
+            }
         }
     }
 
@@ -175,6 +248,72 @@ export function loadSkills(options: LoadSkillsOptions): SkillCatalogue {
     }
 }
 
+/** The host runtime, for a `.ts` or `.js` script. The one interpreter guaranteed to exist. */
+function hostRuntime(): "bun" | "node" {
+    return typeof (globalThis as { Bun?: unknown }).Bun === "undefined" ? "node" : "bun"
+}
+
+/** 0 for an absent directory, so "no scripts" and "scripts unchanged" are the same comparison. */
+function directoryMtime(path: string): number {
+    try {
+        const found = statSync(path)
+        return found.isDirectory() ? found.mtimeMs : 0
+    } catch {
+        return 0
+    }
+}
+
+/**
+ * Resolve every file in `scripts/` to an interpreter, or to a stated reason it has none.
+ *
+ * Sorted, so two machines with the same skill expose its scripts in the same order — the catalogue a
+ * model reads should not depend on directory iteration order.
+ */
+function discoverScripts(
+    name: string,
+    dir: string,
+    host: "bun" | "node",
+): {
+    scripts: readonly ScriptPlan[]
+    ignoredScripts: readonly { readonly file: string; readonly reason: string }[]
+} {
+    let entries: string[]
+    let root: string[]
+    try {
+        entries = readdirSync(join(dir, SCRIPTS_DIR), { withFileTypes: true })
+            .filter((entry) => entry.isFile())
+            .map((entry) => entry.name)
+            .sort()
+        root = readdirSync(dir)
+    } catch {
+        return { scripts: [], ignoredScripts: [] }
+    }
+
+    const scripts: ScriptPlan[] = []
+    const ignoredScripts: { file: string; reason: string }[] = []
+    for (const file of entries) {
+        const resolution = interpreterFor({
+            skill: name,
+            file,
+            root,
+            executable: isExecutable(join(dir, SCRIPTS_DIR, file)),
+            host,
+        })
+        if (resolution.kind === "runnable") scripts.push(resolution.plan)
+        else ignoredScripts.push({ file: resolution.file, reason: resolution.reason })
+    }
+    return { scripts, ignoredScripts }
+}
+
+/** Any execute bit — owner, group or other. `access(X_OK)` would answer for *this* process only. */
+function isExecutable(path: string): boolean {
+    try {
+        return (statSync(path).mode & 0o111) !== 0
+    } catch {
+        return false
+    }
+}
+
 function isCachedSkill(value: unknown): value is CachedSkill {
     if (typeof value !== "object" || value === null) return false
     const entry = value as Partial<CachedSkill>
@@ -185,7 +324,10 @@ function isCachedSkill(value: unknown): value is CachedSkill {
         typeof entry.frontmatter === "object" &&
         entry.frontmatter !== null &&
         typeof entry.frontmatter.name === "string" &&
-        typeof entry.frontmatter.description === "string"
+        typeof entry.frontmatter.description === "string" &&
+        typeof entry.scriptsMtimeMs === "number" &&
+        Array.isArray(entry.scripts) &&
+        Array.isArray(entry.ignoredScripts)
     )
 }
 

@@ -267,6 +267,59 @@ export interface ToolProviderRefresh {
  */
 export type ToolProviderFactory = (context: ToolProviderContext) => ToolProvider
 
+/**
+ * How a skill's script is run, from the one package allowed to start a process.
+ *
+ * The same shape and the same reason as `ToolProviderFactory` above: core decides *what* to run —
+ * `skills/scripts.ts` picks the interpreter, purely, from a directory listing — and something outside
+ * core actually runs it. `tools-system` implements this on the machinery `exec` already uses, so a skill
+ * script inherits process groups, the concurrency cap, the file-descriptor-not-a-pipe rule, and reaping
+ * through `ToolProvider.stop()`. Without the port, core would need `node:child_process` and would be
+ * rebuilding all four.
+ *
+ * An embedder that supplies no runner gets skills without scripts, which is a coherent configuration:
+ * a skill carrying only prose is a valid skill.
+ */
+export interface ScriptRunner {
+    run(request: ScriptRunRequest): Promise<ScriptRunResult>
+    /**
+     * Whether an interpreter is reachable — filesystem only, no execution.
+     *
+     * Called during the boot scan so a skill declaring Python on a machine with no Python fails **at
+     * load**, naming both, rather than at the moment the model finally reaches for it. A tool that
+     * refuses on first use after an agent has already told someone it can do the job is the worse
+     * failure, and it arrives hours later.
+     */
+    has(command: string): boolean
+}
+
+export interface ScriptRunRequest {
+    readonly command: string
+    /** Interpreter arguments, then the absolute script path, then the model's own arguments. */
+    readonly args: readonly string[]
+    /** The skill's own directory, so a script's relative paths mean what its author meant. */
+    readonly cwd: string
+    /**
+     * Wall-clock ceiling, and it must be **under** `limits.toolTimeoutMs`.
+     *
+     * The harness *abandons* a handler at its own timeout rather than killing it, so a race between the
+     * two leaves a process running with nothing referencing it. `exec` clamps five seconds under the
+     * deadline for exactly this, and a script runner has the same obligation.
+     */
+    readonly timeoutMs: number
+    readonly signal: AbortSignal
+}
+
+export interface ScriptRunResult {
+    /** Exit code 0 and nothing killed it. */
+    readonly ok: boolean
+    /** Merged stdout and stderr, already capped by the runner. */
+    readonly output: string
+    readonly code?: number
+    /** Set when the deadline ended it, so the observation can say so rather than showing empty output. */
+    readonly timedOut: boolean
+}
+
 export interface ToolProviderContext {
     /** The agent's own directory — where a resolution cache belongs, never `process.cwd()`. */
     readonly dir: string

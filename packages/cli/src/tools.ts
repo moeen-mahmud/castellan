@@ -17,7 +17,7 @@
 import { loadManifest, Runtime, resolveProviders } from "@castellan/core"
 import { ambientEnv } from "#lib/ambient"
 import { EXIT_FAILURE, EXIT_OK } from "#lib/const"
-import { CHANNEL_IDS, CHANNELS, PROVIDER_IDS, TOOL_PROVIDERS } from "#lib/providers"
+import { CHANNEL_IDS, CHANNELS, PROVIDER_IDS, scriptRunner, TOOL_PROVIDERS } from "#lib/providers"
 import { toolsReport, toolsView } from "#lib/session-commands"
 
 export interface ToolsOptions {
@@ -141,6 +141,7 @@ async function show(options: ToolsOptions): Promise<number> {
     const runtime = await Runtime.create({
         agents: [options.manifestPath],
         toolProviders: TOOL_PROVIDERS,
+        scriptRunner: scriptRunner(),
         channels: CHANNELS,
         env: ambientEnv([options.manifestPath]),
     })

@@ -34,6 +34,8 @@ const CATALOGUE: readonly Skill[] = Object.entries(DESCRIPTIONS).map(([name, des
     name,
     dir: `/skills/${name}`,
     tokens: 100,
+    scripts: [],
+    ignoredScripts: [],
     frontmatter: { name, description, metadata: {} },
 }))
 
@@ -131,6 +133,8 @@ describe("what is scored", () => {
                 name: "pdf-processing",
                 dir: "/skills/pdf-processing",
                 tokens: 100,
+                scripts: [],
+                ignoredScripts: [],
                 frontmatter: {
                     name: "pdf-processing",
                     description: "Extract text from PDF files.",
@@ -142,6 +146,8 @@ describe("what is scored", () => {
                 name: "ocr-extract",
                 dir: "/skills/ocr-extract",
                 tokens: 100,
+                scripts: [],
+                ignoredScripts: [],
                 frontmatter: {
                     name: "ocr-extract",
                     description: "Read text out of scanned images and photographs.",
@@ -169,6 +175,8 @@ describe("determinism", () => {
             name,
             dir: `/skills/${name}`,
             tokens: 100,
+            scripts: [],
+            ignoredScripts: [],
             frontmatter: {
                 name,
                 description: "Handle widget calibration for the factory.",
@@ -179,6 +187,8 @@ describe("determinism", () => {
             name,
             dir: `/skills/${name}`,
             tokens: 100,
+            scripts: [],
+            ignoredScripts: [],
             frontmatter: {
                 name,
                 description: "Reconcile invoices against purchase orders.",
