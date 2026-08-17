@@ -642,6 +642,52 @@ export function knowledgeEntryOverBudget(
     })
 }
 
+// ─── Skills ──────────────────────────────────────────────────────────────────────────────
+
+export function skillsDirMissing(dir: string, path: string): ConfigError {
+    return new ConfigError({
+        code: "skills_dir_missing",
+        message: `skills.dir names ${dir}, which is not a readable directory at ${path}.`,
+        hint: "skills.dir resolves against the manifest directory. A configured directory that does not exist is a load failure rather than an empty catalogue — an agent silently missing every procedure its author believes it has looks exactly like an agent that has forgotten how to do its job.",
+        field: "skills.dir",
+    })
+}
+
+export function skillFileInvalid(name: string, detail: string, cause?: unknown): ConfigError {
+    return new ConfigError({
+        code: "skill_file_invalid",
+        message: `The skill ${name} is unusable: ${detail}`,
+        hint: "A skill is a directory containing SKILL.md with leading --- frontmatter. The spec requires name (lowercase letters, digits and single hyphens, matching the directory name) and description; license, compatibility, metadata and allowed-tools are optional, and any other key is ignored rather than refused.",
+        field: "skills.dir",
+        ...(cause === undefined ? {} : { cause }),
+    })
+}
+
+/**
+ * A skill that selection chose and activation could not apply.
+ *
+ * An `ErrorDetail` rather than a thrown error: the turn is still answerable, and refusing it would make
+ * an unrelated question fail because of a file it never needed. But it must not be silent — a procedure
+ * that looks installed and never runs is the thing this codebase refuses everywhere — so it goes on the
+ * bus as `agent.warning` for the one turn it applies to.
+ */
+export function skillNotApplied(name: string, detail: string, hint: string): ErrorDetail {
+    return {
+        code: "skill_not_applied",
+        message: `The skill ${name} was selected for this turn but not applied: ${detail}`,
+        hint,
+    }
+}
+
+export function skillOverBudget(name: string, tokens: number, budget: number): ConfigError {
+    return new ConfigError({
+        code: "skill_over_budget",
+        message: `The skill ${name} has a ${tokens}-token body against skills.budget ${budget}, so it could never activate.`,
+        hint: "Split the body, move detail into references/ for the model to read on demand, or raise skills.budget. The spec recommends keeping a SKILL.md body under 5,000 tokens for this reason. Refused at load rather than left unselectable, which is the same starved-by-configuration shape as a knowledge entry over its budget.",
+        field: "skills.budget",
+    })
+}
+
 // ─── Unsupported ─────────────────────────────────────────────────────────────────────────
 
 export function notImplementedYet(feature: string, phase: string): ConfigError {

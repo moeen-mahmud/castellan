@@ -19,6 +19,7 @@
 
 import { readdirSync, readFileSync, statSync } from "node:fs"
 import { join } from "node:path"
+import { activate } from "../context/activate.ts"
 import { estimateTokens } from "../context/tokens.ts"
 import { knowledgeDirMissing, knowledgeEntryOverBudget, knowledgeFileInvalid } from "../errors.ts"
 import { DEFAULT_PROMPT_STYLE, type PromptStyle, renderPromptStyle } from "../model/prompt-style.ts"
@@ -140,28 +141,17 @@ function isWordChar(char: string): boolean {
  * Rank, then take what fits: up to `maxActive` entries whose cumulative size stays inside the
  * budget.
  *
- * The walk stops at the first entry that does not fit rather than skipping past it to a smaller,
- * lower-ranked one. Skipping would mean a worse-ranked entry displaces a better-ranked one purely
- * by being short, and the selection would stop being explainable from the ranking — the same
- * quiet-reordering shape the tool registry refuses.
+ * The walk itself is `activate()` in `context/activate.ts`, shared with skills — it was duplicated
+ * the moment a second tier needed the same rule, and its no-skip-past property is documented there.
  */
 export function activateKnowledge(
     input: string,
     base: KnowledgeBase,
     selector: KnowledgeSelector = keywordSelector,
 ): readonly KnowledgeEntry[] {
-    if (base.entries.length === 0 || base.maxActive === 0) return []
-
-    const ranked = selector(input, base.entries)
-    const active: KnowledgeEntry[] = []
-    let spent = 0
-
-    for (const entry of ranked) {
-        if (active.length >= base.maxActive) break
-        if (spent + entry.tokens > base.budget) break
-        active.push(entry)
-        spent += entry.tokens
-    }
-
-    return active
+    if (base.entries.length === 0) return []
+    return activate(selector(input, base.entries), {
+        maxActive: base.maxActive,
+        budget: base.budget,
+    })
 }

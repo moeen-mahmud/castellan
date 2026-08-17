@@ -136,3 +136,25 @@ export const VOLATILE_HEADER =
     "What I already know, carried from before this conversation and kept current. " +
     "Not a transcript — these are standing facts about the person I work for and my own working notes. " +
     "If they ask what I know or remember about them, this is the answer."
+
+/**
+ * The frame around an activated skill body, for the same reason as `VOLATILE_HEADER`.
+ *
+ * A skill body is a *procedure*, and it arrives in the middle of a prompt that also holds identity,
+ * standing facts, and reference material — none of which are meant to be followed step by step. Without
+ * a frame the strongest available signal is the body's own first heading, which is usually a topic
+ * ("## Extracting tables") rather than an instruction to follow it.
+ *
+ * It names the skill because the name is also the prefix of its script slugs, so a model that has read
+ * this line has been told where `skill.pdf-processing.extract` came from without a second explanation.
+ *
+ * Framing, never rewriting: the authored body is passed through byte-identical after `promptStyle`
+ * rendering, which is decision 4.19's line and this stays on the correct side of it.
+ */
+export function skillHeader(name: string): string {
+    return (
+        `The ${name} procedure applies to what I have just been asked, so I am following it. ` +
+        "These are steps to carry out, not background — where they are specific, they outrank my " +
+        "general approach."
+    )
+}

@@ -39,6 +39,17 @@ export interface Suite {
     describe(name: string, fn: () => void): void
     test: TestFunction
     expect(actual: unknown): Expectation
+    /**
+     * Lifecycle, not assertion — which is why it is here despite the closed-list rule above.
+     *
+     * The rule is about *matchers*: a shim reimplementing an assertion library drifts from both
+     * runners. `beforeEach` and `afterEach` are native to `bun:test` and `node:test` alike, so this
+     * re-exports rather than emulates, and there is no behaviour to get subtly wrong. Cleanup is worth
+     * having a hook for: a test that leaves temporary directories behind is the same class of litter as
+     * the one that left 33 orphaned shells on this machine.
+     */
+    beforeEach(fn: TestFn): void
+    afterEach(fn: TestFn): void
 }
 
 export interface Expectation {
@@ -229,11 +240,15 @@ interface BunTestModule {
     describe: (name: string, fn: () => void) => void
     test: TestFunction
     expect: (actual: unknown) => Expectation
+    beforeEach: (fn: TestFn) => void
+    afterEach: (fn: TestFn) => void
 }
 
 interface NodeTestModule {
     describe: (name: string, fn: () => void) => void
     test: (name: string, fn: TestFn) => void
+    beforeEach: (fn: TestFn) => void
+    afterEach: (fn: TestFn) => void
 }
 
 /** `%s`/`%p` substitution, positionally, matching how this suite writes `each` names. */
@@ -264,15 +279,29 @@ function withEach(plain: (name: string, fn: TestFn) => void): TestFunction {
 const suite: Suite = await (async (): Promise<Suite> => {
     if (isBun) {
         const mod = (await import("bun:test")) as unknown as BunTestModule
-        return { describe: mod.describe, test: mod.test, expect: mod.expect }
+        return {
+            describe: mod.describe,
+            test: mod.test,
+            expect: mod.expect,
+            beforeEach: mod.beforeEach,
+            afterEach: mod.afterEach,
+        }
     }
     const mod = (await import("node:test")) as unknown as NodeTestModule
-    return { describe: mod.describe, test: withEach(mod.test), expect: nodeExpect }
+    return {
+        describe: mod.describe,
+        test: withEach(mod.test),
+        expect: nodeExpect,
+        beforeEach: mod.beforeEach,
+        afterEach: mod.afterEach,
+    }
 })()
 
 export const describe = suite.describe
 export const test = suite.test
 export const expect = suite.expect
+export const beforeEach = suite.beforeEach
+export const afterEach = suite.afterEach
 /** Which runner is executing, for a test that legitimately needs to know. */
 export const runner: "bun" | "node" = isBun ? "bun" : "node"
 

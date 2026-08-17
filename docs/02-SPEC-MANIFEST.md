@@ -521,10 +521,18 @@ Phase state persists per session.
 
 | Field | Default | Notes |
 | --- | --- | --- |
-| `dir` | `./skills` | Scanned for `*/SKILL.md`. Frontmatter only at boot. |
-| `maxActive` | 1 | Skill bodies injected per turn. |
-| `threshold` | 0.35 | Normalised BM25 floor. Below it, no skill activates. |
-| `sources` | `[]` | Additional sources registered by plugins. |
+| `dir` | `./skills` | Scanned for `*/SKILL.md`. Frontmatter only at boot; a configured directory that does not exist is a load failure. |
+| `maxActive` | 1 | Skill bodies injected per turn, into `SLOT.skill`. |
+| `threshold` | 0.35 | Normalised BM25 floor. Below it, no skill activates. Calibrated to the normalisation in `skills/select.ts`, where the shipped fixtures score 0.369–0.600 — **changing that formula invalidates this default**. |
+| `budget` | 5000 | Tokens across every skill active in one turn. Defaults to the agentskills.io recommended ceiling for a `SKILL.md` body, because a smaller default would refuse skills written to the published guidance. A body over the whole budget fails the load rather than sitting unselectable. |
+| `sources` | `[]` | Additional sources registered by plugins. Parsed, not yet implemented. |
+
+A skill's frontmatter follows the [agentskills.io specification](https://agentskills.io/specification)
+verbatim — `name`, `description`, `license`, `compatibility`, `metadata`, `allowed-tools` — and unknown
+keys are kept and ignored rather than refused, because these files are third-party. Negative routing
+guidance goes under `metadata`, keyed `<brand>-when-not-to-use`; it is warned about by
+`skills validate` and never required at load. `allowed-tools` is read and displayed and **never
+honoured**: a downloaded folder does not widen what the agent may run.
 
 ### `memory`
 

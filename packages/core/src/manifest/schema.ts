@@ -303,8 +303,21 @@ export const SkillsSchema = z
     .object({
         dir: z.string().min(1).default("./skills"),
         maxActive: z.number().int().nonnegative().default(1),
-        /** Normalised BM25 floor. Below it, no skill activates. */
+        /**
+         * Normalised BM25 floor. Below it, no skill activates.
+         *
+         * Calibrated to the normalisation in `skills/select.ts`, which bounds a score in `[0, 1)` —
+         * changing that formula invalidates this default, and both sides say so.
+         */
         threshold: z.number().default(0.35),
+        /**
+         * Tokens across every skill active in one turn.
+         *
+         * Defaults to the spec's own recommended ceiling for a `SKILL.md` body, because a smaller
+         * default would refuse to load skills written to the published guidance. A ceiling, not a
+         * target: what a window fits and what a model follows are different numbers.
+         */
+        budget: z.number().int().positive().default(5000),
         sources: z.array(z.string().min(1)).default([]),
     })
     .strict()

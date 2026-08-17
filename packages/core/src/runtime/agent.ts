@@ -27,7 +27,8 @@ import type { PromptStyle } from "../model/prompt-style.ts"
 import type { ChatMessage } from "../model/provider.ts"
 
 import { type ResolvedRoles, type ResolveRolesOptions, resolveRoles } from "../model/roles.ts"
-
+import { loadSkills, type SkillCatalogue } from "../skills/index.ts"
+import { activateSkills } from "../skills/load.ts"
 import type { SessionSummary, Store, TurnRecord } from "../store/store.ts"
 import { passThroughFilter, type StreamFilter } from "../tools/dialect/dialect.ts"
 import { nativeDialect, nativeWireTokens } from "../tools/dialect/native.ts"
@@ -120,6 +121,13 @@ export class Agent {
     readonly tools: ToolRegistry
     /** Tier 3, read once at load. `undefined` when the manifest configures none. */
     readonly knowledge: KnowledgeBase | undefined
+    /**
+     * Frontmatter and token counts, scanned once at load. `undefined` when none is configured.
+     *
+     * Bodies are not here on purpose — they are read on activation, at most `maxActive` per turn. See
+     * `skills/index.ts` for what that buys and what it costs.
+     */
+    readonly skills: SkillCatalogue | undefined
 
     #bus: EventBus
     #toolRuntime: ToolRuntime | undefined
@@ -154,6 +162,7 @@ export class Agent {
         store: Store
         tools: ToolRegistry
         knowledge: KnowledgeBase | undefined
+        skills: SkillCatalogue | undefined
     }) {
         this.id = init.loaded.manifest.id
         this.manifest = init.loaded.manifest
@@ -167,6 +176,7 @@ export class Agent {
         this.store = init.store
         this.tools = init.tools
         this.knowledge = init.knowledge
+        this.skills = init.skills
 
         this.#manifestPath = init.loaded.path
         this.#manifestMtime = mtimeOf(init.loaded.path)
@@ -254,6 +264,24 @@ export class Agent {
                       style,
                   })
 
+        // Frontmatter only, and the token counts the budget check needs. `agentDir` is what enables the
+        // scan cache; it is the agent's own directory rather than the skills directory, so a workspace
+        // shared between agents does not have one agent's cache overwritten by another's rendering.
+        const skillsConfig = loaded.manifest.skills
+        const skills =
+            skillsConfig === undefined
+                ? undefined
+                : loadSkills({
+                      dir: isAbsolute(skillsConfig.dir)
+                          ? skillsConfig.dir
+                          : resolve(loaded.dir, skillsConfig.dir),
+                      maxActive: skillsConfig.maxActive,
+                      budget: skillsConfig.budget,
+                      threshold: skillsConfig.threshold,
+                      style,
+                      agentDir: loaded.dir,
+                  })
+
         // Read here rather than threaded in from `Runtime.create`, which calls the same function for
         // the selections it builds. A warning emitted during boot lands in an empty room — nothing has
         // subscribed yet — so anything true for the whole session belongs on the agent, where a front
@@ -276,6 +304,7 @@ export class Agent {
             store,
             tools: options.tools ?? ToolRegistry.empty(),
             knowledge,
+            skills,
         })
     }
 
@@ -324,6 +353,7 @@ export class Agent {
         })
 
         const active = this.knowledge === undefined ? [] : activateKnowledge(input, this.knowledge)
+        const skills = this.#activateSkills(input, history)
 
         const result = await runTurn({
             agentId: this.id,
@@ -352,6 +382,7 @@ export class Agent {
                           content: entry.content,
                       })),
                   }),
+            ...(skills.length === 0 ? {} : { skills }),
             role: this.roles.main,
             window: this.window,
             reserveOutput: this.manifest.context.reserveOutput,
@@ -454,8 +485,8 @@ export class Agent {
      * behind the cache breakpoint, and the window reduction for native's wire tokens are all
      * properties of that one call, and none of them are re-derived here.
      *
-     * `input` defaults to empty, which activates no knowledge — Tier 3 is keyword-gated on the
-     * turn's input, so a preview with no input honestly shows a turn with no input.
+     * `input` defaults to empty, which activates no knowledge and no skill — both are selected from
+     * the turn's input, so a preview with no input honestly shows a turn with no input.
      */
     async previewContext(
         options: { readonly sessionKey?: string; readonly input?: string } = {},
@@ -472,6 +503,7 @@ export class Agent {
             this.knowledge === undefined || input === ""
                 ? []
                 : activateKnowledge(input, this.knowledge)
+        const skills = input === "" ? [] : this.#activateSkills(input, history)
         const tools = this.#toolRuntime
 
         const assembled = assembleContext({
@@ -488,6 +520,7 @@ export class Agent {
                           content: entry.content,
                       })),
                   }),
+            ...(skills.length === 0 ? {} : { skills }),
             ...(this.workspace.reminder === "" ? {} : { reminder: this.workspace.reminder }),
             history,
             input,
@@ -525,6 +558,42 @@ export class Agent {
     }
 
     /** Slot 2's text. Rendered on first use, then frozen — see `#configSummary`. */
+    /**
+     * Select and load the skills that apply to this turn, and put anything worth saying on the bus.
+     *
+     * Called by `send` and by `previewContext`, which is the same discipline that keeps the preview
+     * honest about the tool catalogue: a second implementation here would answer a question about a
+     * prompt nothing uses.
+     *
+     * The selection text is the input *plus the previous assistant turn*. A follow-up rarely repeats
+     * its subject — "now do the other one" contains no term any description holds — and the assistant's
+     * last message is where the subject still is.
+     *
+     * `notes` are emitted rather than returned because they describe a skill that was expected to apply
+     * and did not, which is precisely the class of thing that must never be silent. They are per-turn,
+     * so they go on the bus rather than onto `agent.warnings`, which is for the whole session.
+     */
+    #activateSkills(
+        input: string,
+        history: readonly ChatMessage[],
+    ): readonly { name: string; content: string; role: "system" | "user" }[] {
+        if (this.skills === undefined) return []
+
+        const previous = [...history].reverse().find((message) => message.role === "assistant")
+        const { active, notes } = activateSkills({
+            input: previous === undefined ? input : `${input}\n${previous.content}`,
+            catalogue: this.skills,
+            style: this.roles.main.capabilities.promptStyle,
+        })
+
+        for (const note of notes) {
+            this.#bus.emit("agent.warning", note, { agentId: this.id })
+        }
+
+        const role = this.roles.main.capabilities.promptStyle.skillsIn
+        return active.map((skill) => ({ name: skill.name, content: skill.content, role }))
+    }
+
     #configBlock(): string {
         if (this.#configSummary === undefined) {
             this.#configSummary = renderConfigSummary({

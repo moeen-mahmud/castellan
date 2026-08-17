@@ -12,7 +12,7 @@
  */
 
 import type { ChatMessage } from "../model/provider.ts"
-import { type ContextBlock, SLOT, VOLATILE_HEADER } from "./blocks.ts"
+import { type ContextBlock, SLOT, skillHeader, VOLATILE_HEADER } from "./blocks.ts"
 import { estimateMessageTokens, estimateTokens } from "./tokens.ts"
 
 export interface AssembleInput {
@@ -47,7 +47,18 @@ export interface AssembleInput {
      */
     readonly configSummary?: string
     /**
-     * Slot 5: activated knowledge entries, already selected and budgeted by the caller.
+     * `SLOT.skill`: the activated skill bodies, already selected and budgeted by the caller.
+     *
+     * **Not pinned**, for the same reason as knowledge: a procedure applies to the turn that summoned
+     * it, and carrying it through compaction would keep an agent following last hour's instructions.
+     *
+     * Its `role` comes from `promptStyle.skillsIn`, which has been in the schema since Phase 3 and is
+     * read here for the first time. Any script the skill offers is rendered by the caller into
+     * `content` — never into the slot-1 catalogue, which is built once and must stay byte-identical.
+     */
+    readonly skills?: readonly { name: string; content: string; role: "system" | "user" }[]
+    /**
+     * `SLOT.knowledge`: activated knowledge entries, already selected and budgeted by the caller.
      *
      * **Not pinned.** Tier 3 is retrieved per turn, never carried, so compaction may drop it —
      * the exact opposite of the workspace tiers, which must survive every stage.
@@ -144,6 +155,18 @@ export function assembleContext(input: AssembleInput): AssembledContext {
             ),
         )
     }
+    for (const entry of input.skills ?? []) {
+        if (entry.content.trim() === "") continue
+        pinned.push(
+            block(
+                SLOT.skill,
+                entry.role,
+                `${skillHeader(entry.name)}\n\n${entry.content}`,
+                false,
+                `skill:${entry.name}`,
+            ),
+        )
+    }
     // In the budget like everything else, but `pinned: false`: Tier 3 is retrieved, never carried,
     // so compaction may drop it where it must never drop a workspace tier.
     for (const entry of input.knowledge ?? []) {
@@ -201,6 +224,7 @@ export function assembleContext(input: AssembleInput): AssembledContext {
         ...pinned.filter((b) => b.slot === SLOT.config),
         ...pinned.filter((b) => b.slot === SLOT.examples),
         ...pinned.filter((b) => b.slot === SLOT.volatile),
+        ...pinned.filter((b) => b.slot === SLOT.skill),
         ...pinned.filter((b) => b.slot === SLOT.knowledge),
         ...historyBlocks,
         ...pinned.filter((b) => b.slot === SLOT.reminder),

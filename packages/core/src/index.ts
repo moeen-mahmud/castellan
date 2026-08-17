@@ -39,6 +39,7 @@ export {
     type OutboxOptions,
 } from "./channels/outbox.ts"
 export { type SplitOptions, splitMessage } from "./channels/split.ts"
+export { type Activatable, type ActivationLimits, activate } from "./context/activate.ts"
 export {
     type AssembledContext,
     type AssembleInput,
@@ -50,6 +51,7 @@ export {
     SLOT,
     type SlotName,
     type SlotNumber,
+    skillHeader,
     VOLATILE_HEADER,
 } from "./context/blocks.ts"
 export {
@@ -210,6 +212,31 @@ export {
     type RuntimeOptions,
     type StoreSource,
 } from "./runtime/runtime.ts"
+export {
+    type ParsedSkillFile,
+    parseSkillFile,
+    type SkillFrontmatter,
+    whenNotToUseKey,
+} from "./skills/frontmatter.ts"
+export {
+    cachePath as skillsCachePath,
+    type LoadSkillsOptions,
+    loadSkills,
+    type Skill,
+    type SkillCatalogue,
+} from "./skills/index.ts"
+export {
+    type ActivateSkillsOptions,
+    type Activation,
+    type ActiveSkill,
+    activateSkills,
+} from "./skills/load.ts"
+export {
+    bm25Selector,
+    type ScoredSkill,
+    type SkillSelector,
+    terms as skillTerms,
+} from "./skills/select.ts"
 export {
     type TurnAttachment,
     type TurnBufferState,

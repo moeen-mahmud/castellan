@@ -333,7 +333,7 @@ export class Runtime {
                 "agent.loaded",
                 {
                     tools: agent.tools.size,
-                    skills: 0,
+                    skills: agent.skills?.skills.length ?? 0,
                     schedules: 0,
                     model: agent.manifest.model.main.id,
                 },
