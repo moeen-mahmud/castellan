@@ -1177,11 +1177,21 @@ it than a test that kills the process at a chosen instruction. **Part B** is `ch
 
 **Acceptance**
 
-- [ ] Real Telegram bot: message in, agent replies, typing indicator shows — **needs a bot token
-      from @BotFather; the only criterion in this phase not yet verified against the real thing**
-- [ ] Both long-poll and webhook modes verified end to end (same blocker). Both are covered against
-      a scripted Bot API: offset advance, leftover-webhook cleanup, poll-failure recovery, secret
-      verification, and the 429/403/5xx classification
+- [x] Real Telegram bot: message in, agent replies, typing indicator shows — verified live against
+      `@milothecat_bot` under Phase 4.1's daemon, surviving a logout and answering afterwards. The
+      first live run answered nothing while every check reported healthy: `allowFrom` held
+      `@moeen-mahmud` and the real handle is `@moeen_mahmud`, so a correct refusal was written to a
+      log nobody opens. That is why the wizard now validates a handle against Telegram's own
+      `[A-Za-z0-9_]{5,32}` and `daemon status` reports an up-and-not-working service
+- [x] Long-poll verified end to end live, including recovery: `tg: error — fetch failed` followed by
+      `tg: connected — polling resumed` in the service log, the loop surviving a blip rather than
+      exiting on its own
+- [ ] Webhook mode verified end to end against the real API — it needs a public HTTPS endpoint this
+      machine does not have, and it is the mode where a collision is *undetectable* (`setWebhook`
+      silently moves the hook to the last caller; there is no 409), so it is the one that most wants
+      a live run. Covered against a scripted Bot API meanwhile, as is long-poll: offset advance,
+      leftover-webhook cleanup, poll-failure recovery, secret verification, and the 429/403/5xx
+      classification
 - [x] Message over 4096 chars chunks correctly, order preserved — `due` withholds any chunk whose
       predecessor is not `sent`, so ordering is a property of the query rather than of the caller
 - [x] Killing the process mid-delivery and restarting sends **exactly once** — at every crash point
@@ -1311,14 +1321,24 @@ anyway and this feature made unavoidable.
 - [x] `--help` lists every action of every action-taking command, pinned by a test
 - [x] Boot budget unchanged — `bench:boot ok`; the lease is one indexed row and the heartbeat
       starts after readiness
-- [ ] Log out and back in, and reboot — needs a real session change; the `gui/$UID` limitation
-      (a LaunchAgent needs a logged-in desktop session) is documented rather than solved
+- [x] Log out and back in and the agent comes back by itself — verified live across a real session
+      change: `loginwindow` 474 → 14677 and `milo` 87667 → 14922, `runs` back at 1 (a fresh load,
+      not a restart), serving 14 s after login with no command typed. The service log carries the
+      whole boundary — `stopping` / `tg: disconnected` on the way out, so launchd's SIGTERM ran
+      A3's teardown rather than the hard exit that used to win, then `tg: connected` on the way
+      back. `RunAtLoad` is the load-bearing key: `KeepAlive: {Crashed: true}` restarts a crash and
+      starts nothing at login, so without it the job loads and waits forever for a start condition
+      it does not have. A reboot with no login still leaves the agent down — that is the `gui/$UID`
+      limitation, and it is in Non-goals rather than here, because no criterion can satisfy it
 
 **Non-goals.** systemd and Linux service installation — unverifiable here, so Linux gets a refusal
 that names the gap *and* prints the resolved `ExecStart=` line, behind `resolveServiceManager`.
 Containers, which supervise themselves and are the deployment this runtime is designed around. Log
-rotation, which has no rootless mechanism on macOS. `LaunchDaemon` in `/Library/LaunchDaemons`.
-`daemon doctor`, health checks, `install --all`, a `daemon:` manifest field.
+rotation, which has no rootless mechanism on macOS. `LaunchDaemon` in `/Library/LaunchDaemons` —
+a `gui/$UID` agent needs a logged-in desktop session, so a reboot with nobody logged in leaves the
+agent down; the fix needs root *and* a different secrets story, since `.env` beside the manifest is
+readable by one user and a system daemon runs as another. `daemon doctor`, health checks,
+`install --all`, a `daemon:` manifest field.
 
 ### Deviations from the plan as written
 

@@ -818,6 +818,15 @@ Never claim a performance property without a number in `evals/` and a script to 
   `bootout`, `kickstart -k`, `enable`, `disable`, `print`, `print-disabled`. And `launchctl list`'s
   status column is a raw wait status (`256` is exit 1) while `print`'s `last exit code` is already
   decoded — decoding the second turns a failure into a clean stop.
+- **`RunAtLoad` starts it; `KeepAlive` starts it *again*.** `KeepAlive: {Crashed: true}` is the
+  restart policy and answers nothing about launch, so a plist without `RunAtLoad` installs cleanly,
+  runs all day, and silently never comes back at the next login — it loads and waits forever for a
+  start condition it does not have. Only observable across a session boundary, which is the test
+  easiest to skip. And **`loginwindow`'s pid is the proxy for whether that boundary happened**: every
+  LaunchAgent lives in `gui/$UID`, which is torn down with it, so a surviving pid means nothing was
+  ever asked to relaunch. `last` and `who` are no use here — they read the same whether a logout was
+  cancelled or never attempted, and a logout requested from the terminal running the test cancels
+  itself, because Terminal.app with a live child blocks it behind a dialog that times out in 60 s.
 - **A stop switch consults two sources, because neither is complete.** `launchctl` knows about
   installed services and nothing about a `serve` started by hand; the lease table knows about any
   live process and nothing about a service that is installed but currently down. `stop` reads both,
