@@ -28,6 +28,7 @@ import { readEnv } from "#lib/env"
 import { finish, installGuards } from "#lib/exit"
 import { helpText } from "#lib/help"
 import { resolveAgentRef } from "#lib/sandbox"
+import { quietAcceptedWarnings } from "#lib/warnings"
 import { runCommand } from "#run"
 import { serveCommand } from "#serve"
 import { sessionsCommand } from "#sessions"
@@ -238,6 +239,10 @@ async function dispatch(argv: readonly string[]): Promise<number> {
     }
 }
 
+// Before anything opens a store, which is what makes Node emit its `node:sqlite` experimental
+// warning into the middle of a command's output. See `lib/warnings.ts` for what is filtered and why
+// the list is specific rather than "every ExperimentalWarning".
+quietAcceptedWarnings()
 installGuards()
 
 // One `finish` for every route out, so the terminal is restored and buffered output drains before
