@@ -34,6 +34,7 @@ const ANSWERS: InitAnswers = {
     composio: "none",
     telegram: "none",
     server: "none",
+    skills: "starter",
     daemon: "none",
     dir: "./milo",
 }
@@ -76,6 +77,7 @@ describe("nextQuestion", () => {
             "composio",
             "telegram",
             "server",
+            "skills",
             "dir",
         ])
     })
@@ -198,6 +200,7 @@ describe("planFiles", () => {
             "workspace/USER.md",
             "workspace/MEMORY.md",
             "workspace/REMINDER.md",
+            "skills/starter/SKILL.md",
             ".env.example",
             ".env",
             ".gitignore",
@@ -260,10 +263,13 @@ describe("planFiles", () => {
         // All three now, including composio: the meta tools gave it an available() worth calling,
         // so a provider left switched off can still say what it would offer.
         expect(yaml).toContain("\n    composio: {}")
+        // Skills are live rather than commented, and the directory is scaffolded beside the manifest —
+        // a `skills.dir` naming a path that does not exist is a load failure, so the two ship together
+        // or neither does.
+        expect(yaml).toContain("\nskills:\n  dir: ./skills")
         // Commented, with phases: uncommenting early must be a load refusal, not decoration.
         for (const line of [
             "# phases:",
-            "# skills:",
             "# memory:",
             "# channels:",
             "# schedules:",

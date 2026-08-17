@@ -73,6 +73,16 @@ export function whenNotToUseKey(): string {
  */
 const NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 
+/**
+ * Whether a string is a legal skill name, for a caller creating one rather than reading one.
+ *
+ * Shared with `readName` below so `skills new` refuses exactly what the loader would refuse — a
+ * scaffold the runtime then rejects is worse than no scaffold.
+ */
+export function isSkillName(name: string): boolean {
+    return name.length > 0 && name.length <= NAME_MAX && NAME.test(name)
+}
+
 const NAME_MAX = 64
 const DESCRIPTION_MAX = 1024
 const COMPATIBILITY_MAX = 500

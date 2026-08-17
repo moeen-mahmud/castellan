@@ -739,6 +739,21 @@ export function skillScriptUnavailable(slug: string): ToolError {
     })
 }
 
+/**
+ * One authoring judgement about a skill. A warning, always — see `skills/authoring.ts`.
+ *
+ * An `ErrorDetail` rather than a thrown error so the caller decides what to do with it: `skills validate`
+ * prints and exits 0, `--strict` exits non-zero for CI, and nothing refuses a load over it.
+ */
+export function skillAuthoring(name: string, detail: string, hint: string): ErrorDetail {
+    return {
+        code: "skill_authoring",
+        message: `The skill ${name}: ${detail}.`,
+        hint,
+        field: "skills.dir",
+    }
+}
+
 export function skillOverBudget(name: string, tokens: number, budget: number): ConfigError {
     return new ConfigError({
         code: "skill_over_budget",

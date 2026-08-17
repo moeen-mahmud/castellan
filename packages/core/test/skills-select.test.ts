@@ -81,7 +81,7 @@ describe("selection over 17 positive fixtures", () => {
     }
 
     test("the default threshold sits below every positive, and the margin is thin", () => {
-        // Measured: the positives span 0.369 to 0.600, so 0.35 clears the lowest by about 5%. Asserted
+        // Measured: the positives span 0.390 to 0.633, so 0.35 clears the lowest by about 11%. Asserted
         // rather than described, because a change to the scoring formula that quietly pushes the floor
         // under the default would otherwise show up as one fixture failing for no obvious reason.
         const scores = FIXTURES.map(({ query }) => top(query)?.score ?? 0)
@@ -108,11 +108,30 @@ describe("a query about nothing in the catalogue selects nothing", () => {
     })
 })
 
+describe("stopwords and stemming, both added after real data disagreed with the fixtures", () => {
+    test("a query whose only corpus word is a function word selects nothing", () => {
+        // Reproduced on the *shipped* reference workspace, which has three skills: `the` appeared in
+        // exactly one of three descriptions, so `df <= total/2` let it through and "who won the 1998 world
+        // cup" activated a CSV profiler at 0.446. `discriminating()` cannot fix this — at three documents
+        // "more than half" is two — so function words are dropped outright.
+        expect(top("who won the 1998 world cup")).toBeUndefined()
+        expect(top("what is the capital of peru")).toBeUndefined()
+    })
+
+    test("an inflected description meets a base-form query", () => {
+        // From `anthropics/skills`' real `pdf` description: "combining or merging", "rotating pages".
+        // Without stemming the query below matched only `pdfs` and `page` — and `page` was in the *docx*
+        // description, which is shorter, so docx won a question about rotating PDF pages.
+        const best = top("merge three pdfs and rotate a page")
+        expect(best?.name).toBe("pdf-processing")
+    })
+})
+
 describe("known limitation: a generic verb in a description is a false-activation magnet", () => {
     test('a haiku request activates docker-build, because its description says "Write"', () => {
         // Asserted as current behaviour rather than hidden. Lexically this is not distinguishable from a
         // real match — the query and the description genuinely share their only discriminating term — so
-        // no threshold fixes it: 0.451 sits inside the positive range of 0.369–0.600.
+        // no threshold fixes it: 0.446 sits inside the positive range of 0.390–0.633.
         //
         // Two things bound the cost, and one would fix it. `maxActive: 1` means an irrelevant procedure
         // displaces nothing, and the injected when-not-to-use tells the model it does not apply. The fix

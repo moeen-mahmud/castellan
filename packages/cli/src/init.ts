@@ -71,6 +71,7 @@ const FLAG_FOR: Record<InitStep, string> = {
     // No flag, same reason as every other secret: a token on a command line lands in history.
     telegramToken: "(asked at the prompt only)",
     server: "--server",
+    skills: "--skills",
     daemon: "--daemon",
     // Never asked and never a flag — generated, because it is ours rather than a third party's.
     serverToken: "(generated)",
@@ -263,6 +264,7 @@ function fromFlags(options: InitOptions): Partial<Record<InitStep, string>> {
         ["telegram", options.telegram],
         ["telegramAllow", options.telegramAllow],
         ["server", options.server],
+        ["skills", options.skills],
         ["daemon", options.daemon],
         ["dir", options.dir],
     ]
@@ -410,6 +412,7 @@ function complete(partial: Partial<Record<InitStep, string>>): InitAnswers {
             ? {}
             : { telegramAllow: answers.telegramAllow }),
         server: answers.server,
+        skills: answers.skills,
         daemon: answers.daemon,
         // Minted here rather than in the flow, which is a PURE module and must stay deterministic.
         // Only for an agent that asked for a server: an unused 64-hex string in every generated

@@ -38,7 +38,9 @@
  * the person was — "pdf" scoring well on its own and badly inside a polite sentence.
  *
  * The default `0.35` is calibrated to this formula. **Changing the formula invalidates the default**,
- * which is the cost of a normalised threshold and is worth stating where both live.
+ * which is the cost of a normalised threshold and is worth stating where both live — it has already been
+ * paid twice: the shipped fixtures scored 0.369–0.600 before stopwords and stemming, and 0.390–0.633
+ * after. Re-run `evals`-style calibration against the fixtures before touching any of it.
  */
 
 import type { Skill } from "./index.ts"
@@ -49,6 +51,126 @@ const B = 0.75
 
 /** Single characters carry no routing signal and inflate every document's length. */
 const MIN_TERM = 2
+
+/**
+ * English function words, dropped from documents and queries alike.
+ *
+ * A closed list rather than a corpus statistic, because the corpus statistic **cannot work at these
+ * sizes** and three separate measurements said so. `discriminating()` excludes a term appearing in more
+ * than half the skills, which is sound with fifty and meaningless with three: in the shipped reference
+ * workspace, `the` appears in exactly one of three descriptions, so "who won the 1998 world cup" reduced
+ * to `{the}` and activated a CSV profiler at 0.446. The same shape appeared at four skills ("capital *of*
+ * peru" → a Word-document skill, 0.518) and at eight ("what's *the* weather in dhaka" → 0.771, before the
+ * half-corpus rule existed at all).
+ *
+ * Deliberately only function words: articles, pronouns, auxiliaries, prepositions, conjunctions. Nothing
+ * domain-bearing, nothing a skill description would ever hinge on. That is the difference between a
+ * stopword list and a tuned blocklist — the first is a statement about English, the second is a statement
+ * about this corpus, and the second would need re-tuning every time a skill was added.
+ */
+const STOPWORDS: ReadonlySet<string> = new Set([
+    "about",
+    "after",
+    "all",
+    "also",
+    "am",
+    "an",
+    "and",
+    "any",
+    "are",
+    "as",
+    "at",
+    "be",
+    "been",
+    "before",
+    "being",
+    "both",
+    "but",
+    "by",
+    "can",
+    "did",
+    "do",
+    "does",
+    "doing",
+    "done",
+    "for",
+    "from",
+    "had",
+    "has",
+    "have",
+    "he",
+    "her",
+    "here",
+    "hers",
+    "him",
+    "his",
+    "how",
+    "if",
+    "in",
+    "into",
+    "is",
+    "it",
+    "its",
+    "just",
+    "me",
+    "more",
+    "most",
+    "my",
+    "no",
+    "nor",
+    "not",
+    "now",
+    "of",
+    "off",
+    "on",
+    "once",
+    "only",
+    "or",
+    "other",
+    "our",
+    "out",
+    "over",
+    "own",
+    "same",
+    "she",
+    "so",
+    "some",
+    "such",
+    "than",
+    "that",
+    "the",
+    "their",
+    "them",
+    "then",
+    "there",
+    "these",
+    "they",
+    "this",
+    "those",
+    "through",
+    "to",
+    "too",
+    "under",
+    "until",
+    "up",
+    "very",
+    "was",
+    "we",
+    "were",
+    "what",
+    "when",
+    "where",
+    "which",
+    "while",
+    "who",
+    "whom",
+    "why",
+    "will",
+    "with",
+    "would",
+    "you",
+    "your",
+])
 
 export interface ScoredSkill {
     readonly skill: Skill
@@ -68,11 +190,43 @@ export interface ScoredSkill {
  */
 export type SkillSelector = (input: string, skills: readonly Skill[]) => readonly ScoredSkill[]
 
+/**
+ * Crude suffix stripping, so an inflected description meets a base-form query.
+ *
+ * **Measured against real third-party skills.** `anthropics/skills`' `pdf` description says "combining or
+ * merging", "rotating pages"; a person types "merge these two pdfs and rotate page 3". Without this the
+ * query's only matching terms were `pdfs` and `page` — and `page` appears in the *docx* description, which
+ * is shorter, so `docx` won a question about rotating PDF pages while `pdf` scored nothing on its three
+ * strongest signals.
+ *
+ * Not a Porter stemmer, and deliberately not: the full ruleset is several hundred lines to fix cases a
+ * routing decision over a handful of documents does not have. This handles the plural and the gerund,
+ * which is what descriptions and requests actually disagree about. `extraction` still does not meet
+ * `extract`, and that is an accepted miss rather than an oversight.
+ *
+ * The `>= 3` floors are what keep it from destroying short words: `bring` must not become `br`, and `sing`
+ * must not become `s`.
+ */
+function stem(term: string): string {
+    let out = term
+    if (out.length > 3) {
+        for (const suffix of ["ing", "ed", "es", "s"]) {
+            if (out.endsWith(suffix) && out.length - suffix.length >= 3) {
+                out = out.slice(0, -suffix.length)
+                break
+            }
+        }
+    }
+    // A trailing `e` last, so `merge` and `merging` both land on `merg` — the pair that motivated this.
+    return out.length > 3 && out.endsWith("e") ? out.slice(0, -1) : out
+}
+
 export function terms(text: string): string[] {
     return text
         .toLowerCase()
         .split(/[^a-z0-9]+/)
-        .filter((term) => term.length >= MIN_TERM)
+        .filter((term) => term.length >= MIN_TERM && !STOPWORDS.has(term))
+        .map(stem)
 }
 
 function counted(list: readonly string[]): Map<string, number> {

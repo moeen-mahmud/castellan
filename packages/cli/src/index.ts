@@ -32,6 +32,7 @@ import { quietAcceptedWarnings } from "#lib/warnings"
 import { runCommand } from "#run"
 import { serveCommand } from "#serve"
 import { sessionsCommand } from "#sessions"
+import { skillsCommand } from "#skills"
 import { soulCommand } from "#soul"
 import { stopCommand } from "#stop"
 import { toolsCommand } from "#tools"
@@ -100,6 +101,7 @@ async function dispatch(argv: readonly string[]): Promise<number> {
             const telegram = flags.str("telegram")
             const telegramAllow = flags.str("telegram-allow")
             const server = flags.str("server")
+            const skills = flags.str("skills")
             const daemon = flags.str("daemon")
             return await initCommand({
                 ...(dir === undefined ? {} : { dir }),
@@ -117,6 +119,7 @@ async function dispatch(argv: readonly string[]): Promise<number> {
                 ...(telegram === undefined ? {} : { telegram }),
                 ...(telegramAllow === undefined ? {} : { telegramAllow }),
                 ...(server === undefined ? {} : { server }),
+                ...(skills === undefined ? {} : { skills }),
                 ...(daemon === undefined ? {} : { daemon }),
                 yes: flags.bool("yes"),
                 plain: flags.bool("plain"),
@@ -173,6 +176,19 @@ async function dispatch(argv: readonly string[]): Promise<number> {
                 action: manifestPath,
                 file: positionals[1] as string,
                 ...(out === undefined ? {} : { out }),
+            })
+        }
+
+        case "skills": {
+            // Positional 0 is the action, so the manifest is positional 1 — the same shape `soul` uses
+            // and the reason `resolved()` is not called here.
+            const skill = positionals[2]
+            return skillsCommand({
+                action: manifestPath,
+                manifestPath: resolveAgentRef(positionals[1] ?? ""),
+                ...(skill === undefined ? {} : { name: skill }),
+                json: flags.bool("json"),
+                strict: flags.bool("strict"),
             })
         }
 

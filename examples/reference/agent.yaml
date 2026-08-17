@@ -327,15 +327,12 @@ limits:
 # metadata as <brand>-when-not-to-use — the spec defines no field for it — and is warned about
 # rather than required. allowed-tools is displayed and never honoured.
 #
-# Still commented because uncommenting it needs ./skills to exist: a configured directory that is
-# absent is a load failure, deliberately, since an agent silently missing every procedure its
-# author believes it has is the worse outcome. Part C of Phase 5 ships the example skills.
-# skills:
-#   dir: ./skills
-#   maxActive: 1
-#   threshold: 0.35        # normalised BM25 floor; the shipped fixtures score 0.369–0.600
-#   budget: 5000           # tokens across every active skill; a bigger body fails the load
-#   sources: []
+skills:
+  dir: ./skills
+  maxActive: 1
+  threshold: 0.35        # normalised BM25 floor; the shipped fixtures score 0.369–0.600
+  budget: 5000           # tokens across every active skill; a bigger body fails the load
+  # sources: []          # Phase 9: additional sources registered by plugins
 
 # ── Phase 3.5: knowledge — Tier 3, retrieved and never pinned ─────────────────────────────
 # Entries activate when the current input mentions one of their frontmatter keywords, at most

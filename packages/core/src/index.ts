@@ -212,7 +212,9 @@ export {
     type RuntimeOptions,
     type StoreSource,
 } from "./runtime/runtime.ts"
+export { checkSkillAuthoring } from "./skills/authoring.ts"
 export {
+    isSkillName,
     type ParsedSkillFile,
     parseSkillFile,
     type SkillFrontmatter,

@@ -11,7 +11,12 @@
 import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { join, resolve } from "node:path"
-import { fillTemplate, WORKSPACE_TEMPLATE_FILES, WORKSPACE_TEMPLATES } from "#lib/templates"
+import {
+    fillTemplate,
+    SKILL_TEMPLATE,
+    WORKSPACE_TEMPLATE_FILES,
+    WORKSPACE_TEMPLATES,
+} from "#lib/templates"
 
 const TEMPLATE_DIR = resolve(
     import.meta.dirname,
@@ -23,6 +28,11 @@ const TEMPLATE_DIR = resolve(
 )
 
 describe("template embedding", () => {
+    test("the starter skill matches examples/workspace-template byte for byte", () => {
+        const source = readFileSync(join(TEMPLATE_DIR, "skills", "starter", "SKILL.md"), "utf8")
+        expect(SKILL_TEMPLATE).toBe(source)
+    })
+
     for (const name of WORKSPACE_TEMPLATE_FILES) {
         test(`${name} matches examples/workspace-template byte for byte`, () => {
             const source = readFileSync(join(TEMPLATE_DIR, name), "utf8")

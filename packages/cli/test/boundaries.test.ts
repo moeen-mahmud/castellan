@@ -14,6 +14,7 @@ import { BRAND } from "@castellan/core"
 import { DAEMON_ACTIONS } from "#daemon"
 import { COMMANDS } from "#lib/commands"
 import { helpText } from "#lib/help"
+import { SKILLS_ACTIONS } from "#skills"
 
 const SRC = resolve(import.meta.dirname, "..", "src")
 
@@ -177,6 +178,14 @@ describe("help lists everything a command accepts", () => {
                 expect(help).toContain(choice.help)
             }
         }
+    })
+
+    test("the skills command's actions in help are exactly the ones it accepts", () => {
+        const spec = COMMANDS.find((command) => command.name === "skills")
+        const listed = (spec?.args.find((arg) => arg.name === "action")?.choices ?? []).map(
+            (choice) => choice.value,
+        )
+        expect(listed).toEqual([...SKILLS_ACTIONS])
     })
 
     test("the daemon's actions in help are exactly the ones it accepts", () => {

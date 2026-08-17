@@ -1424,20 +1424,36 @@ budgets, which exist by then. Skills only add the when-not-to-use check to it.
       half that catches a scorer which always returns something. 17 positives all top-1 correct, scoring
       0.369–0.600 against the 0.35 default; two negatives score 0.000. Measurement is what found the
       normalisation defect — see the corrections below
-- [ ] Active skill's scripts appear in the catalogue the model was shown; inactive ones do not
+- [x] Active skill's scripts appear in the catalogue the model was shown; inactive ones do not —
+      rendered in the slot-5 block and layered onto the registry by `withTurnTools`, never in slot 1
 - [x] **Slot 1 is byte-identical across a turn that activates a skill and one that does not**, asserted
       on the assembled prefix rather than trusted
 - [x] A skill body over the whole budget fails at load, naming the skill and both numbers
-- [ ] A skill vendored unmodified from `anthropics/skills` loads with a warning, not an error — which
-      is the whole of decision 6.1's compliance claim, and only a real third-party skill can check it
-- [ ] Python script skill runs end to end with `uv`
+- [x] A skill vendored unmodified from `anthropics/skills` loads with a warning, not an error — which
+      is the whole of decision 6.1's compliance claim. Verified against four real skills fetched from
+      that repository and not edited: `pdf`, `docx`, `mcp-builder` and `skill-creator` (33 KB). All four
+      load, `skills list` reports them, `validate` exits 0 with six warnings — no negative guidance on
+      two, a description that never says *when* on `pdf`, and a 9,065-token body on `skill-creator`,
+      which is a warning precisely because it must not be a refusal. `license: Proprietary. LICENSE.txt
+      has complete terms` parses as the spec's free-form license field
+- [x] Python script skill runs end to end with `uv` — verified live through the real
+      `SystemScriptRunner`: `uv run` created a venv in the skill directory and returned the script's
+      output, and a non-zero exit came back as `skill_script_failed` carrying the script's own stderr.
+      The shipped `csv-profile` example then ran on a real CSV end to end — "here is a csv export from
+      salesforce, what shape is the data" scored 0.498, activated the skill, and the observation named
+      the 40%-null column. What is *not* exercised is a model choosing to call it; that is model
+      behaviour, and the runtime path either side of it is
 - [x] Skill declaring Python with no runtime fails **at load**, naming both — probed once per distinct
       interpreter, on every load including a warm cache, since a machine can lose one between boots
 - [x] Adding a skill file and reloading picks it up without restart; an edited *body* takes effect on
       the next turn without even that, because bodies are read on activation
-- [ ] `castellan skills validate` rejects a missing `description`; **warns** on a missing
-      when-not-to-use
-- [ ] Boot budget met with 50 skills
+- [x] `castellan skills validate` rejects a missing `description`; **warns** on a missing
+      when-not-to-use — and warns on five more things measurement or the spec justified: a scaffold
+      still holding its own instructions, a description under 40 characters, one that never says
+      *when*, one whose only distinguishing word is generic (the measured false-activation shape), a
+      body over the spec's advised 5,000 tokens, and a file in `scripts/` that can never run
+- [x] Boot budget met with 50 skills — `bench-boot: ok`; the scan is 12.74 ms cold and 0.39 ms warm,
+      and no body is retained
 
 **Non-goals.** Remote skill sources — `sources: []` stays parsed and unimplemented, and is Phase 9's
 plugin surface. Skill authoring UI, and any model-driven selection, which is what decision 6.2 exists
@@ -1445,6 +1461,38 @@ to refuse. Honouring `allowed-tools` as a grant: it is read and displayed, never
 downloaded folder that could widen the agent's authority is the thing the `config_set` floor refuses.
 A second index. Nested `references/` loading — the harness injects `SKILL.md` and nothing else; a
 referenced file is the model's to read through `file_read`.
+
+### Two scorer defects that only real skills exposed
+
+Vendoring four skills from `anthropics/skills` proved the compliance claim and immediately broke the
+ranking. Both defects were invisible to the seventeen shipped fixtures, because those fixtures were
+written by the same hand as the scorer and to the spec's own short what-plus-when advice.
+
+```
+before                                   after
+0.349  (none)  ← miss                     0.537  pdf              :: merge these two pdfs and rotate page 3
+0.605  docx                               0.782  docx             :: turn this into a word document
+0.412  mcp-builder                        0.757  mcp-builder      :: help me write an mcp server
+0.518  docx    ← false positive           0.000  (none)           :: what is the capital of peru
+```
+
+- **`discriminating()`'s "at most half the corpus" rule needs a corpus.** It is sound at fifty skills and
+  meaningless at three. Reproduced on the **shipped reference workspace**: `the` appears in exactly one of
+  its three descriptions, so `df <= total/2` let it through and "who won the 1998 world cup" activated the
+  CSV profiler at 0.446. Fixed with a closed list of English function words, dropped from documents and
+  queries alike — a statement about English rather than about this corpus, which is the difference between
+  a stopword list and a blocklist that needs re-tuning whenever a skill is added.
+- **No stemming, and descriptions inflect where requests do not.** `anthropics/skills`' `pdf` says
+  "combining or merging" and "rotating pages"; a person types "merge these two pdfs and rotate page 3". Its
+  three strongest signals matched nothing, and `docx` won on the single word `page`. Fixed with a minimal
+  suffix normaliser — plural and gerund, floored so `bring` cannot become `br` — not a Porter stemmer,
+  whose several hundred lines address cases a routing decision over a handful of documents does not have.
+  `extraction` still does not meet `extract`; that is an accepted miss, stated in the code.
+
+Both changed the scorer, so the fixtures were re-measured rather than assumed: still 20/20 top-1 correct,
+and the positive floor **rose** from 0.369 to 0.390 against the unchanged 0.35 default. Two regression
+tests now pin the exact queries. The lesson is the one worth carrying: a probe drawn from the same hand as
+the thing it probes will pass, and twenty minutes with four files somebody else wrote found two defects.
 
 ### Corrections found while building
 

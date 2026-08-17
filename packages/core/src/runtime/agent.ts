@@ -646,6 +646,9 @@ export class Agent {
                 providers: resolveProviders(this.manifest.tools).selections.map((s) => s.id),
                 channelsStarted: this.#channelsStarted,
                 serverListening: this.#serverListening,
+                // Absent, not zero, when no block is configured — the row distinguishes "off" from
+                // "no such concept", and only this side knows which it is.
+                ...(this.skills === undefined ? {} : { skillCount: this.skills.skills.length }),
             })
         }
         return this.#configSummary

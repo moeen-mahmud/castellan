@@ -59,6 +59,15 @@ export interface ConfigSummaryInput {
      * needs state is its own kind of lie.
      */
     readonly channelsStarted: boolean
+    /**
+     * How many skills are in the catalogue, or `undefined` when none is configured.
+     *
+     * Zero and absent are different rows on purpose. A configured directory that happens to be empty is a
+     * switch that is on with nothing behind it — the agent can be told to expect procedures — while no
+     * block at all is a concept the agent does not have. A missing row would read as the second in both
+     * cases, which is the mistake decision 5.19 exists to prevent.
+     */
+    readonly skillCount?: number
     /** Whether the HTTP surface is actually bound, for the same reason. */
     readonly serverListening: boolean
 }
@@ -80,6 +89,7 @@ export function renderConfigSummary(input: ConfigSummaryInput): string {
             `${manifest.model.main.id} · ${manifest.tools.dialect} dialect · ${input.window} token window`,
         ],
         ["tools", describeTools(input)],
+        ["skills", describeSkills(manifest, input.skillCount)],
         ["channels", describeChannels(manifest, input.channelsStarted)],
         ["http api", describeServer(manifest, input.serverListening)],
         ["permissions", describePermissions(manifest)],
@@ -128,6 +138,29 @@ function describeTools(input: ConfigSummaryInput): string {
     if (count === 0) return "none — I answer from context alone"
     const from = input.providers.length === 0 ? "built in" : `from ${input.providers.join(", ")}`
     return `${count} available, ${from}`
+}
+
+/**
+ * Skills, as the model needs to understand them.
+ *
+ * It says *harness-side* explicitly. Without that a model told it has twelve skills reasonably concludes
+ * it should choose one, and decision 6.2's whole point is that it does not get to: the choice is made
+ * before the turn starts, from the input. An agent that believes otherwise spends tokens deliberating
+ * about a decision that has already been taken.
+ */
+function describeSkills(manifest: AgentManifest, count: number | undefined): string {
+    const configured = manifest.skills
+    if (configured === undefined || count === undefined) {
+        return "none — no skills directory is configured, so no procedures are available"
+    }
+    if (count === 0) {
+        return `configured at ${configured.dir} and empty — the directory exists and holds no skills yet`
+    }
+    return (
+        `${count} available, at most ${configured.maxActive} per turn. ` +
+        "Selected for me by the harness from what was just asked — I do not choose one, and one that " +
+        "applies is already in my context under its own heading."
+    )
 }
 
 function describeChannels(manifest: AgentManifest, started: boolean): string {

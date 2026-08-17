@@ -174,6 +174,8 @@ export interface InitOptions {
     readonly telegramAllow?: string
     /** `none` or `local` — whether to serve the HTTP API on loopback. */
     readonly server?: string
+    /** `none` or `starter` — whether to scaffold a skills directory, and whether to seed it. */
+    readonly skills?: string
     readonly daemon?: string
     /** Take every default; never ask, even at a terminal. */
     readonly yes?: boolean

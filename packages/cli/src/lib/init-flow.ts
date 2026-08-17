@@ -13,8 +13,8 @@
  * voice, so the `workspace` command keeps warning until a person writes real exchanges.
  */
 
-import { BRAND } from "@castellan/core"
-import { fillTemplate, WORKSPACE_TEMPLATES } from "#lib/templates"
+import { BRAND, whenNotToUseKey } from "@castellan/core"
+import { fillTemplate, SKILL_TEMPLATE, WORKSPACE_TEMPLATES } from "#lib/templates"
 
 /**
  * The local tools every generated agent starts with, and the one line of guidance each carries
@@ -199,6 +199,15 @@ export interface InitAnswers {
      * which is the whole of its job: `serve` dies with its terminal, and nothing in the flow said so.
      */
     readonly daemon: string
+    /**
+     * Whether the agent gets a skills directory: `none` or `starter`.
+     *
+     * `none` still writes the block and an empty directory rather than omitting it. A configured-and-empty
+     * directory is a switch that is off, which slot 2 reports as such; no block at all is a concept the
+     * agent does not have and will not ask about — decision 5.19, and the same reason `--system none`
+     * still names its provider.
+     */
+    readonly skills: string
     /** Target directory, as given — the command resolves it against the cwd. */
     readonly dir: string
 }
@@ -388,6 +397,26 @@ export function daemonChoice(value: string): (typeof DAEMON_CHOICES)[number] | u
     return DAEMON_CHOICES.find((choice) => choice.value === value)
 }
 
+/**
+ * Whether to scaffold a skills directory, and what to put in it.
+ *
+ * A question rather than a field to discover, per the standing rule: every capability the runtime has is
+ * asked about here. `starter` writes one worked skill because an empty directory teaches nothing about the
+ * format, and the format has parts — the `metadata` key for negative guidance, the fact that the body is
+ * injected verbatim — that a person will not guess.
+ */
+export const SKILLS_CHOICES: readonly {
+    readonly value: string
+    readonly label: string
+}[] = [
+    { value: "starter", label: "Yes — with one worked example to copy" },
+    { value: "none", label: "An empty directory — the concept is there, the procedures are not" },
+]
+
+export function skillsChoice(value: string): (typeof SKILLS_CHOICES)[number] | undefined {
+    return SKILLS_CHOICES.find((choice) => choice.value === value)
+}
+
 export const SYSTEM_CHOICES: readonly {
     readonly value: string
     readonly label: string
@@ -491,6 +520,7 @@ const STEP_ORDER: readonly InitStep[] = [
     "telegramAllow",
     "telegramToken",
     "server",
+    "skills",
     "daemon",
     "dir",
 ]
@@ -732,6 +762,16 @@ export function nextQuestion(
                         label: choice.label,
                     })),
                 }
+            case "skills":
+                return {
+                    step,
+                    prompt: "Give it a skills directory? A skill is a procedure it follows when the turn calls for one.",
+                    fallback: "1",
+                    options: SKILLS_CHOICES.map((choice) => ({
+                        value: choice.value,
+                        label: choice.label,
+                    })),
+                }
             case "daemon":
                 return {
                     step,
@@ -866,6 +906,17 @@ export function validateAnswer(step: InitStep, raw: string): Answered {
                 ? {
                       ok: false,
                       reason: `pick 1-${SERVER_CHOICES.length}, or a name: ${SERVER_CHOICES.map((c) => c.value).join(", ")}.`,
+                  }
+                : { ok: true, value: chosen.value }
+        }
+
+        case "skills": {
+            const byNumber = SKILLS_CHOICES[Number(value) - 1]
+            const chosen = byNumber ?? skillsChoice(value.toLowerCase())
+            return chosen === undefined
+                ? {
+                      ok: false,
+                      reason: `pick 1-${SKILLS_CHOICES.length}, or a name: ${SKILLS_CHOICES.map((c) => c.value).join(", ")}.`,
                   }
                 : { ok: true, value: chosen.value }
         }
@@ -1237,6 +1288,17 @@ export function planFiles(answers: InitAnswers): readonly GeneratedFile[] {
             relPath: `workspace/${name}`,
             contents: fillTemplate(WORKSPACE_TEMPLATES[name], substitutions),
         })),
+        // `starter` seeds one worked skill; `none` still gets the directory, because `skills.dir`
+        // naming a path that does not exist is a load failure and the block is written either way.
+        // `.keep` is what makes an empty directory survive a git checkout.
+        ...(answers.skills === "starter"
+            ? [
+                  {
+                      relPath: "skills/starter/SKILL.md",
+                      contents: fillTemplate(SKILL_TEMPLATE, substitutions),
+                  },
+              ]
+            : [{ relPath: "skills/.keep", contents: "" }]),
         { relPath: ".env.example", contents: envExampleFor(answers) },
         { relPath: ".env", contents: envFor(answers) },
         // The generated .env carries real endpoint values and eventually a key; a repo-ready
@@ -1277,6 +1339,12 @@ function substitutionsFor(answers: InitAnswers): Record<string, string> {
     return {
         AGENT_NAME: name,
         USER: user,
+        // Derived, never written out. The starter skill needs the real metadata key and hard rule 3
+        // forbids a source file from spelling the brand — so the template carries a placeholder, quoted
+        // because `{{FOO}}: bar` is a YAML flow mapping and fails to parse before substitution.
+        WHEN_NOT_TO_USE_KEY: whenNotToUseKey(),
+        // `init` scaffolds it as `starter`; `skills new` substitutes the name it was given.
+        SKILL_NAME: "starter",
         RULE_CONFIRM: ruleConfirm,
         RULE_HONESTY: ruleHonesty,
         RULE_MEMORY: ruleMemory,
@@ -1594,8 +1662,16 @@ function manifestFor(answers: InitAnswers): string {
         `#   triage: { entry: true, allow: ["now"] }`,
         `#   act:    { allow: ["*"] }`,
         ``,
-        `# Phase 5 — skills`,
-        `# skills: { dir: ./skills, maxActive: 1, threshold: 0.35 }`,
+        // Written whether or not a starter skill was scaffolded. The directory always exists, so an
+        // empty one is a switch that is off — which slot 2 reports as such — rather than a concept the
+        // agent does not have and will never ask about.
+        `# Skills — procedures the harness selects from the turn's input, at most maxActive per turn.`,
+        `# The model does not choose one; ranking happens before the turn. \`skills list\` shows them.`,
+        `skills:`,
+        `  dir: ./skills`,
+        `  maxActive: 1`,
+        `  threshold: 0.35        # normalised floor; below it nothing activates`,
+        `  budget: 5000           # tokens across every active skill`,
         ``,
         `# Phase 3.5 — knowledge, keyword-gated and never pinned (create ./knowledge first)`,
         `# knowledge: { dir: ./knowledge, maxActive: 2, budget: 600 }`,

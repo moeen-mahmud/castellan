@@ -136,6 +136,13 @@ export const COMMANDS: readonly CommandSpec[] = [
                 defaultHelp: "none",
             },
             {
+                name: "skills",
+                kind: "string",
+                placeholder: "level",
+                help: "scaffold a skills directory: none | starter",
+                defaultHelp: "starter",
+            },
+            {
                 name: "daemon",
                 kind: "string",
                 placeholder: "level",
@@ -261,6 +268,50 @@ export const COMMANDS: readonly CommandSpec[] = [
                 help: "where to write the scaffold",
                 defaultHelp: "<file>.compact.md beside the source",
             },
+        ],
+    },
+    {
+        // Three questions rather than one. `validate` warns and exits 0 like `workspace` does, because
+        // everything it reports is a judgement — a skill that does not load has already failed by then.
+        name: "skills",
+        summary: "add, install, list, or check this agent's skills",
+        args: [
+            {
+                name: "action",
+                required: true,
+                help: "what to do",
+                choices: [
+                    { value: "list", help: "every skill, its size, and whether it ships scripts" },
+                    {
+                        value: "show",
+                        help: "one skill in full, including what the model never sees",
+                    },
+                    {
+                        value: "new",
+                        help: "scaffold a skill, turning skills on for this agent if they are not",
+                    },
+                    {
+                        value: "install",
+                        help: "copy a skill, or a directory of skills, from a local path",
+                    },
+                    { value: "remove", help: "delete a skill's directory and everything in it" },
+                    { value: "validate", help: "authoring warnings — never a refusal" },
+                ],
+            },
+            MANIFEST,
+            {
+                name: "name",
+                required: false,
+                help: "the skill for show, new and remove — or the path to copy from, for install",
+            },
+        ],
+        flags: [
+            {
+                name: "strict",
+                kind: "boolean",
+                help: "exit non-zero when any authoring warning is reported",
+            },
+            JSON_FLAG,
         ],
     },
     {

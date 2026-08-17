@@ -67,3 +67,12 @@ export {
     type SystemScriptRunnerOptions,
 } from "./scripts.ts"
 export { ShellSessions } from "./session.ts"
+/**
+ * Exported so the CLI edits `agent.yaml` the same way `config_set` does.
+ *
+ * A whole-file round trip through the YAML parser *reflows* the document — a comment between two
+ * top-level keys belongs to the end of the first, so re-emitting indents a section header into the
+ * section above and one change produces a thirty-line diff. Two ways of writing this file would mean
+ * one of them eventually being the reflowing one.
+ */
+export { setInSource } from "./yaml-edit.ts"
