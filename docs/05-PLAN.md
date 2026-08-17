@@ -1406,7 +1406,12 @@ readable by one user and a system daemon runs as another. `daemon doctor`, healt
 - `SkillsSchema` gains `budget`; `skills` leaves `UNSUPPORTED_SECTIONS`
 - Skill template with when-not-to-use under `metadata`, the spec's own extension point, keyed from
   `BRAND.slug`. Warned by `validate`, never required at load
-- `castellan skills list|show|validate` — table entry plus a plain writer, `--json` included
+- `castellan skills list|show|new|install|remove|validate` — table entry plus a plain writer, `--json`
+  included. `new` and `install` turn skills *on* for an agent that skipped them at `init`, writing the
+  `skills:` block and creating the directory in one step, because either half alone fails the load
+- `castellan sources list|add|remove|update|search` — the repositories skills come from. Machine-level,
+  so it takes no manifest; two built-in defaults compiled in; a page URL from the address bar is
+  understood; search ranks with the same `bm25Selector` that decides activation
 - `init` asks about skills, because every capability the runtime has is a question in `init`
 - 3 example skills, one shipping a Python script
 
@@ -1414,7 +1419,9 @@ readable by one user and a system daemon runs as another. `daemon doctor`, healt
 budgets, which exist by then. Skills only add the when-not-to-use check to it.
 
 **Files.** `packages/core/src/skills/`, `packages/tools-system/` (the `ScriptRunner` implementation),
-`examples/*/skills/`, `packages/cli/`
+`examples/*/skills/`, `packages/cli/` — including `lib/sources.ts` (the registry), `lib/source-cache.ts`
+(the git seam and the catalogue scan), `lib/origins.ts` (provenance) and `lib/spawn.ts` (the one spawn
+site, moved out of `lib/service.ts`)
 
 **Acceptance**
 
@@ -1454,13 +1461,65 @@ budgets, which exist by then. Skills only add the when-not-to-use check to it.
       body over the spec's advised 5,000 tokens, and a file in `scripts/` that can never run
 - [x] Boot budget met with 50 skills — `bench-boot: ok`; the scan is 12.74 ms cold and 0.39 ms warm,
       and no body is retained
+- [x] A skill can be added to an agent that skipped skills at `init`, in one command, without hand-editing
+      `agent.yaml` — `skills new <agent> <name>` writes the block and creates the directory. Verified on a
+      copy of a running agent: a five-line diff replacing the commented Phase 5 block, nothing reflowed
+- [x] Skills are discoverable without knowing a URL: `sources search <words>` ranks every skill in every
+      configured source, fetching one that has never been fetched. Verified against the real repositories —
+      **442 skills** across `anthropics/skills` (17 under `skills/`) and `github/awesome-copilot` (425), with
+      `anthropic/pdf` ranked first for "extract tables from a pdf invoice". Cold fetch of both: 24.6 s
+- [x] A source is added from the URL a person actually has — the page they were reading.
+      `sources add https://github.com/obra/superpowers/tree/main/skills` registers name `obra`, branch
+      `main`, path `skills`, all three parsed out of the one string
+- [x] Installing from a source records where it came from and reports it afterwards — `.origins.json`
+      carries the commit, `skills list` shows `anthropic@f6656c1`, and `skills remove` names the origin as
+      it deletes. Upstream moved between two test clones during this phase (`f6656c1` → `89dcaa3`, adding
+      `claude-academy-guide`), which is the case the commit pin exists for
+- [x] `init` asks — the skills question's first option searches the catalogues, installs the best match
+      and names the runners-up. Verified live: `--skills "extract tables from pdf documents"` searched
+      **443 skills across 2 sources**, installed `anthropic/pdf` at `89dcaa3`, listed the eight Python
+      scripts it brought, and named `github/pdftk-server`, `github/convert-pdf-to-md` and `anthropic/docx`
+      as runners-up. A scripted `init --yes` still reaches no network: 0.13 s, no cache directory created
+- [x] Slot 2 names the skills rather than counting them, so "what skills do you have?" costs no tool calls
+- [x] The failures a source surface has are each reported honestly: an unfetched cache is distinguished
+      from a mistyped name; a skill in two sources refuses and names both; an over-budget skill is refused
+      before it is copied; a skill whose frontmatter will not load is listed with its problem rather than
+      dropped; a failed re-fetch leaves the previous catalogue intact and searchable
 
-**Non-goals.** Remote skill sources — `sources: []` stays parsed and unimplemented, and is Phase 9's
-plugin surface. Skill authoring UI, and any model-driven selection, which is what decision 6.2 exists
+**Non-goals.** Skill authoring UI, and any model-driven selection, which is what decision 6.2 exists
 to refuse. Honouring `allowed-tools` as a grant: it is read and displayed, never enforced, because a
 downloaded folder that could widen the agent's authority is the thing the `config_set` floor refuses.
 A second index. Nested `references/` loading — the harness injects `SKILL.md` and nothing else; a
-referenced file is the model's to read through `file_read`.
+referenced file is the model's to read through `file_read`. **Installing from a URL**: a skill can ship
+executables, so `git clone` and then install from the path keeps a readable copy on disk between the
+download and the agent, and the network stays out of the install command. **Anything the runtime fetches** —
+the manifest has no `sources` field at all (decision 11.46), and `sources update` is the only thing that
+reaches a network.
+
+Remote sources are no longer a non-goal: they are built, as a CLI surface, and the part that was deferred
+to Phase 9 was a manifest field that turned out to be the wrong design rather than a missing feature.
+
+### Four defects the owner's first real session exposed
+
+Reported from a live `init` → `run` → "hey, what skills do you have?" sequence, and each one is a place
+the work was correct and unreachable.
+
+1. **`skills list` told people to hand-edit `agent.yaml`.** The unconfigured message printed the YAML block
+   to add — the exact workaround `skills new` had been built to remove one commit earlier, still being
+   recommended by the one screen somebody lands on when looking for skills. It now prints the two commands.
+2. **Nothing anywhere said the word `sources`.** Not `skills --help`, not `skills list`, not `init`, not the
+   next steps. Decision 4.53 again: a capability reachable only by someone who already knows the command
+   name. Fixed in all four, and `init` now *asks*.
+3. **Slot 2 counted the skills instead of naming them** — 1,358 output tokens and four tool calls to answer
+   a question the context was supposed to have already answered. Decision 11.52.
+4. **The confirm screen's label for the skills answer was the literal string `starter`,** a value pasted
+   into the label column, so it read `starter  starter`.
+
+Two more surfaced while building the fix, both silent-drop shapes this file already records elsewhere:
+`--skills "<phrase>"` reached the answer funnel and was lost, because that funnel is an object literal and
+a step not listed there is dropped with no type error; and `skills install` resolved a `<source>/<skill>`
+ref against the *real* home directory while its caller searched a sandbox, so one command consulted two
+different registries and reported `no source called test` for a source that plainly existed.
 
 ### Two scorer defects that only real skills exposed
 

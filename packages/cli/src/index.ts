@@ -34,6 +34,7 @@ import { serveCommand } from "#serve"
 import { sessionsCommand } from "#sessions"
 import { skillsCommand } from "#skills"
 import { soulCommand } from "#soul"
+import { sourcesCommand } from "#sources"
 import { stopCommand } from "#stop"
 import { toolsCommand } from "#tools"
 import { validateCommand } from "#validate"
@@ -189,6 +190,20 @@ async function dispatch(argv: readonly string[]): Promise<number> {
                 ...(skill === undefined ? {} : { name: skill }),
                 json: flags.bool("json"),
                 strict: flags.bool("strict"),
+            })
+        }
+
+        case "sources": {
+            // Positional 0 is the action and there is no manifest, so `resolveAgentRef` never runs —
+            // this command answers about the machine, not about an agent.
+            const path = flags.str("path")
+            const ref = flags.str("ref")
+            return sourcesCommand({
+                action: manifestPath,
+                rest: positionals.slice(1),
+                ...(path === undefined ? {} : { path }),
+                ...(ref === undefined ? {} : { ref }),
+                json: flags.bool("json"),
             })
         }
 

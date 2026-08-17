@@ -298,6 +298,52 @@ describe("the configuration block", () => {
         expect(text).toContain("http api")
     })
 
+    test("the skills row names them, because every real question is which and not how many", () => {
+        // The measured defect: the row said "1 available" and a real agent asked "what skills do you
+        // have?" spent four tool calls and 1,358 output tokens finding out — `config_read`, two globs and
+        // a `file_read`, with its reasoning visibly guessing whether `./skills` resolved against the
+        // workspace or the agent directory. That is the two-hop shape this block exists to remove.
+        const text = renderConfigSummary({
+            ...base,
+            skillNames: ["pdf", "release-notes"],
+            manifest: manifestFor({
+                skills: { dir: "./skills", maxActive: 1, threshold: 0.35, budget: 5000 },
+            }),
+        })
+        expect(text).toContain("pdf, release-notes")
+        expect(text).toContain("At most 1 per turn")
+        // Naming is not choosing: the harness still selects, and the row must keep saying so or a model
+        // reads a list as a menu.
+        expect(text).toContain("I do not choose one")
+    })
+
+    test("beyond a dozen it names some and counts the rest — slot 2 is a summary, not the catalogue", () => {
+        const many = Array.from({ length: 20 }, (_, index) => `skill-${index}`)
+        const text = renderConfigSummary({
+            ...base,
+            skillNames: many,
+            manifest: manifestFor({
+                skills: { dir: "./skills", maxActive: 1, threshold: 0.35, budget: 5000 },
+            }),
+        })
+        expect(text).toContain("20 available")
+        expect(text).toContain("and 8 more")
+        expect(text.includes("skill-19")).toBe(false)
+    })
+
+    test("configured and empty is a different row from not configured at all", () => {
+        const empty = renderConfigSummary({
+            ...base,
+            skillNames: [],
+            manifest: manifestFor({
+                skills: { dir: "./skills", maxActive: 1, threshold: 0.35, budget: 5000 },
+            }),
+        })
+        expect(empty).toContain("and empty")
+        const absent = renderConfigSummary({ ...base, manifest: manifestFor() })
+        expect(absent).toContain("no skills directory is configured")
+    })
+
     test("a configured channel is named with its id and type", () => {
         const text = renderConfigSummary({
             ...base,

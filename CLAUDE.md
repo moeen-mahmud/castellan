@@ -872,3 +872,72 @@ Never claim a performance property without a number in `evals/` and a script to 
   retry for ninety seconds while naming a pid that no longer existed — at the moment somebody was
   fixing the fault. Check `process.kill(pid, 0)` first; the heartbeat only settles pid reuse.
   Anything reading a lease to report state must re-check liveness for the same reason.
+- **`git` waits for a credential prompt instead of failing, and did so for two minutes.** `git ls-remote
+  https://github.com/github/skills` — a repository that does not exist — hung on a terminal nobody was
+  watching, because a 404 on a private-or-absent repo is indistinguishable from "you are not logged in
+  yet". Every invocation sets all four controls (`GIT_TERMINAL_PROMPT=0`, `GIT_ASKPASS`, `SSH_ASKPASS`,
+  ssh `BatchMode=yes`) *and* runs under a wall-clock timeout, because any one left open is the hang.
+  Never `GIT_CONFIG_NOSYSTEM`: it drops the credential helper, which is how a private source works.
+  Related, and it cost a debugging round: **`timeout` is not a macOS command**, so a probe wrapped in it
+  returns 127 for every repository and looks like a total failure.
+- **A skill folder is not a leaf.** The catalogue scanner stopped descending at any directory holding a
+  `SKILL.md`, to avoid reporting a skill's own `references/` as more skills. `github/awesome-copilot`
+  nests skills inside skills — `qdrant-scaling` carries four, one three levels down — so the first real
+  run found **410 of 425** and said nothing about the fifteen. Descend always: a false positive shows up
+  in a listing where a person can see it, a false negative is a skill that does not exist as far as the
+  tool is concerned. The general rule is the useful half — **when a scan of third-party layouts and a
+  file count disagree, the scan is wrong until proven otherwise**, and both numbers belong in the output.
+- **`lib/spawn.ts` is the only module in the CLI that may import `node:child_process`,** and it got there
+  by *moving* rather than by the rule growing an allowlist. `lib/service.ts` held it for `launchctl`;
+  `git` was a genuine second caller. An allowlist is what a one-module rule becomes the first time "add a
+  caller" is an acceptable answer, and it grows once per phase. Tool-specific knowledge stays with the
+  caller — `spawnCapture` returns `notFound` as a field rather than throwing, because a missing `git` and
+  a missing `launchctl` need different sentences.
+- **A fetch lands in `<name>.partial` and is renamed into place.** `sources update` re-clones rather than
+  `fetch` + `reset --hard`, so there is one code path and no half-updated cache to reason about — and the
+  rename is what makes a failed update leave the previous catalogue intact and searchable. An interrupted
+  *first* fetch leaves no directory rather than an empty repo, which would read as a source with no
+  skills in it. Measured: `--depth 1 --single-branch --filter=blob:none --sparse` plus `sparse-checkout
+  set <path>` turns 100 MB of `awesome-copilot` into 22 MB in 9 s. Some servers refuse the filter, so a
+  failure retries without it — a bigger download is never a failure.
+- **A source's identity is a commit, and upstream moves under you.** Two clones of `anthropics/skills`
+  twenty minutes apart returned `f6656c1` and `89dcaa3`, the second carrying a skill the first did not.
+  So `.origins.json` records the commit beside the skill, `skills list` prints `anthropic@f6656c1`, and a
+  count that differs between two runs is news about upstream rather than a bug — check the commit before
+  debugging the scanner.
+- **A command that undoes a mistake must not sit behind the load the mistake breaks.** `skills install`
+  happily copied `skill-creator` (9,065 tokens, over `skills.budget`), which **fails the load** — so
+  `list`, `validate` and every turn broke, and `remove`, the only command that could undo it, was behind
+  the same `loadSkills` and broke too. Only hand-deleting the directory recovered. `install` checks the
+  budget before copying; `new` and `remove` run before the catalogue loads at all, since one writes a
+  directory and the other deletes one and neither needs to know what is in it.
+- **`setInSource` replaces a key that exists and cannot append a new top-level one.** It never had to —
+  every path `config_set` writes has a parent already in the file — so `skills new` on an agent with no
+  `skills:` block printed a "here is what to add by hand" message, which is the workaround the command
+  exists to remove. It now falls back to uncommenting the line the generated manifest already ships,
+  which is that manifest's whole premise. Check the return value: `undefined` means it placed nothing.
+- **The answer funnel in `init` is an object literal, so a step it does not list is silently dropped.**
+  `--skills "pdf tables"` set the answer to `find` and lost the words; init then reported "no words to
+  search for" about a phrase the person had typed one second earlier. No type error, because the return
+  type's field is optional. This is the third time this exact shape has cost a debugging round —
+  `apiKeyEnv` (whose comment says so), `ChatMessage.toolCalls`, `TurnInput.skills` — and the cheap guard
+  is the same one every time: **a test at the end of the pipeline that reads the value out, not at the
+  layer that sets it.**
+- **A command that resolves a `<source>/<skill>` ref needs the sandbox env, or two callers consult two
+  registries.** `skills install` called `loadSources()` with no override while `init` had just searched a
+  sandbox, so the install reported `no source called test` for a source plainly in the list it had been
+  handed. `SkillsOptions.sandboxEnv` is the `<ENVPREFIX>HOME` override and is **not** the manifest
+  environment — that one is `ambientEnv` and answers "which model, which key". Two env concepts in one
+  options object want two names.
+- **Every manifest load during `init` has to tolerate the key it just wrote as an empty line.** The
+  load check always stubbed it; the moment a *second* thing loaded the manifest during setup — installing
+  a skill — it failed with `model.main.apiKeyEnv names MODEL_API_KEY, which is not set`: correct, and
+  about a key nobody could have filled in yet. `envOverlay` carries the stub, hoisted out of the check
+  block so both paths share one derivation.
+- **A wizard option list's order and its fallback are different decisions, and separating them is what
+  makes an expensive default safe.** The skills question lists "search the catalogues (~40 MB, once)"
+  first, because pressing enter on a labelled cost is consent — and its `fallback` is `starter`, so
+  `--yes` and every non-interactive run reach no network (measured: 0.13 s, no cache directory created).
+  Write the fallback as a *name*, never `"1"`, or the two are the same thing forever. And a new text step
+  needs a fallback that exists: an empty one makes enter-through stall, which is the one thing a default
+  must never do — this one defaults to the purpose, and an empty phrase means "do not search" and says so.

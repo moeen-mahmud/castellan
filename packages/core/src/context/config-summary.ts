@@ -60,14 +60,26 @@ export interface ConfigSummaryInput {
      */
     readonly channelsStarted: boolean
     /**
-     * How many skills are in the catalogue, or `undefined` when none is configured.
+     * The catalogue's skill **names**, or `undefined` when no skills block is configured.
      *
      * Zero and absent are different rows on purpose. A configured directory that happens to be empty is a
      * switch that is on with nothing behind it — the agent can be told to expect procedures — while no
      * block at all is a concept the agent does not have. A missing row would read as the second in both
      * cases, which is the mistake decision 5.19 exists to prevent.
+     *
+     * Names rather than a count, and that was a measured defect rather than a nicety. The row said "1
+     * available" and nothing more, so a real agent asked "what skills do you have?" spent **four tool
+     * calls and 1,358 output tokens** — `config_read`, two `glob`s and a `file_read` — working out what
+     * the one skill was, and its reasoning trace shows it guessing whether `./skills` resolved against the
+     * workspace or the agent directory. That is precisely the two-hop shape decision 5.19 put this block
+     * here to remove, arrived at again one field further in: a count answers "how many", and every
+     * question anybody actually asks is "which".
+     *
+     * Naming them is not letting the model choose one — the harness still selects, and the sentence below
+     * still says so. Cache-safe because the catalogue resolves once at boot, so the row is byte-stable for
+     * the session's life.
      */
-    readonly skillCount?: number
+    readonly skillNames?: readonly string[]
     /** Whether the HTTP surface is actually bound, for the same reason. */
     readonly serverListening: boolean
 }
@@ -89,7 +101,7 @@ export function renderConfigSummary(input: ConfigSummaryInput): string {
             `${manifest.model.main.id} · ${manifest.tools.dialect} dialect · ${input.window} token window`,
         ],
         ["tools", describeTools(input)],
-        ["skills", describeSkills(manifest, input.skillCount)],
+        ["skills", describeSkills(manifest, input.skillNames)],
         ["channels", describeChannels(manifest, input.channelsStarted)],
         ["http api", describeServer(manifest, input.serverListening)],
         ["permissions", describePermissions(manifest)],
@@ -148,18 +160,25 @@ function describeTools(input: ConfigSummaryInput): string {
  * before the turn starts, from the input. An agent that believes otherwise spends tokens deliberating
  * about a decision that has already been taken.
  */
-function describeSkills(manifest: AgentManifest, count: number | undefined): string {
+/** Beyond this many, the row names some and counts the rest: slot 2 is a summary, not the catalogue. */
+const NAMED = 12
+
+function describeSkills(manifest: AgentManifest, names: readonly string[] | undefined): string {
     const configured = manifest.skills
-    if (configured === undefined || count === undefined) {
+    if (configured === undefined || names === undefined) {
         return "none — no skills directory is configured, so no procedures are available"
     }
-    if (count === 0) {
+    if (names.length === 0) {
         return `configured at ${configured.dir} and empty — the directory exists and holds no skills yet`
     }
+    const shown = [...names].slice(0, NAMED).join(", ")
+    const rest = names.length - Math.min(names.length, NAMED)
     return (
-        `${count} available, at most ${configured.maxActive} per turn. ` +
+        `${names.length} available — ${shown}${rest === 0 ? "" : `, and ${rest} more`}. ` +
+        `At most ${configured.maxActive} per turn. ` +
         "Selected for me by the harness from what was just asked — I do not choose one, and one that " +
-        "applies is already in my context under its own heading."
+        "applies is already in my context under its own heading, so I can say what I have without " +
+        "looking for it."
     )
 }
 

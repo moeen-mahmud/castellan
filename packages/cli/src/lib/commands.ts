@@ -139,7 +139,9 @@ export const COMMANDS: readonly CommandSpec[] = [
                 name: "skills",
                 kind: "string",
                 placeholder: "level",
-                help: "scaffold a skills directory: none | starter",
+                // A phrase as well as a level, because the interesting answer is "find me one". The
+                // default stays `starter` so a scripted run reaches no network.
+                help: 'none | starter, or words to search the catalogues for — --skills "pdf tables"',
                 defaultHelp: "starter",
             },
             {
@@ -274,7 +276,7 @@ export const COMMANDS: readonly CommandSpec[] = [
         // Three questions rather than one. `validate` warns and exits 0 like `workspace` does, because
         // everything it reports is a judgement — a skill that does not load has already failed by then.
         name: "skills",
-        summary: "add, install, list, or check this agent's skills",
+        summary: "this agent's skills: install from a source, scaffold, list, check",
         args: [
             {
                 name: "action",
@@ -292,7 +294,7 @@ export const COMMANDS: readonly CommandSpec[] = [
                     },
                     {
                         value: "install",
-                        help: "copy a skill, or a directory of skills, from a local path",
+                        help: "install one by name — anthropic/pdf — or copy from a local path (see `sources`)",
                     },
                     { value: "remove", help: "delete a skill's directory and everything in it" },
                     { value: "validate", help: "authoring warnings — never a refusal" },
@@ -302,7 +304,7 @@ export const COMMANDS: readonly CommandSpec[] = [
             {
                 name: "name",
                 required: false,
-                help: "the skill for show, new and remove — or the path to copy from, for install",
+                help: "the skill for show, new and remove — for install, <source>/<skill> or a local path",
             },
         ],
         flags: [
@@ -310,6 +312,52 @@ export const COMMANDS: readonly CommandSpec[] = [
                 name: "strict",
                 kind: "boolean",
                 help: "exit non-zero when any authoring warning is reported",
+            },
+            JSON_FLAG,
+        ],
+    },
+    {
+        // Machine-level, so it takes no manifest — the split from `skills` that keeps every positional
+        // here meaning one thing. A source is a place the person trusts; a skill is one agent's.
+        name: "sources",
+        summary: "the repositories skills come from: list, add, search",
+        args: [
+            {
+                name: "action",
+                required: true,
+                help: "what to do",
+                choices: [
+                    { value: "list", help: "every source, and whether it has been fetched" },
+                    { value: "add", help: "add a repository — a URL, or a name and a URL" },
+                    { value: "remove", help: "stop searching a source; built-ins included" },
+                    { value: "update", help: "re-fetch every source, or the ones named" },
+                    {
+                        value: "search",
+                        help: "find a skill across every source; fetches on first use",
+                    },
+                ],
+            },
+            {
+                name: "rest",
+                required: false,
+                variadic: true,
+                help: "a name and URL for add, a name for remove or update, words for search",
+            },
+        ],
+        flags: [
+            {
+                name: "path",
+                kind: "string",
+                placeholder: "dir",
+                help: "subdirectory holding the skills (add)",
+                defaultHelp: "the whole repository",
+            },
+            {
+                name: "ref",
+                kind: "string",
+                placeholder: "branch",
+                help: "branch or tag to track (add)",
+                defaultHelp: "the remote's default branch",
             },
             JSON_FLAG,
         ],

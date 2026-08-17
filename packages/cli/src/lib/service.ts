@@ -14,7 +14,6 @@
  * and script paths. Those are what people get wrong by hand, and this process already knows them.
  */
 
-import { spawnSync } from "node:child_process"
 import { mkdirSync, rmSync, writeFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { HarnessError } from "@castellan/core"
@@ -27,6 +26,7 @@ import {
     renderPlist,
     type ServicePlan,
 } from "#lib/launchd"
+import { spawnCapture } from "#lib/spawn"
 
 export interface ExecResult {
     readonly code: number
@@ -56,12 +56,8 @@ export interface ServiceManager {
 }
 
 const realExec: Exec = (command, args) => {
-    const result = spawnSync(command, [...args], { encoding: "utf8" })
-    return {
-        code: result.status ?? 1,
-        stdout: result.stdout ?? "",
-        stderr: result.stderr ?? "",
-    }
+    const result = spawnCapture({ command, args })
+    return { code: result.code, stdout: result.stdout, stderr: result.stderr }
 }
 
 export interface ManagerOptions {

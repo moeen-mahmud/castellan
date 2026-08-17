@@ -525,7 +525,13 @@ Phase state persists per session.
 | `maxActive` | 1 | Skill bodies injected per turn, into `SLOT.skill`. |
 | `threshold` | 0.35 | Normalised BM25 floor. Below it, no skill activates. Calibrated to the normalisation in `skills/select.ts`, where the shipped fixtures score 0.369–0.600 — **changing that formula invalidates this default**. |
 | `budget` | 5000 | Tokens across every skill active in one turn. Defaults to the agentskills.io recommended ceiling for a `SKILL.md` body, because a smaller default would refuse skills written to the published guidance. A body over the whole budget fails the load rather than sitting unselectable. |
-| `sources` | `[]` | Additional sources registered by plugins. Parsed, not yet implemented. |
+
+There is deliberately **no `sources` field**. Where skills come from is a machine-level list — `sources
+add`, stored at `~/<stateDir>/sources.json` — and not a property of one agent. Two reasons, and the second
+is the binding one: a repository is added once per machine rather than once per agent, and a fetchable URL
+inside the document `Runtime.create` loads is an invitation to resolve it during boot, which hard rule 4
+forbids. Provenance for what *was* installed lives at `<skills dir>/.origins.json`, written by `skills
+install` and shown by `skills list`.
 
 A skill's frontmatter follows the [agentskills.io specification](https://agentskills.io/specification)
 verbatim — `name`, `description`, `license`, `compatibility`, `metadata`, `allowed-tools` — and unknown

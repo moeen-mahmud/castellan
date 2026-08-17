@@ -38,10 +38,12 @@ import {
     planFiles,
     presetById,
     type QuestionDefaults,
+    SKILLS_CHOICES,
     TELEGRAM_TOKEN_ENV,
     validateAnswer,
     webBackendByValue,
 } from "#lib/init-flow"
+import { findAndInstallSkill } from "#lib/init-skills"
 import { resolveModeFromProcess } from "#lib/output"
 import { CHANNEL_IDS, PROVIDER_IDS } from "#lib/providers"
 import { agentsDir } from "#lib/sandbox"
@@ -72,6 +74,7 @@ const FLAG_FOR: Record<InitStep, string> = {
     telegramToken: "(asked at the prompt only)",
     server: "--server",
     skills: "--skills",
+    skillsSearch: "--skills",
     daemon: "--daemon",
     // Never asked and never a flag — generated, because it is ours rather than a third party's.
     serverToken: "(generated)",
@@ -175,13 +178,18 @@ async function runInit(options: InitOptions): Promise<InitResult> {
     // is stubbed so `validateApiKeyEnv` passes while every structural check (schema, budgets,
     // tiers, rule guard, rendering) runs for real. When the var is already exported, no stub:
     // a full honest validate.
+    // Hoisted out of the try below, because installing a skill needs the same stub: a manifest written
+    // sixty milliseconds ago names a key variable whose line is deliberately empty, so *every* load during
+    // init has to tolerate it, not just this one.
+    const keyVar = answers.apiKeyEnv
+    const needsStub =
+        keyVar !== undefined &&
+        answers.apiKey === undefined &&
+        (process.env[keyVar] === undefined || process.env[keyVar] === "")
+    const envOverlay = needsStub && keyVar !== undefined ? { [keyVar]: "(pending)" } : undefined
+
     let distilled = false
     try {
-        const keyVar = answers.apiKeyEnv
-        const needsStub =
-            keyVar !== undefined &&
-            answers.apiKey === undefined &&
-            (process.env[keyVar] === undefined || process.env[keyVar] === "")
         const loaded = loadManifest(join(targetDir, "agent.yaml"), {
             knownProviders: PROVIDER_IDS,
             knownChannels: CHANNEL_IDS,
@@ -228,6 +236,15 @@ async function runInit(options: InitOptions): Promise<InitResult> {
     // happen is a silent skip after somebody said yes.
     process.stdout.write(`wrote ${files.length} files to ${targetDir} — validated ok\n`)
 
+    // After the load check, so a skill is only ever added to an agent already known to be valid; before
+    // the service install, so what gets started is the finished agent rather than one a skill lands in a
+    // second later. Cannot fail the init: every failure path inside reports and returns.
+    findAndInstallSkill({
+        answers,
+        manifestPath,
+        ...(envOverlay === undefined ? {} : { envOverlay }),
+    })
+
     let installed = false
     if (answers.daemon === "service") {
         process.stdout.write("\n")
@@ -244,6 +261,23 @@ async function runInit(options: InitOptions): Promise<InitResult> {
 
     process.stdout.write(nextSteps(answers, targetDir, distilled, installed))
     return { kind: "ok", manifestPath: join(targetDir, "agent.yaml") }
+}
+
+/**
+ * `--skills` as a choice, or as a search phrase.
+ *
+ * `--skills starter` and `--skills none` are the choices; `--skills "pdf tables"` means "find one", with
+ * those words. Told apart by membership in `SKILLS_CHOICES` rather than by shape, so the set of choices
+ * stays the only thing that decides — and a phrase is never mistaken for a mistyped choice, because a
+ * mistyped choice becomes a search that reports finding nothing rather than silently doing something else.
+ */
+function skillsPair(raw: string | undefined): [InitStep, string | undefined][] {
+    if (raw === undefined) return []
+    if (SKILLS_CHOICES.some((choice) => choice.value === raw)) return [["skills", raw]]
+    return [
+        ["skills", "find"],
+        ["skillsSearch", raw],
+    ]
 }
 
 /** Flag values pass the same per-step validation the wizard applies — a bad flag fails by name. */
@@ -264,7 +298,10 @@ function fromFlags(options: InitOptions): Partial<Record<InitStep, string>> {
         ["telegram", options.telegram],
         ["telegramAllow", options.telegramAllow],
         ["server", options.server],
-        ["skills", options.skills],
+        // `--skills` takes a choice name *or* the words to search for, and the sugar is here rather than
+        // in `validateAnswer` so the per-step validation stays strict — a flag that quietly accepted
+        // anything is a flag that mistypes `startr` into a search query for "startr".
+        ...skillsPair(options.skills),
         ["daemon", options.daemon],
         ["dir", options.dir],
     ]
@@ -365,9 +402,14 @@ function complete(partial: Partial<Record<InitStep, string>>): InitAnswers {
     // second for anyone exporting the variable another way. Everything else is present once
     // nextQuestion returns undefined.
     const answers = partial as Record<
-        Exclude<InitStep, "apiKeyEnv" | "apiKey" | "webBackend" | "webKey" | "composioKey">,
+        Exclude<
+            InitStep,
+            "apiKeyEnv" | "apiKey" | "webBackend" | "webKey" | "composioKey" | "skillsSearch"
+        >,
         string
     > & {
+        /** Undefined unless the skills answer was `find`; its question is skipped otherwise. */
+        skillsSearch?: string
         apiKeyEnv?: string
         apiKey?: string
         // Both stay undefined unless the web answer was `search` — the flow skips their questions,
@@ -413,6 +455,13 @@ function complete(partial: Partial<Record<InitStep, string>>): InitAnswers {
             : { telegramAllow: answers.telegramAllow }),
         server: answers.server,
         skills: answers.skills,
+        // Carried explicitly. This funnel is a literal, not a spread, so a step that is collected and not
+        // listed here is silently dropped — which is what happened: `--skills "pdf tables"` set the answer
+        // to `find` and lost the words, and init reported "no words to search for" about a phrase the
+        // person had just typed. The same shape as `apiKeyEnv` above, and the reason that comment exists.
+        ...(answers.skillsSearch === undefined || answers.skillsSearch === ""
+            ? {}
+            : { skillsSearch: answers.skillsSearch }),
         daemon: answers.daemon,
         // Minted here rather than in the flow, which is a PURE module and must stay deterministic.
         // Only for an agent that asked for a server: an unused 64-hex string in every generated
@@ -534,6 +583,17 @@ function nextSteps(
                 `sign-in link, and pins what you need. New tools go live on the next restart.`,
         )
     }
+    // Named here whatever was answered, because this is the one screen everybody reads and the sources
+    // registry was otherwise reachable only by someone who already knew the word `sources`. The line
+    // changes with the answer: somebody who now has a real skill wants "add another", somebody holding a
+    // template wants "or take a real one", and somebody who declined wants to know the option exists.
+    steps.push(
+        answers.skills === "find"
+            ? `Add more skills: \`${BRAND.slug} sources search <what it should do>\` ranks every skill in the catalogues, then \`${BRAND.slug} skills install ${runRef} <source>/<skill>\`.`
+            : answers.skills === "starter"
+              ? `Fill in workspace-level skills/starter/SKILL.md, or take a real one — \`${BRAND.slug} sources search <what it should do>\` searches 440+ from two catalogues.`
+              : `Skills are off but the directory is there — \`${BRAND.slug} sources search <what it should do>\` finds one, \`${BRAND.slug} skills new ${runRef} <name>\` writes one.`,
+    )
     steps.push(
         `Make workspace/SOUL.md yours, then re-derive SOUL.compact.md to match — ` +
             `\`${BRAND.slug} workspace ${manifest}\` shows exactly what still reads as a template.`,

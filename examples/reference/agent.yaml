@@ -332,7 +332,10 @@ skills:
   maxActive: 1
   threshold: 0.35        # normalised BM25 floor; the shipped fixtures score 0.369–0.600
   budget: 5000           # tokens across every active skill; a bigger body fails the load
-  # sources: []          # Phase 9: additional sources registered by plugins
+  # No `sources` field. Where skills come from is the person's, machine-level, and the CLI's:
+  #   sources list | add <url> | search <words>   →  ~/.<stateDir>/sources.json
+  #   skills install <agent> anthropic/pdf        →  provenance in ./skills/.origins.json
+  # A fetchable URL in this file would be an invitation to resolve it at boot. See decision 11.46.
 
 # ── Phase 3.5: knowledge — Tier 3, retrieved and never pinned ─────────────────────────────
 # Entries activate when the current input mentions one of their frontmatter keywords, at most

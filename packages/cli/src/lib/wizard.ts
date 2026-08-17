@@ -277,7 +277,10 @@ export function answeredRows(
         telegramAllow: "Telegram handle",
         telegramToken: "Bot token",
         server: "HTTP API",
-        skills: "starter",
+        // Was literally `"starter"` — a value pasted into the label column, so the confirm screen
+        // showed "starter  starter" for the default answer and "starter  none" for the other one.
+        skills: "Skills",
+        skillsSearch: "Skill search",
         daemon: "Background service",
         serverToken: "API token",
         composioKey: "Composio key",

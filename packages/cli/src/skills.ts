@@ -26,7 +26,7 @@ import {
     statSync,
     writeFileSync,
 } from "node:fs"
-import { basename, isAbsolute, join, resolve } from "node:path"
+import { basename, isAbsolute, join, relative, resolve } from "node:path"
 import {
     checkSkillAuthoring,
     type ErrorDetail,
@@ -35,6 +35,7 @@ import {
     isSkillName,
     loadManifest,
     loadSkills,
+    nearest,
     parseSkillFile,
     resolveCapabilities,
     type Skill,
@@ -44,9 +45,25 @@ import {
 import { setInSource } from "@castellan/tools-system"
 import { ambientEnv } from "#lib/ambient"
 import { EXIT_FAILURE, EXIT_OK } from "#lib/const"
+import { forgetOrigin, type Origin, readOrigins, recordOrigins } from "#lib/origins"
 import { CHANNEL_IDS, PROVIDER_IDS, scriptRunner } from "#lib/providers"
 import { bullet, indent, keyValue, section } from "#lib/render"
+import {
+    type CatalogueEntry,
+    isCached,
+    looksLikePath,
+    readCatalogue,
+    readMeta,
+} from "#lib/source-cache"
+import { loadSources, parseSkillRef, type SkillRef, type SourceSpec } from "#lib/sources"
 import { fillTemplate, SKILL_TEMPLATE } from "#lib/templates"
+
+/** A skill found in a fetched source, with everything provenance needs. */
+interface Located {
+    readonly entry: CatalogueEntry
+    readonly spec: SourceSpec
+    readonly commit: string
+}
 
 const SKILL_FILE = "SKILL.md"
 
@@ -72,6 +89,25 @@ export interface SkillsOptions {
     readonly json?: boolean
     /** `validate` only: exit non-zero when anything was reported. */
     readonly strict?: boolean
+    /**
+     * The `<ENVPREFIX>HOME` override that says where the source registry and cache live.
+     *
+     * Deliberately **not** the manifest environment — that one is `ambientEnv` below and answers "which
+     * model, which key". This one answers "which `sources.json`", and it exists because `install` resolves
+     * a `<source>/<skill>` ref against it: without the field, this command read the real home directory
+     * while its caller read a sandbox, so an install driven from a test or from `init` looked up a
+     * registry nobody had written to and reported `no source called test` on a source that plainly existed.
+     */
+    readonly sandboxEnv?: Readonly<Record<string, string | undefined>>
+    /**
+     * Extra variables layered on top of the resolved manifest environment.
+     *
+     * One caller: `init`, which stubs the API key variable it has just written as an empty line. Without
+     * it, installing a skill during setup failed with `model.main.apiKeyEnv names MODEL_API_KEY, which is
+     * not set` — correct, useless, and about a key nobody could have filled in yet. `init`'s own load
+     * check has always done this; the command it calls needed the same courtesy.
+     */
+    readonly envOverlay?: Readonly<Record<string, string | undefined>>
 }
 
 export function skillsCommand(options: SkillsOptions): number {
@@ -81,7 +117,7 @@ export function skillsCommand(options: SkillsOptions): number {
             knownChannels: CHANNEL_IDS,
             // The same environment `run` uses, or this reports on a different agent — the asymmetry
             // every command that loads a manifest exists to avoid.
-            env: ambientEnv([options.manifestPath]),
+            env: { ...ambientEnv([options.manifestPath]), ...options.envOverlay },
         })
 
         // `new` and `install` are the two that may run with nothing configured — turning skills on is
@@ -121,7 +157,7 @@ export function skillsCommand(options: SkillsOptions): number {
 
         switch (options.action) {
             case "list":
-                return list(catalogue.skills, catalogue, options)
+                return list(resolvedDir, catalogue.skills, catalogue, options)
             case "show":
                 return show(catalogue.skills, options)
             case "install":
@@ -157,18 +193,24 @@ function unconfigured(options: SkillsOptions): number {
         )
         return EXIT_OK
     }
+    // Two commands, not a YAML fragment. This used to print the block to add by hand, which is the
+    // workaround `skills new` was built to remove — and it kept printing it for a phase after that
+    // command existed, so the one place someone lands when looking for skills was the one place still
+    // recommending the manual edit.
     process.stdout.write(
         "this agent has no skills configured\n\n" +
-            "  add a skills block to agent.yaml and a directory beside it:\n\n" +
-            "    skills:\n" +
-            "      dir: ./skills\n" +
-            "      maxActive: 1\n\n" +
-            "  each skill is a directory holding SKILL.md — see docs/02-SPEC-MANIFEST.md\n",
+            "  · find one and install it — searches the catalogues, 440+ skills:\n" +
+            "      sources search <what it should do>\n" +
+            `      skills install ${options.manifestPath} <source>/<skill>\n\n` +
+            "  · or write your own from a template:\n" +
+            `      skills new ${options.manifestPath} <name>\n\n` +
+            "  either one turns skills on for this agent; neither needs agent.yaml edited by hand\n",
     )
     return EXIT_OK
 }
 
 function list(
+    dir: string,
     skills: readonly Skill[],
     catalogue: {
         readonly maxActive: number
@@ -178,6 +220,9 @@ function list(
     },
     options: SkillsOptions,
 ): number {
+    // Read here rather than inside the loop: one file for the whole directory, and a listing that opened
+    // it per skill would be doing filesystem work proportional to a catalogue it already has in memory.
+    const origins = readOrigins(dir)
     if (options.json === true) {
         process.stdout.write(
             `${JSON.stringify(
@@ -188,7 +233,12 @@ function list(
                     maxActive: catalogue.maxActive,
                     budget: catalogue.budget,
                     threshold: catalogue.threshold,
-                    skills: skills.map(summarise),
+                    skills: skills.map((skill) => ({
+                        ...summarise(skill),
+                        ...(origins[skill.name] === undefined
+                            ? {}
+                            : { origin: origins[skill.name] }),
+                    })),
                 },
                 null,
                 2,
@@ -198,7 +248,9 @@ function list(
     }
 
     if (skills.length === 0) {
-        process.stdout.write("no skills found in the configured directory\n")
+        process.stdout.write(
+            `no skills in ${dir}\n\n  \`sources search <what it should do>\` ranks 440+ from the configured catalogues, then\n  \`skills install <agent> <source>/<skill>\`. \`skills new <agent> <name>\` writes one from a template.\n`,
+        )
         return EXIT_OK
     }
 
@@ -220,8 +272,12 @@ function list(
         // A missing negative guidance is flagged even in `list`, because it is the one thing that is
         // both cheap to fix and invisible until something routes wrongly.
         const gap = skill.frontmatter.whenNotToUse === undefined ? "  no when-not-to-use" : ""
+        // Where it came from, on the line that lists it. The origins file is hidden by a leading dot to
+        // stay out of the way; that must not make it hidden *information*.
+        const origin = origins[skill.name]
+        const from = origin === undefined ? "" : `  ${origin.source}@${origin.commit}`
         process.stdout.write(
-            `  ${skill.name.padEnd(20)} ${String(skill.tokens).padStart(5)} tokens${scripts}${gap}\n`,
+            `  ${skill.name.padEnd(20)} ${String(skill.tokens).padStart(5)} tokens${scripts}${from}${gap}\n`,
         )
     }
     return EXIT_OK
@@ -415,7 +471,7 @@ function enable(
     process.stdout.write(`${keyValue([{ label: "enabled", value: `skills.dir = ${dir}` }])}\n`)
     // Re-read rather than assumed: the block just written is validated by the next load, and reporting
     // success for a document nobody has parsed is how a manifest that boots today fails tomorrow.
-    return { dir, ...DEFAULTS, sources: [] }
+    return { dir, ...DEFAULTS }
 }
 
 /** Written once, so what is stored and what is printed cannot disagree. */
@@ -510,16 +566,40 @@ function install(dir: string, budget: number, options: SkillsOptions): number {
     const from = options.name
     if (from === undefined) {
         process.stdout.write(
-            "skills install needs a path — `skills install <manifest> <path to a skill directory>`\n",
+            "skills install needs something to install — `skills install <manifest> anthropic/pdf`, or a local path\n\n  `sources search <what you need>` finds one.\n",
         )
         return EXIT_FAILURE
     }
 
-    const source = resolve(from)
-    if (!existsSync(source) || !statSync(source).isDirectory()) {
-        process.stdout.write(`${source} is not a directory\n`)
-        return EXIT_FAILURE
+    // Filesystem-first, which is git's pathspec rule and the one `resolveAgentRef` already follows: a
+    // name shadowed by a directory in the cwd resolves to the directory, with a note, rather than
+    // silently installing something else.
+    const asPath = looksLikePath(from)
+    let origin: Located | undefined
+    if (!asPath) {
+        const located = locate(from, options.sandboxEnv)
+        if (located === undefined) return EXIT_FAILURE
+        origin = located
     }
+
+    const source = origin === undefined ? resolve(from) : origin.entry.dir
+    if (origin === undefined) {
+        if (!existsSync(source) || !statSync(source).isDirectory()) {
+            process.stdout.write(`${source} is not a directory\n`)
+            return EXIT_FAILURE
+        }
+        if (
+            existsSync(from) &&
+            loadSources(options.sandboxEnv).some((spec) => spec.name === from)
+        ) {
+            process.stdout.write(
+                `note: ${from} is also a source, and a directory of that name here wins — \`sources search\` to install from the source instead\n\n`,
+            )
+        }
+    }
+
+    const origins: Record<string, Origin> = {}
+    const runnable: string[] = []
 
     // One skill, or a folder holding several. Detected rather than flagged: `skills/` from a cloned
     // repository and a single `pdf/` are both obvious to look at, and asking which would be a question
@@ -579,16 +659,55 @@ function install(dir: string, budget: number, options: SkillsOptions): number {
         }
         cpSync(candidate, target, { recursive: true, preserveTimestamps: true })
         installed.push(name)
+        if (origin !== undefined) {
+            origins[name] = {
+                source: origin.spec.name,
+                url: origin.spec.url,
+                repoPath: origin.entry.repoPath,
+                commit: origin.commit,
+                ...(origin.spec.ref === undefined ? {} : { ref: origin.spec.ref }),
+                installedAt: new Date().toISOString(),
+            }
+        }
+        // Named, not counted. This is the only moment somebody can decide to go and read code they are
+        // about to give an agent, and "3 runnable files" does not tell them which files.
+        runnable.push(...scriptFiles(target).map((file) => `${name}/${relative(target, file)}`))
     }
+
+    if (Object.keys(origins).length > 0) recordOrigins(dir, origins)
 
     process.stdout.write(
         `${keyValue([
-            { label: "from", value: source },
+            {
+                label: "from",
+                value:
+                    origin === undefined
+                        ? source
+                        : `${origin.spec.name} (${origin.spec.url}) at ${origin.commit}`,
+            },
             { label: "installed", value: installed.join(", ") },
             { label: "skipped", value: skipped.length === 0 ? "" : String(skipped.length) },
         ])}\n`,
     )
     for (const entry of skipped) process.stdout.write(`${bullet(entry)}\n`)
+    if (runnable.length > 0) {
+        // Disclosure rather than a prompt. Nothing runs at install time — a skill script becomes a tool
+        // only once the skill activates, and it arrives `untrusted` and `mutating`, so the write gate and
+        // `tools.policy` both still apply. A confirmation dialog on every install would be answered
+        // reflexively within a week and would buy none of that.
+        process.stdout.write(
+            `${section("this installed code, which the agent can run")}\n${runnable
+                .slice(0, 12)
+                .map((file) => bullet(file))
+                .join("\n")}\n`,
+        )
+        if (runnable.length > 12) {
+            process.stdout.write(`${indent(`… and ${runnable.length - 12} more`)}\n`)
+        }
+        process.stdout.write(
+            `${indent("read them before the agent does; `tools.policy` can name a skill script by slug")}\n`,
+        )
+    }
     if (installed.length > 0) {
         process.stdout.write(
             `${section("next")}\n${bullet("skills validate — a vendored skill usually has no negative guidance, which is a warning and not a problem")}\n${bullet("restart the agent: the catalogue is scanned once at boot")}\n`,
@@ -596,6 +715,117 @@ function install(dir: string, budget: number, options: SkillsOptions): number {
     }
     return installed.length === 0 ? EXIT_FAILURE : EXIT_OK
 }
+
+/**
+ * Turn `pdf` or `anthropic/pdf` into a folder in the source cache.
+ *
+ * Ambiguity is refused rather than resolved by source order: with two sources carrying a `pdf`, picking
+ * the first would install one and report a name that describes both, and the person would find out which
+ * they got by reading the file. Naming the candidates costs one retyped command and cannot be wrong.
+ */
+function locate(
+    ref: string,
+    env?: Readonly<Record<string, string | undefined>>,
+): Located | undefined {
+    let parsed: SkillRef
+    try {
+        parsed = parseSkillRef(ref)
+    } catch (error) {
+        if (!(error instanceof HarnessError)) throw error
+        process.stdout.write(`${error.message}\n\n  ${error.hint}\n`)
+        return undefined
+    }
+
+    const sources = loadSources(env)
+    const named =
+        parsed.source === undefined
+            ? sources
+            : sources.filter((spec) => spec.name === parsed.source)
+    if (named.length === 0) {
+        const suggestion = nearest(
+            parsed.source ?? "",
+            sources.map((spec) => spec.name),
+        )
+        process.stdout.write(
+            `no source called ${parsed.source}\n\n  ${suggestion === undefined ? "`sources list` shows them." : `Did you mean ${suggestion}?`}\n`,
+        )
+        return undefined
+    }
+
+    const cold = named.filter((spec) => !isCached(spec.name, env))
+    if (cold.length === named.length) {
+        // The distinction that matters: an empty cache is not a mistyped name, and only this layer knows
+        // which. Reporting "no skill called pdf" against a cache that has never been fetched blames the
+        // person for the tool's state — the same failure `explainUnresolved` exists to prevent.
+        process.stdout.write(
+            `${named.length === 1 ? `${named[0]?.name} has not` : "no source has"} been fetched yet, so there is nothing to install from\n\n  \`sources update${parsed.source === undefined ? "" : ` ${parsed.source}`}\` first, or \`sources search ${parsed.skill}\` which fetches on demand.\n`,
+        )
+        return undefined
+    }
+
+    const entries = named
+        .filter((spec) => isCached(spec.name, env))
+        .flatMap((spec) => readCatalogue(spec, env).map((entry) => ({ entry, spec })))
+    const matches = entries.filter((row) => row.entry.skill === parsed.skill)
+
+    if (matches.length === 0) {
+        const suggestion = nearest(
+            parsed.skill,
+            entries.map((row) => row.entry.skill),
+        )
+        process.stdout.write(
+            `no skill called ${parsed.skill} in ${named.map((spec) => spec.name).join(", ")}\n\n  ${
+                suggestion === undefined
+                    ? `\`sources search ${parsed.skill}\` ranks what is there.`
+                    : `Did you mean ${suggestion}? \`sources search ${parsed.skill}\` ranks the alternatives.`
+            }\n`,
+        )
+        return undefined
+    }
+    if (matches.length > 1) {
+        process.stdout.write(
+            `${matches.length} sources carry a skill called ${parsed.skill}\n\n${matches
+                .map((row) => `  ${row.spec.name}/${row.entry.skill} — ${row.spec.url}\n`)
+                .join("")}\n  Name one.\n`,
+        )
+        return undefined
+    }
+
+    const only = matches[0] as { entry: CatalogueEntry; spec: SourceSpec }
+    if (only.entry.problem !== undefined) {
+        process.stdout.write(
+            `${only.spec.name}/${only.entry.skill} will not load: ${only.entry.problem}\n\n  Nothing was copied. That is upstream's to fix — installing a hand-edited copy from a path is the way round it.\n`,
+        )
+        return undefined
+    }
+    return {
+        entry: only.entry,
+        spec: only.spec,
+        commit: readMeta(only.spec.name, env).commit ?? "unknown",
+    }
+}
+
+/** Files under an installed skill that would run. Same over-reporting rule as the catalogue's. */
+function scriptFiles(dir: string, depth = 0): string[] {
+    if (depth > 3) return []
+    const found: string[] = []
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, entry.name)
+        if (entry.isDirectory()) {
+            if (entry.name.startsWith(".")) continue
+            found.push(...scriptFiles(full, depth + 1))
+            continue
+        }
+        if (!entry.isFile()) continue
+        const executable = (statSync(full).mode & 0o111) !== 0
+        if (executable || SCRIPT_EXTENSIONS.some((extension) => entry.name.endsWith(extension))) {
+            found.push(full)
+        }
+    }
+    return found
+}
+
+const SCRIPT_EXTENSIONS = [".py", ".sh", ".js", ".ts", ".mjs", ".rb", ".pl"]
 
 /**
  * Deletes files, and says what it removed rather than only that it did.
@@ -626,11 +856,24 @@ function remove(dir: string, options: SkillsOptions): number {
 
     // Counted before the delete, so the report is about what was actually there rather than a guess.
     const files = countFiles(target)
+    const origin = readOrigins(dir)[name]
     rmSync(target, { recursive: true, force: true })
+    // The claim goes with the directory. A record saying `pdf` came from a commit, pointing at a folder
+    // that is gone, is worse than no record: the next `install` of the same name would look like a
+    // re-install of exactly that commit.
+    forgetOrigin(dir, name)
     process.stdout.write(
         `${keyValue([
             { label: "removed", value: target },
             { label: "files", value: String(files) },
+            ...(origin === undefined
+                ? []
+                : [
+                      {
+                          label: "came from",
+                          value: `${origin.source} (${origin.url}) at ${origin.commit}`,
+                      },
+                  ]),
         ])}\n`,
     )
     process.stdout.write(`${bullet("restart the agent: the catalogue is scanned once at boot")}\n`)

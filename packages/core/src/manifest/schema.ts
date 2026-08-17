@@ -318,7 +318,11 @@ export const SkillsSchema = z
          * target: what a window fits and what a model follows are different numbers.
          */
         budget: z.number().int().positive().default(5000),
-        sources: z.array(z.string().min(1)).default([]),
+        // No `sources` field, and its absence is the design (decision 11.46). Where skills come from is
+        // a machine-level list the CLI owns, not a property of one agent — and a fetchable URL inside the
+        // document `Runtime.create` reads is an invitation to resolve it there, which is hard rule 4 and
+        // the reason this project exists. The runtime's only relationship with a source is that a
+        // directory was copied before it ever started.
     })
     .strict()
 

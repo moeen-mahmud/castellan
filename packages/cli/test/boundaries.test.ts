@@ -144,10 +144,15 @@ describe("exactly one module may spawn a subprocess", () => {
      * keeping true of everything except the one seam built for it. A second call site is a second
      * place tests would have to intercept, and the first one that forgets reaches the real
      * `~/Library/LaunchAgents` on somebody's machine.
+     *
+     * The seam moved out of `lib/service.ts` when `git` became the second thing worth running, and it
+     * moved rather than becoming a two-entry allowlist: an allowlist is what this rule turns into if a
+     * new caller is ever the answer, and it would grow once per phase. `lib/service.ts` and
+     * `lib/source-cache.ts` both call `spawnCapture`, and neither knows how a process is started.
      */
-    const SPAWNER = "lib/service.ts"
+    const SPAWNER = "lib/spawn.ts"
 
-    test("only the service seam imports node:child_process", () => {
+    test("only the shared spawn seam imports node:child_process", () => {
         const offenders = FILES.filter(
             (file) => file.path !== SPAWNER && staticImportsOf(file.text, "node:child_process"),
         ).map((file) => file.path)
