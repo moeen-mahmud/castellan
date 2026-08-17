@@ -1380,32 +1380,100 @@ readable by one user and a system daemon runs as another. `daemon doctor`, healt
 
 **Deliverables**
 
-- `skills/index.ts` — frontmatter-only scan, `.castellan/skills.idx.json` cache with mtime check
-- `skills/select.ts` — BM25 over name + description + `when_not_to_use`, threshold, `maxActive`
-- `skills/load.ts` — body into slot 3, cache breakpoint B
-- `skills/scripts.ts` — subprocess; `uv run` when Python metadata present, else `python3`; TS/JS via host; loud failure on missing runtime
-- Scripts registered as `skill.<skill>.<script>`, visible only while active
-- Skill template with mandatory `when_not_to_use`
+- `skills/frontmatter.ts` — the published spec enforced: `name` 1–64 chars, lowercase alphanumeric and
+  single hyphens, no leading/trailing hyphen, no `--`, **equal to the parent directory name**;
+  `description` 1–1024; `compatibility` ≤500. Unknown top-level keys are kept and ignored — the
+  deliberate divergence from `parseWorkspaceFile`, which throws on them. Reuses `strip()`, so
+  frontmatter and HTML comments cannot reach the model by a second route
+- `skills/index.ts` — frontmatter-only scan, `<stateDir>/skills.idx.json` cache keyed on each file's
+  mtime and size, versioned like `tools-composio/src/cache.ts` so a bump is a cold read and never a
+  wrong one. Bodies are never read at boot
+- `skills/select.ts` — BM25 as a **scorer, not an index**: a ranking-only `SkillSelector` over
+  name + description + when-not-to-use, against the turn input and the previous assistant turn.
+  Fifty skills of frontmatter is a few thousand terms, so there is nothing to index; `skills.idx.json`
+  caches the *file scan*, which is what the 50 ms criterion measures. `activateKnowledge`'s
+  rank-then-take walk is generalised to `activate()` and shared, because a second index beside
+  Phase 3.5's selector is exactly what `knowledge.ts` was written to prevent
+- `skills/load.ts` — body into `SLOT.skill`, **by name, never by number**; role from
+  `promptStyle.skillsIn`, carried since Phase 3 and consumed here for the first time. Selected once
+  per turn, not per step
+- `skills/scripts.ts` — **pure `interpreterFor` only**: `uv run` when Python metadata is present, else
+  `python3`, TS/JS via the host, else the executable bit. A `ScriptRunner` port carries it to
+  `tools-system`, which owns every process-group, cap-of-8 and reaping rule already; core owns no
+  shell and gets no second spawn path. Loud failure at load on a missing runtime
+- Scripts registered as `skill.<skill>.<script>` and visible only while active — rendered at the end of
+  the **slot-5 skill block**, never in slot 1, which is rendered once and must stay byte-stable
+- `SkillsSchema` gains `budget`; `skills` leaves `UNSUPPORTED_SECTIONS`
+- Skill template with when-not-to-use under `metadata`, the spec's own extension point, keyed from
+  `BRAND.slug`. Warned by `validate`, never required at load
 - `castellan skills list|show|validate` — table entry plus a plain writer, `--json` included
+- `init` asks about skills, because every capability the runtime has is a question in `init`
 - 3 example skills, one shipping a Python script
 
 `castellan workspace validate` belongs to Phase 3.5, not here: it validates workspace tiers and
-budgets, which exist by then. Skills only add the `when_not_to_use` check to it.
+budgets, which exist by then. Skills only add the when-not-to-use check to it.
 
-**Files.** `packages/core/src/skills/`, `examples/*/skills/`, `packages/cli/`
+**Files.** `packages/core/src/skills/`, `packages/tools-system/` (the `ScriptRunner` implementation),
+`examples/*/skills/`, `packages/cli/`
 
 **Acceptance**
 
-- [ ] 50 skills index in under 50 ms cold, under 5 ms cached
-- [ ] Selection picks the right skill on ≥20 fixture inputs; below-threshold inputs select none
-- [ ] Active skill's scripts appear in the catalogue; inactive ones do not
+- [ ] 50 skills index in under 50 ms cold, under 5 ms cached; a touched file re-reads and the other 49
+      do not
+- [ ] Selection picks the right skill on ≥20 fixture inputs; below-threshold inputs select none — the
+      half that catches a scorer which always returns something
+- [ ] Active skill's scripts appear in the catalogue the model was shown; inactive ones do not
+- [ ] **Slot 1 is byte-identical across a turn that activates a skill and one that does not**, asserted
+      on the assembled prefix rather than trusted
+- [ ] A skill body over the whole budget fails at load, naming the skill and both numbers
+- [ ] A skill vendored unmodified from `anthropics/skills` loads with a warning, not an error — which
+      is the whole of decision 6.1's compliance claim, and only a real third-party skill can check it
 - [ ] Python script skill runs end to end with `uv`
 - [ ] Skill declaring Python with no runtime fails **at load**, naming both
 - [ ] Adding a skill file and reloading picks it up without restart
-- [ ] `castellan skills validate` rejects missing `description` or `when_not_to_use`
+- [ ] `castellan skills validate` rejects a missing `description`; **warns** on a missing
+      when-not-to-use
 - [ ] Boot budget met with 50 skills
 
-**Non-goals.** Remote skill sources. Skill authoring UI.
+**Non-goals.** Remote skill sources — `sources: []` stays parsed and unimplemented, and is Phase 9's
+plugin surface. Skill authoring UI, and any model-driven selection, which is what decision 6.2 exists
+to refuse. Honouring `allowed-tools` as a grant: it is read and displayed, never enforced, because a
+downloaded folder that could widen the agent's authority is the thing the `config_set` floor refuses.
+A second index. Nested `references/` loading — the harness injects `SKILL.md` and nothing else; a
+referenced file is the model's to read through `file_read`.
+
+### Corrections to this phase as first written
+
+Found by reading the published spec and the code against the deliverable list, *before* building.
+Recorded rather than silently fixed, because four of them contradict decisions that are still cited
+elsewhere.
+
+- **`when_not_to_use` is not a spec field.** The frontmatter set is `name`, `description`, `license`,
+  `compatibility`, `metadata`, `allowed-tools`. So decision 6.1's compliance claim — which says
+  compliance "inherits `anthropics/skills` plus the community" — and decision 6.3's mandatory field
+  cannot both hold: a required field the spec does not define means every third-party skill fails to
+  load. It moves under `metadata`, which the spec defines for exactly this ("clients can use this to
+  store additional properties not defined by the Agent Skills spec"), and `validate` warns where the
+  loader would have refused. Same split as `validate` versus `workspace`: a heuristic judgement that
+  refuses to load a file is a heuristic nobody keeps.
+- **Three documents gave the body three slot numbers** — slot 3 here, slot 4 in
+  `01-ARCHITECTURE.md`, `SLOT.skill = 5` in the code. The code is right; the docs went stale when
+  `examples` and `knowledge` renumbered everything below slot 2. Referenced by name from now on.
+- **Decision 6.6 contradicted the cache-stable prefix.** Scripts "visible only while their skill is
+  active" implies a per-turn tool catalogue, and slot 1 is documented as rendered once and
+  byte-stable or prompt caching stops working. That failure has no symptom — the bill rises and
+  nothing reports it. Scripts render in slot 5, which is after breakpoint A and varies per turn
+  already, so 6.6 holds and slot 1 never moves.
+- **`skills/scripts.ts` as specified was a second spawn path, inside core.** Core owns no shell, and
+  `tools-system` already holds the rules that cost 33 orphaned shells and a load average of 351 to
+  learn. Core keeps the decision and the port; the subprocess stays where the reaper is.
+- **`SkillsSchema` had no budget**, while the spec recommends bodies under 5,000 tokens. Injecting one
+  unbounded into slot 5 is the hole `knowledgeEntryOverBudget` already exists for.
+- **The frontmatter parsers throw on unknown keys** — right for workspace files, which are ours, wrong
+  for skills, which are not. A skill carrying `license`, or a spec field added next year, must load.
+- **`allowed-tools` is a third-party file declaring pre-approved tools.** Read, shown, never enforced.
+- **BM25 needed no index**, which is the difference between sharing Phase 3.5's ranking seam and
+  building the second index `knowledge.ts` explicitly forbids.
 
 ---
 

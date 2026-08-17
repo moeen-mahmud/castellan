@@ -666,19 +666,28 @@ The agent writes memory through a built-in `memory_write` tool that appends to
 
 ## Skills
 
-**Boot**: read frontmatter only (`name`, `description`, `when_not_to_use`), build an index,
-cache to `.castellan/skills.idx.json` keyed by directory mtime and size. Bodies are never
-read at boot.
+**Boot**: read frontmatter only, cache to `<stateDir>/skills.idx.json` keyed by each file's
+mtime and size. Bodies are never read at boot. The spec's fields are `name`, `description`,
+`license`, `compatibility`, `metadata` and `allowed-tools`; negative guidance lives under
+`metadata` because the spec defines no field for it (decision 6.3). Unknown keys are kept and
+ignored — a third-party file must survive a spec that grows.
 
-**Selection**: harness-side BM25 over `name + description + when_not_to_use` against the
+**Selection**: harness-side BM25 over name, description and when-not-to-use, against the
 turn input and the previous assistant turn. Score threshold; at most one active skill per
-turn by default (`skills.maxActive`).
+turn by default (`skills.maxActive`). BM25 is a **scorer, not an index** — the ranking seam
+and the take-what-fits walk are shared with Tier 3 knowledge, which is what keeps Phase 6
+from having two indexes to attach a retriever to (decision 11.44).
 
-**Injection**: the full SKILL.md body enters context slot 4.
+**Injection**: the full SKILL.md body enters `SLOT.skill`, referenced by name — the number
+has moved once already, when `examples` and `knowledge` were inserted. Its role is
+`promptStyle.skillsIn`.
 
 **Scripts**: a skill may ship `scripts/`. Those register as tools named
-`skill.<skill>.<script>`, visible **only while the skill is active**. Executed via
-subprocess:
+`skill.<skill>.<script>`, visible **only while the skill is active** — rendered at the end of
+the skill's own block, never in the slot-1 catalogue, which is rendered once at load and must
+stay byte-identical or prompt caching silently stops. Interpreter selection is a pure
+function in core; the subprocess belongs to `tools-system`, which owns the process-group,
+concurrency-cap and reaping rules (decisions 6.5, 6.6):
 
 - `pyproject.toml` or `requirements.txt` present → `uv run <script>`
 - else `.py` → `python3 <script>`
@@ -687,6 +696,9 @@ subprocess:
 
 If a skill declares a Python script and no Python runtime exists, the skill **fails at
 load** with a named error. It does not fail silently at use time.
+
+`allowed-tools` is parsed and displayed and **never honoured** — a downloaded folder does not
+widen what the agent may run (decision 11.45).
 
 ---
 

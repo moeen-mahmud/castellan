@@ -421,9 +421,13 @@ tokens and buys no reliable compliance.
    an agent that steers every conversation toward deploys.
 4. **Positive framing.** More than five prohibitions is a warning; heavy negative framing
    pushes small models toward over-refusal.
-5. **`when_not_to_use` is mandatory** on every skill. Negative examples in a manifest are
-   the cheapest available routing improvement — the same lever `ToolSpec.whenNotToUse`
-   already pulls for tools.
+5. **Negative guidance on every skill**, under the frontmatter's `metadata` map — the
+   agentskills.io spec defines no field for it, and `metadata` is what the spec provides for
+   client extensions. Negative examples are the cheapest available routing improvement, the
+   same lever `ToolSpec.whenNotToUse` already pulls for tools, so the template always carries
+   one and `skills validate` warns when it is missing. It is **not** required at load:
+   refusing a skill for it would reject every file from `anthropics/skills` and take decision
+   6.1's compliance claim with it. This is an authoring rule, and authoring rules warn.
 
 ---
 
