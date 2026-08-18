@@ -15,7 +15,6 @@
 
 import { randomBytes } from "node:crypto"
 import { existsSync } from "node:fs"
-import { homedir } from "node:os"
 import { createInterface, type Interface } from "node:readline"
 import {
     type Agent,
@@ -43,7 +42,7 @@ import {
 import { flushOutput, markAltScreen, markTerminalDirty, onExit, restoreTerminal } from "#lib/exit"
 import { resolveModeFromProcess } from "#lib/output"
 import { CHANNELS, scriptRunner, TOOL_PROVIDERS } from "#lib/providers"
-import { keyValue, tildify } from "#lib/render"
+import { keyValue } from "#lib/render"
 import { listAgents, storePath } from "#lib/sandbox"
 import type { RunOptions } from "#lib/schema"
 import { screenColumns } from "#lib/screen"
@@ -648,7 +647,6 @@ async function runRich(wired: Wired): Promise<RunOutcome> {
             agentName: wired.agent.describe().id,
             // Only before the first message, and only in a conversation with nothing behind it.
             freshSession: wired.freshSession,
-            location: tildify(process.cwd(), homedir()),
             // The count in the one-line header. The messages themselves are in the banner, which scrolls;
             // on a surface with no scrollback a session-wide fact that has scrolled away is a fact nobody
             // has, so the header keeps the number and says where to find the text.

@@ -120,6 +120,33 @@ export const PANE_ROWS = 16
  */
 export const MIN_BODY_ROWS = 3
 
+/**
+ * Rows a list may take while landing — before anything has been sent.
+ *
+ * Deliberately larger than `SEARCH_ROWS`, which is tuned for a live conversation where every row of list is a
+ * row of conversation hidden. There is no conversation yet on the landing screen and its whole job is
+ * discovery: showing six of fourteen commands behind a `… 8 below` is the wrong trade on the screen somebody
+ * opens before they know what the commands are. The brand mark gives up a tier to pay for it, which the tier
+ * ladder already knows how to do.
+ */
+export const LANDING_LIST_ROWS = 14
+
+/**
+ * Rows of conversation the landing screen keeps, whatever the brand mark would like.
+ *
+ * The banner is written into the transcript, so a wordmark that squeezed it to nothing would hide the boot
+ * notes and every load warning behind a picture — which is the trimmed-catalogue failure with better
+ * typography: true of what is on screen, false of what is the case.
+ *
+ * Eight rather than four, measured against a real banner: four left the window showing the *tail* of it, so
+ * the first thing on screen was the second half of a wrapped store path. The banner runs six to eight rows
+ * depending on how many load warnings there are.
+ */
+export const MIN_LANDING_TRANSCRIPT = 8
+
+/** The blank row between the brand mark and the one-line header under it. */
+export const BRAND_GAP_ROWS = 1
+
 /** Conversations the session picker shows at once. The list scrolls inside this. */
 export const SESSION_PICKER_ROWS = 12
 

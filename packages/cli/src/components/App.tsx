@@ -27,6 +27,7 @@
 import { BRAND, VERSION } from "@castellan/core"
 import { Box, Text, useApp, useInput } from "ink"
 import { type ComponentType, useCallback, useEffect, useMemo, useState } from "react"
+import { BRAND_INDENT, Brandmark } from "#components/Brandmark"
 import { CommandOutput } from "#components/CommandOutput"
 import { HistorySearch } from "#components/HistorySearch"
 import { Live } from "#components/Live"
@@ -35,7 +36,6 @@ import { Prompt } from "#components/Prompt"
 import type { SessionPickerProps } from "#components/SessionPicker"
 import type { SkillBrowserProps } from "#components/SkillBrowser"
 import { Spinner } from "#components/Spinner"
-import { Splash } from "#components/Splash"
 import { StatusBar } from "#components/StatusBar"
 import { Transcript } from "#components/Transcript"
 import { applyIntent, EMPTY_EDITOR, submit } from "#editor"
@@ -43,8 +43,14 @@ import { useElapsed } from "#hooks/useElapsed"
 import { useTerminalSize } from "#hooks/useTerminalSize"
 import { useTurn } from "#hooks/useTurn"
 import { keyContext, keyToIntent } from "#keymap"
-import { chatFrame } from "#lib/chat-frame"
-import { EXIT_ARM_MS, FALLBACK_COLUMNS, SEARCH_ROWS, SESSION_PICKER_ROWS } from "#lib/const"
+import { chatFrame, transcriptRowsAfterBrand } from "#lib/chat-frame"
+import {
+    EXIT_ARM_MS,
+    FALLBACK_COLUMNS,
+    LANDING_LIST_ROWS,
+    SEARCH_ROWS,
+    SESSION_PICKER_ROWS,
+} from "#lib/const"
 import { paletteEntries, paletteFor, paletteSelection } from "#lib/palette"
 import type { AppProps } from "#lib/schema"
 import { screenColumns, titleLine } from "#lib/screen"
@@ -60,6 +66,7 @@ import {
 import type { SessionRowSource } from "#lib/sessions-view"
 import { runSubcommand } from "#lib/subcommand"
 import { THEME } from "#lib/theme"
+import { wordmark } from "#lib/wordmark"
 import { lastStats, transcriptRows } from "#transcript"
 
 /**
@@ -97,7 +104,6 @@ export function App({
     agentName,
     warnings,
     freshSession,
-    location,
     initial,
     showReasoning,
     quiet,
@@ -174,6 +180,27 @@ export function App({
         [state.items, showReasoning, quiet, columns],
     )
 
+    /**
+     * The landing state: a new conversation with nothing sent into it yet.
+     *
+     * It is a *state of the one frame*, not a screen of its own, and that is the whole design. As a separate
+     * screen it was swapped out the moment anything reached the transcript — which `/help`, `/tools` and
+     * `/restart` all do — so the landing screen "disappeared" for almost every command. And anything added to
+     * the other layout was silently missing from it: the palette drew nothing there for a day, and `/exit`'s
+     * "press y" prompt was invisible, because both live in the layout that was not on screen. One frame
+     * removes that class of bug rather than fixing instances of it.
+     *
+     * `freshSession` is the host's answer to "is there history", because the chat does not render stored
+     * messages — a resumed conversation's history reaches the model, not the screen — so an empty transcript
+     * is equally true of a resumed session. The second half is what the owner chose: slash commands, notes
+     * and the banner all keep the brand mark, because they are setup rather than conversation. It goes when
+     * you actually start talking, and does not come back.
+     */
+    const landing = freshSession === true && !state.items.some((item) => item.role === "user")
+
+    // A longer list while landing: there is no conversation to hide behind it, and the screen somebody opens
+    // before they know the commands should show all of them rather than six and a counter.
+    const listRows = landing ? LANDING_LIST_ROWS : SEARCH_ROWS
     const frame = chatFrame({
         rows: size.rows,
         columns,
@@ -181,11 +208,29 @@ export function App({
         live: state.live,
         showReasoning,
         palette,
-        paletteMaxRows: SEARCH_ROWS,
-        searchMaxRows: SEARCH_ROWS,
+        paletteMaxRows: listRows,
+        searchMaxRows: listRows,
         confirming,
+        landing,
+        hint: landing,
     })
-    const window = slice(view, rows.length, frame.transcript)
+    /**
+     * The brand mark, rendered here so the conversation is charged what it actually draws.
+     *
+     * `frame.brand` is an allowance and `wordmark` usually takes far less of it — charging the allowance
+     * wasted eleven rows on a thirty-row terminal, and the banner ended up scrolled to a mid-wrap fragment of
+     * a store path with a third of the screen blank. Computed once and handed to `Brandmark` as lines, so
+     * there is no second derivation that could disagree about how tall the frame is.
+     */
+    const mark =
+        frame.brand > 0
+            ? wordmark(BRAND.name, { columns: columns - BRAND_INDENT, rows: frame.brand })
+            : undefined
+    const window = slice(
+        view,
+        rows.length,
+        transcriptRowsAfterBrand(frame, mark?.lines.length ?? 0),
+    )
 
     // The armed ^C expires on its own. A prompt that stayed armed indefinitely would turn a ^C pressed
     // minutes ago into the reason a later one ended the session.
@@ -195,7 +240,21 @@ export function App({
         return () => clearTimeout(timer)
     }, [armed])
 
-    const onSubmit = (text: string): void => {
+    /**
+     * A submitted line: a slash command, or a message for the model.
+     *
+     * `draft` is what is *left in the buffer* afterwards, and it has to be passed in rather than read from
+     * `editor` here. This closure captures the editor as it was when the frame rendered — before the submit
+     * cleared it — so reading `editor.value` returned the command that was just consumed. `/restart` then
+     * carried `/restart` across as the draft, which re-opened the palette on top of the new banner: the
+     * screen came back identical to before enter was pressed, with the message hidden behind the list, and
+     * the restart looked like it had done nothing at all.
+     *
+     * For a typed command the residual is always empty — `COMMAND_SHAPE` matches the whole trimmed line, so
+     * a command cannot share the buffer with a draft. It stays a parameter because a restart offered by a
+     * *pane* could, and that is what the carry-across exists for.
+     */
+    const onSubmit = (text: string, draft: string): void => {
         // Both renderers dispatch through the same table, so `--plain` and the rich path cannot
         // answer the same typed command differently.
         const command = resolveSessionCommand(text)
@@ -214,7 +273,7 @@ export function App({
                     // The unsent draft rides across the restart. `/restart` rebuilds the agent to
                     // pick up a settings change; throwing away a half-written message on the way is a
                     // second, unasked-for consequence of asking for the first.
-                    onRestart?.(editor.value)
+                    onRestart?.(draft)
                     exit()
                     return
                 case "help":
@@ -407,7 +466,8 @@ export function App({
                     setEditor((current) => ({ ...current, value: "", cursor: 0 }))
                     // A session verb goes through the same submit path a typed line takes, so `/help` and
                     // `/reset` behave identically whether they were completed or typed out.
-                    if (chosen.kind === "session") onSubmit(chosen.word)
+                    // The buffer was cleared in the same handler, so nothing is left behind.
+                    if (chosen.kind === "session") onSubmit(chosen.word, "")
                     else dispatch(chosen.word, "")
                     return
                 }
@@ -446,7 +506,7 @@ export function App({
                 // Sending is an implicit "take me back to the newest row": a reply arriving into a window
                 // parked ten screens up would be generated where nobody can see it.
                 setView(FOLLOWING)
-                if (committed.text !== "") onSubmit(committed.text)
+                if (committed.text !== "") onSubmit(committed.text, committed.state.value)
                 return
             }
             if (intent.kind === "paste") {
@@ -521,38 +581,6 @@ export function App({
         )
     }
 
-    /**
-     * Nothing has been said in a brand-new conversation, so the splash stands in for the transcript.
-     *
-     * Both halves matter. `freshSession` is the host's answer to "is there history" — the chat never
-     * renders stored messages, so an empty transcript is also what a *resumed* session looks like, and a
-     * welcome screen in front of a conversation somebody is continuing would be the wrong screen. The
-     * banner check is what makes it go away the instant a message is sent, without a second flag to keep
-     * in step.
-     *
-     * A pane is checked first: `/skills` from the splash should show the catalogue, not a wordmark.
-     */
-    const untouched = state.items.every((item) => item.role === "banner")
-    if (pane.kind === "none" && freshSession === true && untouched && state.live === undefined) {
-        return (
-            <Splash
-                name={BRAND.name}
-                version={VERSION}
-                agentName={agentName}
-                model={model}
-                warnings={warnings ?? []}
-                location={location ?? ""}
-                editor={editor}
-                busy={busy}
-                columns={columns}
-                rows={size.rows}
-                hint={NEW_SESSION_HINT}
-                {...(palette === undefined ? {} : { palette })}
-                paletteIndex={paletteIndex}
-            />
-        )
-    }
-
     const header = titleLine(
         {
             title: `${BRAND.name} ${VERSION}`,
@@ -567,6 +595,17 @@ export function App({
         // Fixed height, because the alternate screen has no scrollback to absorb an overshoot: one row too
         // many and Ink's own output scrolls the buffer, which leaves the status line halfway up the display.
         <Box flexDirection="column" width={columns} height={size.rows}>
+            {/*
+             * Above the one-line header, and only while landing. Nothing appears or disappears when it goes —
+             * the line below it is the same line either way, which is what makes the collapse read as the same
+             * screen with less on it rather than as a different screen.
+             */}
+            {mark === undefined ? null : (
+                <>
+                    <Brandmark lines={mark.lines} />
+                    <Text> </Text>
+                </>
+            )}
             <Text color={THEME.accent} bold wrap="truncate">
                 {header}
             </Text>
@@ -606,16 +645,35 @@ export function App({
                     palette={palette}
                     index={paletteIndex}
                     width={columns}
-                    maxRows={SEARCH_ROWS}
+                    maxRows={listRows}
                 />
             )}
-            <HistorySearch editor={editor} width={columns} maxRows={SEARCH_ROWS} />
+            <HistorySearch editor={editor} width={columns} maxRows={listRows} />
+            {/*
+             * Rendered once, in the one frame, which is the fix rather than a feature: this lived only in the
+             * transcript layout, so `/exit` typed on the landing screen asked for a confirmation nobody could
+             * see — the session simply appeared to ignore the command until a second keystroke ended it.
+             */}
             {confirming ? (
                 <Text color={THEME.warning} wrap="truncate">
-                    {"  leave this session? y to confirm · any other key stays"}
+                    {"  leave this session? press y to confirm · any other key stays"}
                 </Text>
             ) : null}
-            <Prompt editor={editor} busy={busy} />
+            <Prompt
+                editor={editor}
+                busy={busy}
+                {...(landing ? { roomy: true, placeholder: "Ask anything…" } : {})}
+            />
+            {/*
+             * The keys worth knowing before there is a conversation to learn them from. It stands down once
+             * one exists: the status line already carries `^C`, and a permanent hint is a row of conversation.
+             */}
+            {landing ? (
+                <Text dimColor wrap="truncate">
+                    {"  "}
+                    {NEW_SESSION_HINT}
+                </Text>
+            ) : null}
             {/* The status line is the footer, under the input — where every reference CLI puts
                 it, and where the eye rests between keystrokes. */}
             <StatusBar

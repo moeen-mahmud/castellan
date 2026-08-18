@@ -7,7 +7,7 @@
  * component containing a literal colour name is a review failure.
  *
  * Tokens are plain Ink colour names (16-colour safe; Ink's chalk layer maps them per terminal),
- * which keeps this module PURE-listable. `NO_COLOR` needs no handling here: the mode resolution
+ * which keeps this module PURE-listable. `brand` is the single deliberate exception and says why. `NO_COLOR` needs no handling here: the mode resolution
  * forces plain output before Ink ever loads, and chalk independently honours it anyway.
  *
  * This is deliberately a single built-in token set, not a theming system — decision 11.12
@@ -33,6 +33,19 @@ export interface Theme {
     readonly border: string
     /** The focused box: the input line, the banner. */
     readonly borderActive: string
+    /**
+     * The wordmark, and only the wordmark.
+     *
+     * The one token that is a hex triplet rather than an Ink colour name, chosen by the owner. Every other
+     * token is 16-colour safe on purpose — a name lets chalk pick whatever the terminal actually has — and
+     * this is the deliberate exception, because a brand mark is the one element whose *exact* colour is the
+     * point. Chalk downsamples it per terminal rather than failing: on a 256-colour terminal it lands on the
+     * nearest cube entry, on a 16-colour one on bright green, which is the right neighbour. `NO_COLOR` is
+     * handled before Ink loads at all, by the mode resolution.
+     *
+     * Not reused anywhere else. A second consumer would make it an accent, and the accent already exists.
+     */
+    readonly brand: string
 }
 
 export const THEME: Theme = {
@@ -45,6 +58,7 @@ export const THEME: Theme = {
     emphasis: "magenta",
     border: "gray",
     borderActive: "cyan",
+    brand: "#39FF14",
 }
 
 /** Status-dot colours, previously inlined in StatusBar. */

@@ -13,18 +13,17 @@
 import { describe, expect, test } from "bun:test"
 import { createElement as h } from "react"
 import { App } from "#components/App"
+import { Brandmark } from "#components/Brandmark"
 import { Picker } from "#components/Picker"
 import { SessionPicker, type SessionPickerProps } from "#components/SessionPicker"
 import { SkillBrowser } from "#components/SkillBrowser"
-import { Splash } from "#components/Splash"
 import { WizardApp } from "#components/WizardApp"
-import { EMPTY_EDITOR } from "#editor"
 import type { BrowseRow, InstallReport } from "#lib/browse"
-import { paletteFor } from "#lib/palette"
 import type { SandboxAgent } from "#lib/sandbox"
-import type { AppProps, SplashProps } from "#lib/schema"
+import type { AppProps } from "#lib/schema"
 import type { CatalogueEntry } from "#lib/source-cache"
 import { GLYPH, SPINNER_FRAMES } from "#lib/theme"
+import { wordmark } from "#lib/wordmark"
 import { KEY, mount, overflowing, renderFrame } from "../helpers/frame.tsx"
 
 const AGENTS: readonly SandboxAgent[] = [
@@ -613,6 +612,51 @@ describe("App, on a screen with a hard ceiling", () => {
     })
 })
 
+describe("App, restarting", () => {
+    test("the command that asked for the restart does not come back as the draft", async () => {
+        // What shipped: `onRestart` read `editor.value` from a closure captured *before* the submit
+        // cleared it, so `/restart` carried `/restart` across. The new mount then re-opened the palette on
+        // top of the new banner, so the screen returned identical to before enter was pressed with the
+        // "restarted" line hidden behind the list — and the restart read as having done nothing.
+        const drafts: string[] = []
+        const harness = mount(
+            h(App, { ...stubAppProps(), onRestart: (draft: string) => drafts.push(draft) }),
+            { columns: 100, rows: 24 },
+        )
+        await harness.press("/restart", KEY.enter)
+        harness.unmount()
+        expect(drafts).toEqual([""])
+    })
+
+    test("a command has to be the whole buffer, so a draft plus a command is prose", async () => {
+        // This is *why* the residual is always empty for a typed command: `COMMAND_SHAPE` matches the whole
+        // trimmed line, so `/restart` on the second line of a message is not a command at all — it goes to
+        // the model with the rest. The `draft` parameter therefore exists for a restart offered by a
+        // **pane**, where something half-written genuinely can be sitting in the buffer.
+        const drafts: string[] = []
+        const sent: string[] = []
+        const props = stubAppProps()
+        const harness = mount(
+            h(App, {
+                ...props,
+                onRestart: (draft: string) => drafts.push(draft),
+                agent: {
+                    ...props.agent,
+                    // `Agent.send(input, options)` — the text is the first positional, not a field.
+                    send: async (input: string) => {
+                        sent.push(input)
+                    },
+                } as unknown as AppProps["agent"],
+            }),
+            { columns: 100, rows: 24 },
+        )
+        await harness.press("half a thought", KEY.metaEnter, "/restart", KEY.enter)
+        harness.unmount()
+        expect(drafts).toEqual([])
+        expect(sent).toEqual(["half a thought\n/restart"])
+    })
+})
+
 describe("App, leaving", () => {
     test("^C at an idle prompt arms, and says so before the second press", async () => {
         const harness = mount(h(App, stubAppProps()), { columns: 100 })
@@ -766,179 +810,163 @@ describe("SessionPicker", () => {
     })
 })
 
-describe("Splash — a conversation with nothing in it yet", () => {
-    function splash(overrides: Partial<SplashProps> = {}) {
-        return h(Splash, {
-            name: "Kit",
-            version: "0.1.0",
-            agentName: "milo",
-            model: "deepseek-v4-flash",
-            warnings: [],
-            location: "~/work",
-            editor: EMPTY_EDITOR,
-            busy: false,
-            columns: 100,
-            rows: 24,
-            hint: "/ commands · ⏎ sends",
-            paletteIndex: 0,
-            ...overrides,
-        })
-    }
-
-    test("it fills the terminal exactly, and nothing overflows", () => {
-        // Same ceiling as the transcript frame, for the same reason: the alternate screen has no
-        // scrollback, so a row too many scrolls the buffer and the footer ends up mid-screen.
-        for (const rows of [10, 16, 24, 40]) {
-            for (const columns of [44, 60, 80, 100, 140]) {
-                const frame = renderFrame(splash({ columns, rows }), { columns, rows })
-                expect(frame.lines.length).toBeLessThanOrEqual(rows)
-                expect(overflowing(frame, columns)).toEqual([])
-            }
-        }
-    })
-
-    test("the wordmark is drawn from the name it was given", () => {
+describe("Brandmark", () => {
+    test("it draws from the name it is given", () => {
         // Rendered from `BRAND.name`, never a literal — hard rule 3 means a rename is one commit, and an
         // ASCII wordmark would otherwise be the largest brand string in the tree.
-        const frame = renderFrame(splash(), { columns: 100, rows: 24 })
+        const frame = renderFrame(
+            h(Brandmark, { lines: wordmark("Kit", { columns: 100, rows: 6 }).lines }),
+            {
+                columns: 100,
+            },
+        )
         expect(frame.text).toContain("█")
+        expect(overflowing(frame, 100)).toEqual([])
     })
 
-    test("it degrades to the letter-spaced name rather than overflowing a narrow screen", () => {
-        // How narrow is too narrow depends on the *name*: three letters still fit the biggest tier at 44
-        // columns, which is why the tiers are chosen by measuring rather than by a width threshold.
-        const frame = renderFrame(splash({ name: "Kitchens", columns: 44 }), {
-            columns: 44,
-            rows: 24,
-        })
+    test("it degrades to the letter-spaced name rather than overflowing", () => {
+        const frame = renderFrame(
+            h(Brandmark, { lines: wordmark("Kitchens", { columns: 44, rows: 6 }).lines }),
+            {
+                columns: 44,
+            },
+        )
         expect(frame.text).toContain("K I T C H E N S")
         expect(overflowing(frame, 44)).toEqual([])
     })
 
-    test("a short name keeps the big tier where a long one would not", () => {
-        const short = renderFrame(splash({ name: "Kit", columns: 44 }), { columns: 44, rows: 24 })
-        expect(short.text).toContain("█")
+    test("it draws exactly the rows it was handed", () => {
+        // The property the frame's arithmetic rests on: the caller measures the mark to charge the
+        // conversation for it, so a component that drew a different number would make the layout wrong by
+        // however many rows it disagreed about.
+        for (const rows of [1, 3, 5, 8]) {
+            const mark = wordmark("Castle", { columns: 100, rows })
+            const frame = renderFrame(h(Brandmark, { lines: mark.lines }), { columns: 100 })
+            expect(frame.lines.length).toBe(mark.lines.length)
+            expect(mark.lines.length).toBeLessThanOrEqual(rows)
+        }
     })
+})
 
-    test("the facts under the composer say who and on what", () => {
-        const frame = renderFrame(splash(), { columns: 100, rows: 24 })
-        expect(frame.text).toContain("milo · deepseek-v4-flash")
-    })
-
-    test("warnings are a count, and absent when there are none", () => {
-        // The text is in the banner, which is the first transcript item — this is the pointer to it.
-        expect(renderFrame(splash(), { columns: 100, rows: 24 }).text).not.toContain("⚠")
-        const warned = renderFrame(splash({ warnings: ["a", "b"] }), { columns: 100, rows: 24 })
-        expect(warned.text).toContain("⚠ 2")
-    })
-
-    test("the footer carries where you are and which build", () => {
-        const frame = renderFrame(splash(), { columns: 100, rows: 24 })
-        expect(frame.text).toContain("~/work")
-        expect(frame.text).toContain("Kit 0.1.0")
-    })
-
-    test("an open palette is drawn above the composer, not swallowed", async () => {
-        // The bug this covers: the screen root's `useInput` is active on the splash, so `/` already
-        // narrowed a palette and enter already ran the command — and nothing was rendered, which is the
-        // worst version of a working key. The `/` lands in the buffer, no list appears, and the feature
-        // reads as absent rather than broken.
-        const typed = { ...EMPTY_EDITOR, value: "/s", cursor: 2 }
-        const frame = renderFrame(splash({ editor: typed, palette: must(paletteFor("/s")) }), {
+describe("App, the landing state", () => {
+    test("a fresh session opens with the brand mark and a placeholder", () => {
+        const harness = mount(h(App, { ...stubAppProps(), freshSession: true }), {
             columns: 100,
             rows: 30,
         })
-        expect(frame.text).toContain("/status")
-        expect(frame.text).toContain("tab complete")
-        expect(overflowing(frame, 100)).toEqual([])
+        const frame = harness.frame()
+        harness.unmount()
+        expect(frame.text).toContain("█")
+        expect(frame.text).toContain("Ask anything")
+        // The one-line header is there too, and is the line that outlives the mark.
+        expect(frame.text).toContain("milo")
     })
 
-    test("an open palette shrinks the wordmark rather than spilling the frame", () => {
-        const typed = { ...EMPTY_EDITOR, value: "/", cursor: 1 }
-        const open = splash({ editor: typed, palette: must(paletteFor("/")), rows: 20 })
-        const frame = renderFrame(open, { columns: 100, rows: 20 })
-        expect(frame.lines.length).toBeLessThanOrEqual(20)
-        // Still on screen: the footer is what would have been pushed off.
-        expect(frame.text).toContain("~/work")
+    test("a resumed session does not, even though its transcript is also empty", () => {
+        // The chat never renders stored history — a resumed conversation's messages reach the model, not the
+        // screen — so "the transcript is empty" is true of both, and deriving from it would put a welcome
+        // screen in front of a conversation somebody is trying to continue.
+        const harness = mount(h(App, { ...stubAppProps(), freshSession: false }), {
+            columns: 100,
+            rows: 30,
+        })
+        const frame = harness.frame()
+        harness.unmount()
+        expect(frame.text).not.toContain("█")
+        expect(frame.text).not.toContain("Ask anything")
     })
 
-    test("the frame still fits with a palette open at every size", () => {
-        const typed = { ...EMPTY_EDITOR, value: "/", cursor: 1 }
+    test("a slash command keeps the brand mark — it is setup, not conversation", async () => {
+        // The bug this covers, and the reason the splash stopped being a screen: `/help` writes a note, the
+        // transcript stops being empty, and the whole branch used to be swapped out. Almost every command
+        // "removed the landing screen".
+        const harness = mount(h(App, { ...stubAppProps(), freshSession: true }), {
+            columns: 100,
+            rows: 30,
+        })
+        await harness.press("/help", KEY.enter)
+        const frame = harness.frame()
+        harness.unmount()
+        expect(frame.text).toContain("█")
+        // The help text is longer than the window the mark leaves, so it is scrolled to its tail rather
+        // than replacing the screen — which is the whole point: the transcript grew, nothing was swapped.
+        expect(frame.text).toContain("rows above")
+        expect(frame.text).toContain("esc")
+    })
+
+    test("sending a message collapses it, and the header line survives", async () => {
+        const harness = mount(h(App, { ...stubAppProps(), freshSession: true }), {
+            columns: 100,
+            rows: 30,
+        })
+        await harness.press("hello", KEY.enter)
+        const frame = harness.frame()
+        harness.unmount()
+        expect(frame.text).not.toContain("█")
+        expect(frame.text).toContain("hello")
+        // Nothing appears or disappears on the collapse — a block above the header goes.
+        expect(frame.text).toContain("milo")
+    })
+
+    test("/exit's confirmation is visible while landing", async () => {
+        // It was rendered only in the transcript layout, so `/exit` on the landing screen asked for a
+        // confirmation nobody could see: the session appeared to ignore the command entirely.
+        const harness = mount(h(App, { ...stubAppProps(), freshSession: true }), {
+            columns: 100,
+            rows: 30,
+        })
+        await harness.press("/exit", KEY.enter)
+        const frame = harness.frame()
+        harness.unmount()
+        expect(frame.text).toContain("press y to confirm")
+    })
+
+    test("the palette shows every command while landing", async () => {
+        const harness = mount(h(App, { ...stubAppProps(), freshSession: true }), {
+            columns: 100,
+            rows: 30,
+        })
+        await harness.press("/")
+        const frame = harness.frame()
+        harness.unmount()
+        // Every command rather than six behind a counter: there is no conversation to hide behind the list.
+        expect(frame.text).toContain("/help")
+        expect(frame.text).toContain("/daemon")
+        expect(frame.text).not.toContain("below")
+    })
+
+    test("the frame still fits, landing or not, at every size", () => {
         for (const rows of [10, 16, 24, 40]) {
             for (const columns of [44, 60, 80, 100, 140]) {
-                const frame = renderFrame(
-                    splash({ editor: typed, palette: must(paletteFor("/")), columns, rows }),
-                    { columns, rows },
-                )
-                expect(frame.lines.length).toBeLessThanOrEqual(rows)
-                expect(overflowing(frame, columns)).toEqual([])
+                for (const freshSession of [true, false]) {
+                    const harness = mount(
+                        h(App, { ...stubAppProps(), freshSession, initial: longHistory(40) }),
+                        { columns, rows },
+                    )
+                    const frame = harness.frame()
+                    harness.unmount()
+                    expect(frame.lines.length).toBeLessThanOrEqual(rows)
+                    expect(overflowing(frame, columns)).toEqual([])
+                }
             }
         }
     })
 
-    test("the placeholder shows while the buffer is empty and not once it is not", () => {
-        const typed = { ...EMPTY_EDITOR, value: "hello", cursor: 5 }
-        expect(renderFrame(splash(), { columns: 100, rows: 24 }).text).toContain("Ask anything")
-        expect(
-            renderFrame(splash({ editor: typed }), { columns: 100, rows: 24 }).text,
-        ).not.toContain("Ask anything")
+    test("a short terminal loses the picture, not the banner", () => {
+        // The banner is written into the transcript, so a brand mark that squeezed it to nothing would hide
+        // the boot notes and every load warning behind a picture.
+        const banner = {
+            items: [{ id: "b", role: "banner" as const, text: "Kit 0.1.0\nsession local:abc123" }],
+            live: undefined,
+            status: "idle" as const,
+            nextId: 1,
+        }
+        const harness = mount(h(App, { ...stubAppProps(), freshSession: true, initial: banner }), {
+            columns: 100,
+            rows: 12,
+        })
+        const frame = harness.frame()
+        harness.unmount()
+        expect(frame.text).toContain("session local:abc123")
     })
 })
-
-describe("App, choosing between the splash and the transcript", () => {
-    test("a fresh session opens on the splash", () => {
-        const harness = mount(h(App, { ...stubAppProps(), freshSession: true }), {
-            columns: 100,
-            rows: 24,
-        })
-        const frame = harness.frame()
-        harness.unmount()
-        expect(frame.text).toContain("Ask anything")
-    })
-
-    test("a resumed session does not, even though its transcript is also empty", () => {
-        // The chat never renders stored history — a resumed conversation's messages reach the model, not
-        // the screen — so "the transcript is empty" is true of both, and deriving from it would put a
-        // welcome screen in front of a conversation somebody is trying to continue.
-        const harness = mount(h(App, { ...stubAppProps(), freshSession: false }), {
-            columns: 100,
-            rows: 24,
-        })
-        const frame = harness.frame()
-        harness.unmount()
-        expect(frame.text).not.toContain("Ask anything")
-        expect(frame.text).toContain("ready")
-    })
-
-    test("the splash goes away as soon as something is typed and sent", async () => {
-        const harness = mount(h(App, { ...stubAppProps(), freshSession: true }), {
-            columns: 100,
-            rows: 24,
-        })
-        expect(harness.frame().text).toContain("Ask anything")
-        await harness.press("hello", KEY.enter)
-        const after = harness.frame()
-        harness.unmount()
-        expect(after.text).not.toContain("Ask anything")
-        expect(after.text).toContain("hello")
-    })
-
-    test("a pane opened from the splash shows the pane, not a wordmark", async () => {
-        const harness = mount(h(App, { ...stubAppProps(), freshSession: true }), {
-            columns: 100,
-            rows: 24,
-        })
-        await harness.press("/", "h", "e", "l", "p", KEY.enter)
-        const frame = harness.frame()
-        harness.unmount()
-        // `/help` is a session verb, so it notes into the transcript — which is itself enough to retire
-        // the splash. The property under test is that the splash does not sit in front of new content.
-        expect(frame.text).not.toContain("Ask anything")
-    })
-})
-
-/** Narrows an optional the tests know is present, without a non-null assertion. */
-function must<T>(value: T | undefined): T {
-    if (value === undefined) throw new Error("expected a value")
-    return value
-}

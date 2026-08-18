@@ -23,7 +23,7 @@ import type { PromptProps } from "#lib/schema"
 import { NEWLINE_HINT } from "#lib/session-commands"
 import { BORDER_STYLE, THEME } from "#lib/theme"
 
-export function Prompt({ editor, busy, placeholder }: PromptProps) {
+export function Prompt({ editor, busy, placeholder, roomy }: PromptProps) {
     const lines = editor.value.split("\n").length
     return (
         <Box flexDirection="column">
@@ -31,6 +31,10 @@ export function Prompt({ editor, busy, placeholder }: PromptProps) {
                 borderStyle={BORDER_STYLE}
                 borderColor={busy ? THEME.border : THEME.borderActive}
                 paddingX={1}
+                // Breathing room, on the splash only. The transcript's composer stays tight because
+                // `chat-frame.ts` measures it and every row it takes is a row of conversation — and because
+                // a two-row-taller input under a live reply reads as a bigger box, not a calmer one.
+                paddingY={roomy === true ? 1 : 0}
             >
                 <LineCursor
                     editor={editor}

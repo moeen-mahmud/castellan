@@ -5,7 +5,6 @@
 
 import type { Agent, EventBus } from "@castellan/core"
 import type { BrowseRow, InstallReport } from "#lib/browse"
-import type { Palette as PaletteModel } from "#lib/palette"
 import type { Slice } from "#lib/scroll"
 import type { SessionRowSource } from "#lib/sessions-view"
 import type { CatalogueEntry } from "#lib/source-cache"
@@ -295,8 +294,6 @@ export interface AppProps {
      * the key it resolved was freshly generated.
      */
     readonly freshSession?: boolean
-    /** Where the session was launched from, tilde-shortened, for the splash footer. */
-    readonly location?: string
     /**
      * Move to another stored conversation.
      *
@@ -366,32 +363,23 @@ export interface PromptProps {
      * says what this is, and a permanent "Ask anything…" there would be a label on something obvious.
      */
     readonly placeholder?: string
+    /**
+     * A taller frame, with a blank row above and below the input.
+     *
+     * The splash only. In the transcript every row the composer takes is a row of conversation, and
+     * `chat-frame.ts` measures the tight form — so this cannot become the default without changing that
+     * arithmetic, which is exactly the drift the measurement exists to catch.
+     */
+    readonly roomy?: boolean
 }
 
-export interface SplashProps {
-    /** `BRAND.name`, rendered large by `lib/wordmark.ts`. Never a literal — hard rule 3. */
-    readonly name: string
-    readonly version: string
-    readonly agentName: string
-    readonly model: string
-    /** Counted, not listed. The text is in the banner, which is the first transcript item. */
-    readonly warnings: readonly string[]
-    /** Where the session was launched from, tilde-shortened. */
-    readonly location: string
-    readonly editor: EditorState
-    readonly busy: boolean
-    readonly columns: number
-    readonly rows: number
-    /** One line naming the keys worth knowing before anything has been typed. */
-    readonly hint: string
+export interface BrandmarkProps {
     /**
-     * The slash-command list, when one is open.
+     * The wordmark's rows, already rendered by `lib/wordmark.ts` from `BRAND.name`.
      *
-     * The splash has to render it, not just tolerate it. The screen root's `useInput` is active here, so
-     * typing `/` already narrows a palette and enter already runs the command — and the first version drew
-     * none of it, which is the worst version of a working key: the `/` lands in the buffer, nothing
-     * appears, and the feature looks absent rather than broken.
+     * Passed in rather than computed here, because the caller has to know the mark's real height to charge
+     * the conversation for it — and computing it in both places would be two derivations that can disagree
+     * about how many rows are on screen, which on a fixed-height frame is how the layout comes apart.
      */
-    readonly palette?: PaletteModel
-    readonly paletteIndex: number
+    readonly lines: readonly string[]
 }
