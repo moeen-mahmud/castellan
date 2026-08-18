@@ -49,16 +49,16 @@ export interface Theme {
 }
 
 export const THEME: Theme = {
-    accent: "cyan",
+    accent: "magenta",
     muted: "gray",
     success: "green",
     warning: "yellow",
     error: "red",
     info: "blue",
-    emphasis: "magenta",
+    emphasis: "cyan",
     border: "gray",
-    borderActive: "cyan",
-    brand: "#39FF14",
+    borderActive: "magenta",
+    brand: "magenta",
 }
 
 /** Status-dot colours, previously inlined in StatusBar. */
