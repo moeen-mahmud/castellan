@@ -16,10 +16,11 @@ import { App } from "#components/App"
 import { Picker } from "#components/Picker"
 import { SkillBrowser } from "#components/SkillBrowser"
 import { WizardApp } from "#components/WizardApp"
-import type { BrowseRow } from "#lib/browse"
+import type { BrowseRow, InstallReport } from "#lib/browse"
 import type { SandboxAgent } from "#lib/sandbox"
 import type { AppProps } from "#lib/schema"
-import { GLYPH } from "#lib/theme"
+import type { CatalogueEntry } from "#lib/source-cache"
+import { GLYPH, SPINNER_FRAMES } from "#lib/theme"
 import { KEY, mount, overflowing } from "../helpers/frame.tsx"
 
 const AGENTS: readonly SandboxAgent[] = [
@@ -118,21 +119,90 @@ const ROWS: readonly BrowseRow[] = [
 ]
 
 describe("SkillBrowser", () => {
-    function browser(onDone: (result: unknown) => void) {
+    /** A load that resolves when the test says so, so the fetching stage can be observed. */
+    function deferred() {
+        let settle: (rows: readonly BrowseRow[]) => void = () => {}
+        let fail: (error: Error) => void = () => {}
+        const promise = new Promise<readonly BrowseRow[]>((resolve, reject) => {
+            settle = resolve
+            fail = reject
+        })
+        return { promise, settle, fail }
+    }
+
+    const REPORT: InstallReport = {
+        installed: ["pdf"],
+        failed: [],
+        runnable: 1,
+        withCode: 1,
+        total: 1,
+    }
+
+    function browser(
+        options: {
+            load?: (onStatus: (line: string) => void) => Promise<readonly BrowseRow[]>
+            install?: (
+                skills: readonly CatalogueEntry[],
+                manifestPath: string,
+            ) => Promise<InstallReport>
+            agents?: readonly SandboxAgent[]
+            target?: string
+            onDone?: (report: InstallReport | undefined) => void
+        } = {},
+    ) {
         return mount(
             h(SkillBrowser, {
-                rows: ROWS,
-                agents: AGENTS,
-                window: 20,
-                width: 100,
-                onDone,
+                title: "Skills",
+                load: options.load ?? (async () => ROWS),
+                install: options.install ?? (async () => REPORT),
+                agents: options.agents ?? AGENTS,
+                onDone: options.onDone ?? (() => {}),
+                ...(options.target === undefined ? {} : { target: options.target }),
             }),
-            { columns: 100 },
+            { columns: 100, rows: 30 },
         )
     }
 
-    test("space ticks a row and the count says how many", async () => {
-        const harness = browser(() => {})
+    test("the wait is rendered, not printed — a spinner and the source being fetched", async () => {
+        // The defect this stage exists to fix: the command used to fetch before mounting, so twenty
+        // seconds of cloning went to stdout with no frame on screen.
+        const gate = deferred()
+        const harness = browser({
+            load: (onStatus) => {
+                onStatus("fetching anthropic (1 of 2)")
+                return gate.promise
+            },
+        })
+        await harness.settle(30)
+        const frame = harness.frame()
+        expect(frame.text).toContain("fetching anthropic (1 of 2)")
+        expect(SPINNER_FRAMES.some((glyph) => frame.text.includes(glyph))).toBe(true)
+        gate.settle(ROWS)
+        await harness.settle(30)
+        expect(harness.frame().text).toContain("pdf")
+        harness.unmount()
+    })
+
+    test("a failed fetch is shown in the frame rather than thrown", async () => {
+        const harness = browser({ load: async () => Promise.reject(new Error("git not found")) })
+        await harness.settle(40)
+        const frame = harness.frame()
+        harness.unmount()
+        expect(frame.text).toContain("git not found")
+    })
+
+    test("an empty catalogue says so and points at the command that explains it", async () => {
+        const harness = browser({ load: async () => [] })
+        await harness.settle(40)
+        const frame = harness.frame()
+        harness.unmount()
+        expect(frame.text).toContain("no catalogue could be read")
+        expect(frame.text).toContain("sources update")
+    })
+
+    test("space ticks a row and the header says how many", async () => {
+        const harness = browser()
+        await harness.settle(30)
         expect(harness.frame().text).toContain("nothing ticked yet")
         await harness.press(KEY.space)
         const frame = harness.frame()
@@ -142,9 +212,8 @@ describe("SkillBrowser", () => {
     })
 
     test("enter with nothing ticked does not advance", async () => {
-        // Advancing would land on an agent picker with nothing to install, and the person would find
-        // out one screen later.
-        const harness = browser(() => {})
+        const harness = browser()
+        await harness.settle(30)
         await harness.press(KEY.enter)
         const frame = harness.frame()
         harness.unmount()
@@ -153,7 +222,8 @@ describe("SkillBrowser", () => {
     })
 
     test("with several agents, enter asks which one", async () => {
-        const harness = browser(() => {})
+        const harness = browser()
+        await harness.settle(30)
         await harness.press(KEY.space, KEY.enter)
         const frame = harness.frame()
         harness.unmount()
@@ -161,28 +231,87 @@ describe("SkillBrowser", () => {
         expect(frame.text).toContain("milo")
     })
 
-    test("with exactly one agent it does not ask", async () => {
-        let result: unknown
-        const harness = mount(
-            h(SkillBrowser, {
-                rows: ROWS,
-                agents: [AGENTS[0] as SandboxAgent],
-                window: 20,
-                width: 100,
-                onDone: (picked: unknown) => {
-                    result = picked
-                },
-            }),
-            { columns: 100 },
-        )
+    test("with exactly one agent it installs without asking", async () => {
+        const installed: string[] = []
+        const harness = browser({
+            agents: [AGENTS[0] as SandboxAgent],
+            install: async (skills, manifestPath) => {
+                installed.push(manifestPath)
+                return { ...REPORT, total: skills.length }
+            },
+        })
+        await harness.settle(30)
         await harness.press(KEY.space, KEY.enter)
+        await harness.settle(30)
         harness.unmount()
-        expect(result).toMatchObject({ kind: "install", manifestPath: "/tmp/milo/agent.yaml" })
+        expect(installed).toEqual(["/tmp/milo/agent.yaml"])
+    })
+
+    test("the install happens inside the frame, with the result on screen", async () => {
+        // It used to be printed after the unmount, so the last thing on screen was the picker.
+        const harness = browser({ target: "/tmp/x/agent.yaml" })
+        await harness.settle(30)
+        await harness.press(KEY.space, KEY.enter)
+        await harness.settle(40)
+        const frame = harness.frame()
+        harness.unmount()
+        expect(frame.text).toContain("installed 1 of 1")
+        expect(frame.text).toContain("runnable file")
+        expect(frame.text).toContain("restart the agent")
+    })
+
+    test("a failure is named in the result rather than swallowed", async () => {
+        const harness = browser({
+            target: "/tmp/x/agent.yaml",
+            install: async () => ({
+                installed: [],
+                failed: [{ name: "pptx", reason: "already installed" }],
+                runnable: 0,
+                withCode: 0,
+                total: 1,
+            }),
+        })
+        await harness.settle(30)
+        await harness.press(KEY.space, KEY.enter)
+        await harness.settle(40)
+        const frame = harness.frame()
+        harness.unmount()
+        expect(frame.text).toContain("pptx — already installed")
+    })
+
+    test("the report reaches the host, so the host can print a pointer after restoring", async () => {
+        let handed: InstallReport | undefined
+        const harness = browser({
+            target: "/tmp/x/agent.yaml",
+            onDone: (result) => {
+                handed = result
+            },
+        })
+        await harness.settle(30)
+        await harness.press(KEY.space, KEY.enter)
+        await harness.settle(40)
+        await harness.press("q")
+        harness.unmount()
+        expect(handed).toMatchObject({ installed: ["pdf"] })
+    })
+
+    test("it never exits by itself — the host owns that", async () => {
+        // A view that called `useApp().exit()` could not be a pane over a live chat.
+        let done = 0
+        const harness = browser({
+            onDone: () => {
+                done += 1
+            },
+        })
+        await harness.settle(30)
+        await harness.press(KEY.escape)
+        harness.unmount()
+        expect(done).toBe(1)
     })
 
     test("esc from the agent step goes back with the ticks intact", async () => {
-        // The reason both steps live in one root: backing out must not lose what was chosen.
-        const harness = browser(() => {})
+        const harness = browser()
+        await harness.settle(30)
         await harness.press(KEY.space, KEY.enter, KEY.escape)
         const frame = harness.frame()
         harness.unmount()
@@ -190,7 +319,8 @@ describe("SkillBrowser", () => {
     })
 
     test("`a` ticks everything and `n` clears it", async () => {
-        const harness = browser(() => {})
+        const harness = browser()
+        await harness.settle(30)
         await harness.press("a")
         expect(harness.frame().text).toContain("2 ticked")
         await harness.press("n")
@@ -200,8 +330,8 @@ describe("SkillBrowser", () => {
     })
 
     test("the cursor never lands on a heading", async () => {
-        // A cursor parked where enter does nothing reads as a broken keyboard.
-        const harness = browser(() => {})
+        const harness = browser()
+        await harness.settle(30)
         await harness.press(KEY.up, KEY.up, KEY.up)
         const frame = harness.frame()
         harness.unmount()
@@ -210,21 +340,56 @@ describe("SkillBrowser", () => {
         expect(pointed).not.toContain("anthropic  2 skills")
     })
 
-    test("nothing wraps at a narrow terminal", () => {
+    test("an unfocused view ignores the keyboard entirely", async () => {
+        // Ink fires every active `useInput`, so a pane over a live prompt would otherwise tick a box
+        // with the keystroke somebody meant for their message.
         const harness = mount(
             h(SkillBrowser, {
-                rows: ROWS,
+                title: "Skills",
+                load: async () => ROWS,
+                install: async () => REPORT,
                 agents: AGENTS,
-                window: 20,
-                width: 40,
+                focused: false,
                 onDone: () => {},
             }),
-            { columns: 40 },
+            { columns: 100, rows: 30 },
         )
+        await harness.settle(30)
+        await harness.press(KEY.space)
         const frame = harness.frame()
         harness.unmount()
-        expect(overflowing(frame, 40)).toEqual([])
+        expect(frame.text).toContain("nothing ticked yet")
     })
+
+    test("it follows a resize instead of staying at the width it launched with", async () => {
+        const harness = browser()
+        await harness.settle(30)
+        const wide = harness.frame()
+        await harness.resize(50)
+        const narrow = harness.frame()
+        harness.unmount()
+        expect(overflowing(narrow, 50)).toEqual([])
+        expect(narrow.widest).toBeLessThan(wide.widest)
+    })
+
+    for (const columns of [40, 80, 140]) {
+        test(`nothing wraps at ${columns} columns`, async () => {
+            const harness = mount(
+                h(SkillBrowser, {
+                    title: "Skills",
+                    load: async () => ROWS,
+                    install: async () => REPORT,
+                    agents: AGENTS,
+                    onDone: () => {},
+                }),
+                { columns, rows: 30 },
+            )
+            await harness.settle(30)
+            const frame = harness.frame()
+            harness.unmount()
+            expect(overflowing(frame, columns)).toEqual([])
+        })
+    }
 })
 
 describe("WizardApp", () => {

@@ -19,9 +19,15 @@
  */
 
 import { BRAND, HarnessError, VERSION } from "@castellan/core"
-import { type BrowseInput, type BrowseRow, browseRows } from "#lib/browse"
-import { EXIT_FAILURE, EXIT_OK } from "#lib/const"
-import { flushOutput, markTerminalDirty, onExit } from "#lib/exit"
+import {
+    type BrowseInput,
+    type BrowseRow,
+    browseRows,
+    type InstallReport,
+    installReport,
+} from "#lib/browse"
+import { ENTER_ALT_SCREEN, EXIT_FAILURE, EXIT_OK } from "#lib/const"
+import { flushOutput, markAltScreen, onExit, restoreTerminal } from "#lib/exit"
 import { resolveModeFromProcess } from "#lib/output"
 import { bullet, indent, section } from "#lib/render"
 import { columnsFor, layoutRow } from "#lib/rows"
@@ -46,11 +52,6 @@ export interface BrowseOptions {
     readonly rows?: number
     readonly width?: number
 }
-
-/** Rows left for the list after the banner, the hint line and the counter. */
-const CHROME_ROWS = 8
-const MIN_WINDOW = 8
-const MAX_WINDOW = 40
 
 /**
  * Fetch what is not cached, then build the rows. Shared by the command and by `init`.
@@ -134,48 +135,53 @@ export function installRefs(
  * The command's contract is one ref, it reports per skill, and a partial failure leaves the successful
  * ones installed with a named reason for the rest — batching would have to reimplement all of that.
  */
-function installEach(
+function collectInstall(
     skills: readonly CatalogueEntry[],
     manifestPath: string,
     options: BrowseOptions & { readonly envOverlay?: Readonly<Record<string, string | undefined>> },
-): number {
-    return installRefs(
-        skills.map((entry) => `${entry.source}/${entry.skill}`),
-        manifestPath,
-        options,
-    )
+): readonly InstallOutcome[] {
+    const outcomes: InstallOutcome[] = []
+    for (const entry of skills) {
+        skillsCommand({
+            action: "install",
+            manifestPath,
+            name: `${entry.source}/${entry.skill}`,
+            quiet: true,
+            collect: outcomes,
+            ...(options.env === undefined ? {} : { sandboxEnv: options.env }),
+            ...(options.envOverlay === undefined ? {} : { envOverlay: options.envOverlay }),
+        })
+    }
+    return outcomes
 }
 
-/** The one report for a batch, whatever produced it. */
+/**
+ * The one report for a batch, as text.
+ *
+ * Renders from `installReport`, which the rich result card also reads — so a pipe and a terminal cannot
+ * disagree about what happened. Eleven ticked skills used to produce eleven of these.
+ */
 function report(outcomes: readonly InstallOutcome[]): number {
-    const ok = outcomes.filter((outcome) => outcome.ok)
-    const failed = outcomes.filter((outcome) => !outcome.ok)
-    const runnable = ok.flatMap((outcome) => outcome.runnable)
-
-    // One report for the whole batch. Eleven ticked skills used to produce eleven of these.
+    const summary = installReport(outcomes)
     process.stdout.write(
-        `${section(`installed ${ok.length} of ${outcomes.length} skill${outcomes.length === 1 ? "" : "s"}`, true)}\n`,
+        `${section(`installed ${summary.installed.length} of ${summary.total} skill${summary.total === 1 ? "" : "s"}`, true)}\n`,
     )
-    if (ok.length > 0) {
-        process.stdout.write(`${indent(ok.map((outcome) => outcome.name).join(", "))}\n`)
+    if (summary.installed.length > 0) {
+        process.stdout.write(`${indent(summary.installed.join(", "))}\n`)
     }
-    for (const outcome of failed) {
-        process.stdout.write(
-            `${bullet(`${outcome.name} — ${outcome.reason ?? "not installed"}`)}\n`,
-        )
+    for (const failure of summary.failed) {
+        process.stdout.write(`${bullet(`${failure.name} — ${failure.reason}`)}\n`)
     }
-    if (runnable.length > 0) {
+    if (summary.runnable > 0) {
         // Counted here and named per skill by `skills show`. Twelve file paths per skill across eleven
         // skills is 130 lines of disclosure nobody reads, which discloses less than one honest sentence.
         process.stdout.write(
             `${section("code that came with them")}\n${indent(
-                `${runnable.length} runnable file${runnable.length === 1 ? "" : "s"} across ${
-                    ok.filter((outcome) => outcome.runnable.length > 0).length
-                } skill${ok.filter((outcome) => outcome.runnable.length > 0).length === 1 ? "" : "s"} — \`skills show <agent> <skill>\` names them`,
+                `${summary.runnable} runnable file${summary.runnable === 1 ? "" : "s"} across ${summary.withCode} skill${summary.withCode === 1 ? "" : "s"} — \`skills show <agent> <skill>\` names them`,
             )}\n`,
         )
     }
-    return failed.length
+    return summary.failed.length
 }
 
 export async function browseCommand(options: BrowseOptions): Promise<number> {
@@ -192,44 +198,29 @@ export async function browseCommand(options: BrowseOptions): Promise<number> {
         json: options.json === true,
         oneShot: false,
     })
-    const interactive = decision.mode === "rich"
+    const interactive = decision.mode === "rich" && options.json !== true
 
-    const rows = await catalogueRows(options)
-    if (rows.length === 0) {
-        process.stdout.write(
-            `nothing to show — no catalogue could be read\n\n  \`${BRAND.slug} sources update\` reports why.\n`,
-        )
-        return EXIT_FAILURE
-    }
-
-    if (options.json === true) {
-        process.stdout.write(
-            `${JSON.stringify(
-                {
-                    skills: rows
-                        .filter((row) => row.entry !== undefined)
-                        .map((row) => ({
-                            ref: `${row.entry?.source}/${row.entry?.skill}`,
-                            source: row.entry?.source,
-                            skill: row.entry?.skill,
-                            tokens: row.entry?.tokens,
-                            scripts: row.entry?.scripts.length ?? 0,
-                            description: row.entry?.description,
-                        })),
-                },
-                null,
-                2,
-            )}\n`,
-        )
-        return EXIT_OK
+    // The plain and JSON paths still fetch first, because they have nothing to render while they wait
+    // and a spinner on a pipe is noise. The rich path does the opposite, and that inversion is the
+    // whole point of this stage.
+    if (!interactive) {
+        const rows = await catalogueRows(options)
+        if (rows.length === 0) {
+            process.stdout.write(
+                `nothing to show — no catalogue could be read\n\n  \`${BRAND.slug} sources update\` reports why.\n`,
+            )
+            return EXIT_FAILURE
+        }
+        if (options.json === true) return printJson(rows)
+        return plainList(rows, listAgents(options.env))
     }
 
     const agents = listAgents(options.env)
-    if (!interactive) return plainList(rows, agents)
-
     if (agents.length === 0) {
+        // Checked before the mount because it needs no catalogue: fetching 40 MB to then say there is
+        // nowhere to put it would be the wrong order to find out in.
         process.stdout.write(
-            `${plainListText(rows)}\n${section("no agent to install into")}\n${indent(`\`${BRAND.slug} init\` creates one, then this command installs into it.`)}\n`,
+            `${section("no agent to install into", true)}\n${indent(`\`${BRAND.slug} init\` creates one, then this command installs into it.`)}\n`,
         )
         return EXIT_FAILURE
     }
@@ -240,58 +231,74 @@ export async function browseCommand(options: BrowseOptions): Promise<number> {
         import("#components/SkillBrowser"),
     ])
 
-    let result:
-        | { kind: "install"; skills: readonly CatalogueEntry[]; manifestPath: string }
-        | { kind: "quit" } = {
-        kind: "quit",
-    }
-    markTerminalDirty()
+    let report: InstallReport | undefined
+    let finish: () => void = () => {}
+    const closed = new Promise<void>((resolve) => {
+        finish = resolve
+    })
+
+    // Alternate screen: this waits for a keypress, so it takes the terminal and gives it back. The
+    // enter sequence and the flag are written together — a flag set without the sequence would make the
+    // restore clear the screen the output was just written to.
+    markAltScreen()
+    process.stdout.write(ENTER_ALT_SCREEN)
+
     const instance = render(
         createElement(SkillBrowser, {
-            rows,
+            title: BROWSE_TITLE,
             agents,
-            window: windowFor(options.rows),
-            width: widthFor(options.width),
-            onDone: (picked) => {
-                result = picked
+            load: (onStatus: (line: string) => void) => fetchCatalogue({ ...options, onStatus }),
+            install: async (skills: readonly CatalogueEntry[], manifestPath: string) =>
+                installReport(collectInstall(skills, manifestPath, options)),
+            onDone: (result: InstallReport | undefined) => {
+                report = result
+                finish()
             },
         }),
         { exitOnCtrlC: false },
     )
     onExit(() => instance.unmount())
-    await instance.waitUntilExit()
+    await closed
     instance.unmount()
-    flushOutput()
+    restoreTerminal()
+    await flushOutput()
 
-    const picked = result as
-        | { kind: "install"; skills: readonly CatalogueEntry[]; manifestPath: string }
-        | { kind: "quit" }
-    if (picked.kind === "quit" || picked.skills.length === 0) {
-        process.stdout.write("nothing installed\n")
-        return EXIT_OK
+    // Restored first, then one line on the real screen. A clean exit leaves no trace of the browsing;
+    // what it does leave is the pointer to what changed, and any failure, because hard rule 8 does not
+    // stop applying because a screen has closed.
+    if (report === undefined) return EXIT_OK
+    for (const failure of report.failed) {
+        process.stderr.write(`${failure.name} — ${failure.reason}\n`)
     }
-
-    const failures = installEach(picked.skills, picked.manifestPath, options)
-    process.stdout.write(`${bullet("restart the agent: the catalogue is scanned once at boot")}\n`)
-    return failures === picked.skills.length ? EXIT_FAILURE : EXIT_OK
+    if (report.installed.length > 0) {
+        process.stdout.write(
+            `${report.installed.length} skill${report.installed.length === 1 ? "" : "s"} installed — \`${BRAND.slug} skills list <agent>\` shows them\n`,
+        )
+    }
+    return report.failed.length === report.total && report.total > 0 ? EXIT_FAILURE : EXIT_OK
 }
 
-/**
- * Terminal columns, clamped.
- *
- * The floor matters: at 40 columns the layout drops the description rather than wrapping, and below that
- * nothing sensible is possible — a wrapped row is what made the first version unreadable. The ceiling keeps
- * a 300-column window from putting the description a screen away from the name it belongs to.
- */
-export function widthFor(columns: number | undefined): number {
-    const width = columns ?? process.stdout.columns ?? 80
-    return Math.max(40, Math.min(140, width))
-}
-
-/** How many rows the list gets. Measured from the terminal, clamped so it is neither cramped nor endless. */
-export function windowFor(rows: number | undefined): number {
-    const height = rows ?? process.stdout.rows ?? 24
-    return Math.max(MIN_WINDOW, Math.min(MAX_WINDOW, height - CHROME_ROWS))
+/** The JSON form, unchanged and deliberately not rendered. */
+function printJson(rows: readonly BrowseRow[]): number {
+    process.stdout.write(
+        `${JSON.stringify(
+            {
+                skills: rows
+                    .filter((row) => row.entry !== undefined)
+                    .map((row) => ({
+                        ref: `${row.entry?.source}/${row.entry?.skill}`,
+                        source: row.entry?.source,
+                        skill: row.entry?.skill,
+                        tokens: row.entry?.tokens,
+                        scripts: row.entry?.scripts.length ?? 0,
+                        description: row.entry?.description,
+                    })),
+            },
+            null,
+            2,
+        )}\n`,
+    )
+    return EXIT_OK
 }
 
 /**

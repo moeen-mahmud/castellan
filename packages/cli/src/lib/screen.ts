@@ -23,6 +23,13 @@
  * read from a terminal or a log file, and that is `resolveMode`'s question.
  */
 
+import {
+    MAX_SCREEN_COLUMNS,
+    MAX_SCREEN_ROWS,
+    MIN_SCREEN_COLUMNS,
+    MIN_SCREEN_ROWS,
+    SCREEN_CHROME_ROWS,
+} from "#lib/const"
 import { clip } from "#lib/rows"
 
 /**
@@ -143,3 +150,22 @@ export function hintLine(hints: readonly KeyHint[], width: number): string {
 
 /** The hint every alternate-screen surface carries, so no screen invents its own word for leaving. */
 export const QUIT_HINT: KeyHint = { key: "q", does: "back" }
+
+/**
+ * Terminal columns and rows a screen may use, clamped.
+ *
+ * Here rather than beside the one command that first needed them. They were exported from `browse.ts`,
+ * which is imported both statically (by the wizard) and dynamically (by the command) — and the bundler
+ * emitted the export twice, producing a `Duplicate export of 'windowFor'` that every test passed straight
+ * through because tests import source, not the bundle. Screen arithmetic belongs with the screen.
+ */
+export function screenColumns(columns: number | undefined, fallback: number): number {
+    return Math.max(MIN_SCREEN_COLUMNS, Math.min(MAX_SCREEN_COLUMNS, columns ?? fallback))
+}
+
+export function screenRows(rows: number | undefined, fallback: number): number {
+    return Math.max(
+        MIN_SCREEN_ROWS,
+        Math.min(MAX_SCREEN_ROWS, (rows ?? fallback) - SCREEN_CHROME_ROWS),
+    )
+}

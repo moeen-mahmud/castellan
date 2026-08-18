@@ -140,3 +140,49 @@ export function chosenEntries(
         .map((index) => rows[index]?.entry)
         .filter((entry): entry is CatalogueEntry => entry !== undefined)
 }
+
+// ─── what an install did ─────────────────────────────────────────────────────────────────
+
+/**
+ * The structural half of `skills.ts`'s `InstallOutcome`.
+ *
+ * Declared here rather than imported so this module stays free of the command that produces it —
+ * `skills.ts` reaches the filesystem, and importing it would drag that into every consumer of the row
+ * layout, including the pure tests.
+ */
+export interface InstallOutcomeLike {
+    readonly name: string
+    readonly ok: boolean
+    readonly reason?: string
+    readonly runnable: readonly string[]
+}
+
+export interface InstallReport {
+    readonly installed: readonly string[]
+    readonly failed: readonly { readonly name: string; readonly reason: string }[]
+    /** Runnable files across every successful install, and how many skills brought them. */
+    readonly runnable: number
+    readonly withCode: number
+    readonly total: number
+}
+
+/**
+ * One report for a batch, as data.
+ *
+ * Both renderings read this — the text one the pipe and `init` print, and the card the browser shows
+ * inside its own frame. The alternative was each composing its own summary from the outcomes, and a
+ * terminal and a pipe disagreeing about what happened is exactly the class of failure the shared
+ * `browseRows` was introduced to end.
+ */
+export function installReport(outcomes: readonly InstallOutcomeLike[]): InstallReport {
+    const ok = outcomes.filter((outcome) => outcome.ok)
+    return {
+        installed: ok.map((outcome) => outcome.name),
+        failed: outcomes
+            .filter((outcome) => !outcome.ok)
+            .map((outcome) => ({ name: outcome.name, reason: outcome.reason ?? "not installed" })),
+        runnable: ok.reduce((count, outcome) => count + outcome.runnable.length, 0),
+        withCode: ok.filter((outcome) => outcome.runnable.length > 0).length,
+        total: outcomes.length,
+    }
+}

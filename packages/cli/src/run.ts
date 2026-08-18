@@ -25,8 +25,10 @@ import {
     Runtime as RuntimeClass,
     VERSION,
 } from "@castellan/core"
+import { fetchCatalogue } from "#browse"
 import { initInteractive } from "#init"
 import { ambientEnv, demotedKeys } from "#lib/ambient"
+import { installReport } from "#lib/browse"
 import { EXIT_FAILURE, EXIT_OK, PROMPT } from "#lib/const"
 import { flushOutput, markTerminalDirty, onExit } from "#lib/exit"
 import { resolveModeFromProcess } from "#lib/output"
@@ -41,6 +43,8 @@ import {
     toolsView,
     unknownCommandText,
 } from "#lib/session-commands"
+import type { CatalogueEntry } from "#lib/source-cache"
+import { type InstallOutcome, skillsCommand } from "#skills"
 import { seed } from "#transcript"
 
 /** Opening lines: what is loaded, what session, and whether the last turn finished. */
@@ -226,6 +230,24 @@ export async function runCommand(options: RunOptions): Promise<number> {
  * a status that secretly means something else is the kind of overload that survives until someone
  * returns it by accident.
  */
+/** One install per skill, so a partial failure keeps the successful ones with a reason for the rest. */
+function installSkills(
+    skills: readonly CatalogueEntry[],
+    manifestPath: string,
+): readonly InstallOutcome[] {
+    const outcomes: InstallOutcome[] = []
+    for (const entry of skills) {
+        skillsCommand({
+            action: "install",
+            manifestPath,
+            name: `${entry.source}/${entry.skill}`,
+            quiet: true,
+            collect: outcomes,
+        })
+    }
+    return outcomes
+}
+
 const RESTART = Symbol("restart")
 type RunOutcome = number | typeof RESTART
 
@@ -386,6 +408,15 @@ async function runRich(wired: Wired): Promise<RunOutcome> {
             initial: seed(wired.banner),
             showReasoning: wired.showReasoning,
             quiet: wired.quiet,
+            // So a slash command runs against *this* agent: without it a child would resolve whichever
+            // agent the cwd suggests, which would not look wrong in the output.
+            ...(wired.manifestPath === undefined ? {} : { manifestPath: wired.manifestPath }),
+            // The host owns the filesystem and the network; the screen owns neither. Injected here rather
+            // than imported by the component, which also keeps `browse.ts` out of its import graph.
+            catalogue: {
+                load: (onStatus: (line: string) => void) => fetchCatalogue({ onStatus }),
+                install: async (skills, into) => installReport(installSkills(skills, into)),
+            },
             ...(wired.draft.current === "" ? {} : { initialDraft: wired.draft.current }),
         }),
         { exitOnCtrlC: false },
@@ -529,6 +560,14 @@ async function runPlain(wired: Wired): Promise<RunOutcome> {
                 return "handled"
             case "unknown":
                 row(unknownCommandText(command))
+                return "handled"
+            case "command":
+                // A CLI command typed at the plain prompt. Not run here: the plain path is a pipe's
+                // path, and a command that expects to own the terminal has no business in one. Named
+                // rather than silently sent to the model, which is the failure this dispatch exists for.
+                row(
+                    `${command.name} is a command, not a prompt — run it at a terminal, or in another shell as \`${BRAND.slug} ${command.name}${command.rest === "" ? "" : ` ${command.rest}`}\``,
+                )
                 return "handled"
         }
     }

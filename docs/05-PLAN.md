@@ -1667,12 +1667,18 @@ the spec, never omitted by a second list.
 2. **The input becomes an editor.** Multi-line buffer, ⌥ chords, `^R` search, `^Z`/`^Y` undo, draft
    across a restart, `terminal-setup`. **Done.**
 3. **The view contract, and the original defect.** `browse.ts` mounts before it fetches; `SkillBrowser`
-   becomes a view; `installReport` is pure and shared with the text path; `sources` gets a screen.
-4. **The palette.** Generated from `COMMANDS`, with a flag form and `inSession` on every spec.
-5. **The remaining views.** `/channels` `/logs` `/sessions` `/agents` `/model` `/memory` `/soul`
-   `/policy` `/config`, plus a `daemon` screen. Each reachable as a command and as a slash command.
-6. **One-shot reports, inline.** `validate`, `workspace`, `soul`, `tools`, `stop` through the kit.
+   is a view with its whole lifecycle in one mount; `installReport` is pure and shared with the text
+   path. **Done** — except a bespoke `sources` screen, which the generic pane covers functionally.
+4. **The palette.** Generated from `COMMANDS`, `inSession` required on every spec, the known-first-token
+   argument rule. **Done** — except a flag *form*; flags are typed after the word for now.
+5. **The remaining commands.** One `CommandOutput` pane runs any non-hidden command and shows its text,
+   so every one is reachable from the palette. **Done as the generic mechanism.** Bespoke interactive
+   views for `/channels` and `/logs` — including implementing `daemon --follow` — are not built.
+6. **One-shot reports, inline.** Satisfied by decision rather than by code: these commands already print
+   inline and keep doing so. Restyling them through the kit is **not done**, and is cosmetic.
 7. **`run` on the alternate screen.** Windowed transcript, our own scrolling, the exit semantics above.
+   **Not started** — deliberately deferred: it replaces `<Static>` in the screen people look at most,
+   and it needs a session with room to verify the scrolling properly.
 
 ### Acceptance criteria
 
@@ -1692,12 +1698,17 @@ the spec, never omitted by a second list.
       binary-plist terminal, and reports a recognised terminal with no verified recipe as such.
 - [x] Verified in a real pty, not only in frames: ⌥⏎ makes a second line with the gutter aligned, and
       ⌥← then ⌥⌫ deletes a word from it.
-- [ ] Bare `skills` mounts before it fetches; the spinner, the picker, the install and the result are
-      one mount.
-- [ ] `/` opens a palette generated from `COMMANDS`; every spec declares `inSession`.
-- [ ] Every non-hidden command is reachable as a slash command and as a shell command, through one view.
+- [x] Bare `skills` mounts before it fetches; the spinner, the picker, the install and the result are
+      one mount, and the alternate screen is entered and restored around it.
+- [x] `/` opens a palette generated from `COMMANDS`; every spec declares `inSession`, asserted.
+- [x] A mistyped `/skils` is still refused with a suggestion; `/etc/passwd is world-readable` is prose.
+- [x] Every non-hidden command is reachable from the palette, through a pane that runs it as a child.
+- [x] No internal module is both statically and dynamically imported, and the built binary starts —
+      two guards, because `bun test` imports source and cannot see a broken bundle.
+- [x] Verified live in the real binary: `/` lists session verbs first, `/s` narrows, ↓ then tab completes.
 - [ ] `q` from every alternate-screen surface leaves the terminal as found — `stty -a` unchanged.
 - [ ] `time node packages/cli/dist/index.js validate --json` stays ~90 ms: no Ink on a shared path.
+- [ ] Stage 7: the windowed transcript, its scrolling, and the chat's exit semantics.
 
 ### Non-goals
 

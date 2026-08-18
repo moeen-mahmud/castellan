@@ -13,9 +13,11 @@
 import { describe, expect, test } from "bun:test"
 import { createElement as h } from "react"
 import { Banner } from "#components/Banner"
+import { CommandOutput } from "#components/CommandOutput"
 import { HistorySearch } from "#components/HistorySearch"
 import { LineCursor } from "#components/LineCursor"
 import { Live } from "#components/Live"
+import { Palette } from "#components/Palette"
 import { Prompt } from "#components/Prompt"
 import { SelectList } from "#components/SelectList"
 import { Spinner } from "#components/Spinner"
@@ -26,6 +28,7 @@ import { Transcript } from "#components/Transcript"
 import { WizardFrame } from "#components/WizardFrame"
 import { applyIntent, EMPTY_EDITOR } from "#editor"
 import { MAX_INPUT_ROWS } from "#lib/const"
+import { paletteFor } from "#lib/palette"
 import { GLYPH, SPINNER_FRAMES, SPINNER_INTERVAL_MS } from "#lib/theme"
 import { mount, overflowing, renderFrame } from "../helpers/frame.tsx"
 
@@ -522,6 +525,133 @@ describe("HistorySearch", () => {
         const frame = renderFrame(h(HistorySearch, { editor, width: 60, maxRows: 6 }), {
             columns: 60,
         })
+        expect(overflowing(frame, 60)).toEqual([])
+    })
+})
+
+describe("Palette", () => {
+    const open = (value: string) => {
+        const palette = paletteFor(value)
+        if (palette === undefined) throw new Error(`no palette for ${value}`)
+        return palette
+    }
+
+    test("lists matches with their summaries and says what the keys do", () => {
+        const frame = renderFrame(
+            h(Palette, { palette: open("/sk"), index: 0, width: 100, maxRows: 6 }),
+            { columns: 100 },
+        )
+        expect(frame.text).toContain("/skills")
+        expect(frame.text).toContain("tab complete")
+    })
+
+    test("marks exactly one entry", () => {
+        const frame = renderFrame(
+            h(Palette, { palette: open("/"), index: 2, width: 100, maxRows: 6 }),
+            { columns: 100 },
+        )
+        expect(frame.lines.filter((line) => line.includes(GLYPH.pointer.trim()))).toHaveLength(1)
+    })
+
+    test("the summaries line up in a column past the longest word", () => {
+        const palette = open("/s")
+        const frame = renderFrame(h(Palette, { palette, index: 0, width: 120, maxRows: 20 }), {
+            columns: 120,
+        })
+        const starts = palette.matches.map((entry) => {
+            const line = frame.lines.find((candidate) => candidate.includes(entry.word))
+            return line === undefined ? -1 : line.indexOf(entry.summary.slice(0, 12))
+        })
+        expect(starts).not.toContain(-1)
+        expect(new Set(starts).size).toBe(1)
+    })
+
+    test("says so when nothing matches, rather than showing an empty box", () => {
+        const frame = renderFrame(
+            h(Palette, { palette: open("/zzz"), index: 0, width: 100, maxRows: 6 }),
+            { columns: 100 },
+        )
+        expect(frame.text).toContain("no command starts with /zzz")
+    })
+
+    test("a long list scrolls and counts what is out of sight", () => {
+        const frame = renderFrame(
+            h(Palette, { palette: open("/"), index: 8, width: 100, maxRows: 4 }),
+            { columns: 100 },
+        )
+        expect(frame.text).toContain("above")
+    })
+
+    for (const columns of [40, 80, 140]) {
+        test(`nothing wraps at ${columns} columns`, () => {
+            const frame = renderFrame(
+                h(Palette, { palette: open("/"), index: 0, width: columns, maxRows: 8 }),
+                { columns },
+            )
+            expect(overflowing(frame, columns)).toEqual([])
+        })
+    }
+})
+
+describe("CommandOutput", () => {
+    const LINES = Array.from({ length: 40 }, (_, at) => `line ${at}`)
+
+    test("a spinner while it is still running", () => {
+        // A command that takes a second with nothing on screen is indistinguishable from a keystroke that
+        // did nothing.
+        const frame = renderFrame(
+            h(CommandOutput, { lines: undefined, label: "/status", offset: 0, maxRows: 10 }),
+            { columns: 80 },
+        )
+        expect(frame.text).toContain("running /status")
+    })
+
+    test("output that printed nothing says so", () => {
+        const frame = renderFrame(
+            h(CommandOutput, { lines: [], label: "/validate", offset: 0, maxRows: 10 }),
+            { columns: 80 },
+        )
+        expect(frame.text).toContain("printed nothing")
+    })
+
+    test("a non-zero exit is shown, not hidden behind a clean-looking pane", () => {
+        const frame = renderFrame(
+            h(CommandOutput, {
+                lines: ["nope"],
+                label: "/validate",
+                offset: 0,
+                maxRows: 10,
+                code: 1,
+            }),
+            { columns: 80 },
+        )
+        expect(frame.text).toContain("exited 1")
+    })
+
+    test("it scrolls, and counts the lines out of sight in both directions", () => {
+        const top = renderFrame(
+            h(CommandOutput, { lines: LINES, label: "/status", offset: 0, maxRows: 8 }),
+            { columns: 80 },
+        )
+        expect(top.text).toContain("below")
+        const middle = renderFrame(
+            h(CommandOutput, { lines: LINES, label: "/status", offset: 20, maxRows: 8 }),
+            { columns: 80 },
+        )
+        expect(middle.text).toContain("above")
+        expect(middle.text).toContain("below")
+    })
+
+    test("a long line is clipped rather than wrapped", () => {
+        const frame = renderFrame(
+            h(CommandOutput, {
+                lines: ["x".repeat(300)],
+                label: "/status",
+                offset: 0,
+                maxRows: 8,
+            }),
+            { columns: 60 },
+        )
         expect(overflowing(frame, 60)).toEqual([])
     })
 })

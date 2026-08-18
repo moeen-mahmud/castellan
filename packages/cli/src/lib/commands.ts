@@ -54,6 +54,8 @@ export const COMMANDS: readonly CommandSpec[] = [
         // It never asks for the API key itself — a prompt invites shoulder-surfing and a flag
         // writes the secret into shell history — so the generated .env has an empty line to fill.
         name: "init",
+
+        inSession: "hidden",
         summary: "create a new agent: manifest, workspace, and env files",
         args: [
             {
@@ -160,6 +162,8 @@ export const COMMANDS: readonly CommandSpec[] = [
     },
     {
         name: "run",
+
+        inSession: "hidden",
         summary: "start an interactive session — bare `run` picks from the sandbox",
         args: [
             {
@@ -200,6 +204,8 @@ export const COMMANDS: readonly CommandSpec[] = [
     },
     {
         name: "sessions",
+
+        inSession: "output",
         summary: "list stored sessions, or inspect one",
         args: [MANIFEST],
         flags: [
@@ -225,6 +231,8 @@ export const COMMANDS: readonly CommandSpec[] = [
     },
     {
         name: "validate",
+
+        inSession: "output",
         summary: "load and validate a manifest, then exit",
         args: [MANIFEST],
         flags: [JSON_FLAG],
@@ -234,6 +242,8 @@ export const COMMANDS: readonly CommandSpec[] = [
         // *writing* is any good — the authoring rules of 07-SPEC-WORKSPACE.md, which are judgements
         // rather than facts and are therefore warnings that never fail the command.
         name: "workspace",
+
+        inSession: "output",
         summary: "check the workspace files against the authoring rules",
         args: [MANIFEST],
         flags: [
@@ -250,6 +260,8 @@ export const COMMANDS: readonly CommandSpec[] = [
         // placeholders a person fills. Automatic distillation of an identity document drops exactly
         // the parts that produce voice, which is why this is a command and not something load does.
         name: "soul",
+
+        inSession: "output",
         summary: "scaffold a hand-edited compact identity from a long-form document",
         args: [
             {
@@ -276,6 +288,8 @@ export const COMMANDS: readonly CommandSpec[] = [
         // Three questions rather than one. `validate` warns and exits 0 like `workspace` does, because
         // everything it reports is a judgement — a skill that does not load has already failed by then.
         name: "skills",
+
+        inSession: "view",
         summary: "browse the catalogue and install — or list, scaffold, check one agent's skills",
         args: [
             {
@@ -327,6 +341,8 @@ export const COMMANDS: readonly CommandSpec[] = [
         // Machine-level, so it takes no manifest — the split from `skills` that keeps every positional
         // here meaning one thing. A source is a place the person trusts; a skill is one agent's.
         name: "sources",
+
+        inSession: "view",
         summary: "the repositories skills come from: list, add, search",
         args: [
             {
@@ -371,6 +387,8 @@ export const COMMANDS: readonly CommandSpec[] = [
     },
     {
         name: "agents",
+
+        inSession: "output",
         summary: "list the agents one or more manifests produce",
         args: [{ ...MANIFEST, variadic: true, help: "one or more paths to an agent.yaml" }],
         flags: [JSON_FLAG],
@@ -381,6 +399,8 @@ export const COMMANDS: readonly CommandSpec[] = [
         // touches the network before readiness, and an empty cache would otherwise deadlock — the load
         // fails on unresolved slugs, so the post-readiness refresh that would have filled it never runs.
         name: "tools",
+
+        inSession: "output",
         summary:
             "show the resolved tool catalogue, or fetch a remote provider's schemas into the cache",
         args: [MANIFEST],
@@ -398,6 +418,8 @@ export const COMMANDS: readonly CommandSpec[] = [
         // `run` builds the same runtime without them: a REPL that quietly began answering Telegram
         // while you typed at it would be a surprise.
         name: "serve",
+
+        inSession: "hidden",
         summary: "run the HTTP API and connect the agent's channels",
         args: [MANIFEST],
         flags: [
@@ -423,6 +445,8 @@ export const COMMANDS: readonly CommandSpec[] = [
         // The only command that edits a file outside the workspace, which is why it prints the change
         // first and asks. ⌥⏎ needs none of it — this is for people who want shift+⏎ as well.
         name: "terminal-setup",
+
+        inSession: "hidden",
         summary: "teach this terminal to send shift+enter as a new line",
         args: [],
         flags: [
@@ -435,6 +459,8 @@ export const COMMANDS: readonly CommandSpec[] = [
         // The switch that turns everything off. Separate from `daemon stop`, which needs you to
         // know the agent: this one finds the services *and* a `serve` left in a forgotten tab.
         name: "stop",
+
+        inSession: "hidden",
         summary: "stop everything — background services and any session serving an agent",
         args: [
             {
@@ -459,6 +485,8 @@ export const COMMANDS: readonly CommandSpec[] = [
         // Second action-as-positional command after `soul` — and the reason `ArgSpec.choices`
         // exists, since seven verbs hidden inside a prose help string is a set nothing can check.
         name: "daemon",
+
+        inSession: "output",
         summary: "keep an agent serving in the background — starts at login, restarts on crash",
         args: [
             {

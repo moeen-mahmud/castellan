@@ -4,6 +4,8 @@
  */
 
 import type { Agent, EventBus } from "@castellan/core"
+import type { BrowseRow, InstallReport } from "#lib/browse"
+import type { CatalogueEntry } from "#lib/source-cache"
 import type {
     EditorState,
     EnvFacts,
@@ -57,6 +59,20 @@ export interface CommandSpec {
     readonly summary: string
     readonly args: readonly ArgSpec[]
     readonly flags: readonly FlagSpec[]
+    /**
+     * How this command appears inside a running session, as a slash command.
+     *
+     * - `view`   — a bespoke interactive screen exists for it.
+     * - `output` — run it and show the text it prints, in a scrollable pane.
+     * - `hidden` — not offered in a session at all.
+     *
+     * Required, and that is the point. The palette is generated from this table so a new flag reaches
+     * the TUI with nothing to remember, and hiding a command that does not belong in a session — `stop`
+     * would end the session it was typed into — has to be *declared* rather than achieved by leaving it
+     * out of a second hand-written list. A second list is the drift `session-commands.ts` was written to
+     * end; making the field mandatory means a new command cannot be silently absent instead.
+     */
+    readonly inSession: "view" | "output" | "hidden"
 }
 
 // ─── parser output ───────────────────────────────────────────────────────────────────────
@@ -214,6 +230,33 @@ export interface AppProps {
      * it is the store's, and a restart re-reads it.
      */
     readonly initialDraft?: string
+    /**
+     * The agent's manifest, for a slash command that runs as a child process.
+     *
+     * A pane runs `<binary> validate <manifest> --plain` rather than calling the function, because Ink
+     * owns stdout while a session is mounted — see `lib/subcommand.ts`. Without the path the child would
+     * resolve whichever agent the *cwd* suggests, which is a different agent than the one being talked to
+     * and would not look wrong in the output.
+     */
+    readonly manifestPath?: string
+    /**
+     * The catalogue wiring for a hosted `/skills` pane.
+     *
+     * Injected rather than imported, which is the view contract's rule applied one level up: the host
+     * owns the filesystem and the network, the screen owns neither. It is also what keeps `browse.ts` out
+     * of this component's import graph — importing it dynamically here while the wizard imported it
+     * statically made bun's splitting emit its exports twice, and a `Duplicate export` crashes the built
+     * binary while every test, which imports source, passes.
+     *
+     * Absent means `/skills` falls back to running the command in an output pane, which still works.
+     */
+    readonly catalogue?: {
+        readonly load: (onStatus: (line: string) => void) => Promise<readonly BrowseRow[]>
+        readonly install: (
+            skills: readonly CatalogueEntry[],
+            manifestPath: string,
+        ) => Promise<InstallReport>
+    }
 }
 
 export interface TranscriptProps {

@@ -106,3 +106,6 @@ export const EXIT_OK = 0
 export const EXIT_FAILURE = 1
 /** 128 + SIGTERM, the shell convention. */
 export const EXIT_SIGTERM = 143
+
+/** Rows a pane over the conversation may use — a command's output, or a hosted view. */
+export const PANE_ROWS = 16

@@ -533,6 +533,31 @@ Never claim a performance property without a number in `evals/` and a script to 
   the buffer was single-line, and became the bug multi-line exists to remove: a twelve-line block
   arrived as twelve messages, each conditioned on the last and none editable. When a data structure
   gains a capability, re-read the handlers that existed to work around its absence.
+- **A module imported both statically and dynamically produces a bundle that will not parse.** `bun build
+  --splitting` emits its exports twice — `SyntaxError: Duplicate export of 'browseCommand'`, and again for
+  `SkillBrowser` twenty minutes later — and **`bun test` passes straight through it, because tests import
+  source and the failure is in the bundle.** Splitting is not droppable: it is what keeps `import("ink")`
+  off the startup path. So `boundaries.test.ts` bans the mixing from the source text (`import type` is
+  exempt — erased, no edge), and `bundle.test.ts` starts the binary. Both are needed: the binary test
+  cannot reach the rich-path chunks, which is the whole point of the lazy boundary. **Run the built
+  binary after any change to how a module is imported.**
+- **A view never mounts itself and never calls `useApp().exit()`.** It reports through `onDone`; the host
+  unmounts (a command) or closes the pane (the chat). And `focused` gates its `useInput`, because Ink
+  fires **every** active hook — a pane over a live prompt otherwise has two surfaces reading one
+  keystroke, which is not a rendering bug but a wrong action.
+- **A pane runs a command as a child process; it never borrows stdout.** Ink owns stdout while a session
+  is mounted and writes a frame on every render, so swapping `process.stdout.write` for a collector means
+  a frame lands in the collector instead of on screen — silently, intermittently, depending on timing.
+  Pass the manifest path explicitly: a child resolves whichever agent the *cwd* suggests otherwise, which
+  is a different agent and does not look wrong in the output.
+- **`inSession` is required on every `CommandSpec`, and that is the point.** The palette is generated from
+  `COMMANDS`, so a flag added to the CLI reaches the TUI with nothing to remember. A command that must not
+  run in a session — `stop` would stop the session it was typed into — declares `hidden`. Keeping it out
+  by omission from a second hand-written list is the drift `session-commands.ts` exists to end.
+- **A slash command takes arguments only after a token that is *exactly* a known command.** The narrow
+  lone-word rule still decides everything it can, because `/etc/passwd is world-readable` and `and/or` are
+  things people say to an agent. The cost is that `/skils validate` is prose rather than a refusal — the
+  cheaper of the two errors, and a mistyped *lone* command is still refused with a suggestion.
 - **New CLI surfaces use the TUI kit and the pure-reducer grain.** Tokens/glyphs in
   `lib/theme.ts` (a literal colour name in a component is a review failure), components in
   `components/` are controlled and never call `useInput` — one `useInput` per screen root over a

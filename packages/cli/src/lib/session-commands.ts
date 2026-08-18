@@ -120,7 +120,14 @@ export const DOCUMENTED_CTRL_LETTERS: readonly string[] = KEY_BINDINGS.flatMap((
 )
 
 export type SessionCommand =
-    | { readonly kind: SessionCommandKind }
+    | { readonly kind: SessionCommandKind; readonly rest?: string }
+    /**
+     * A slash command this table does not own — a CLI command, offered in a session.
+     *
+     * Resolved here rather than in the renderer so both paths agree about what a typed line means, and
+     * carried with its arguments intact for whichever host runs it.
+     */
+    | { readonly kind: "command"; readonly name: string; readonly rest: string }
     /** Looked like a command and was not one. Refused rather than billed as a prompt. */
     | { readonly kind: "unknown"; readonly word: string; readonly nearest?: string }
 
@@ -134,20 +141,63 @@ export type SessionCommand =
  */
 const COMMAND_SHAPE = /^\/[A-Za-z][\w-]*$/
 
+/**
+ * The same word, followed by arguments.
+ *
+ * The narrow rule above still decides everything it can, and this only adds a case it cannot reach:
+ * `/logs 200` and `/skills validate` need a space, which the narrow rule reads as prose. The escape is
+ * **the first token being exactly a known command** — decidable from the tables alone, with no
+ * heuristic. So `/etc/passwd is world-readable` still goes to the model, because `/etc` is not a
+ * command; and a mistyped `/skils validate` is prose rather than a refusal, which is the one thing this
+ * loosening costs and the cheaper of the two errors.
+ */
+const COMMAND_WITH_ARGS = /^(\/[A-Za-z][\w-]*)\s+(.*)$/
+
 const KNOWN = new Map<string, SessionCommandKind>(
     SESSION_COMMANDS.flatMap((spec) =>
         [spec.word, ...spec.aliases].map((word) => [word.toLowerCase(), spec.kind] as const),
     ),
 )
 
-/** `undefined` means "this is a prompt" — the overwhelming majority of lines. */
-export function resolveSessionCommand(text: string): SessionCommand | undefined {
+/**
+ * `undefined` means "this is a prompt" — the overwhelming majority of lines.
+ *
+ * `offered` is the set of CLI command names a session exposes, passed in rather than imported: this
+ * module is dispatch and `commands.ts` is the table, and importing one into the other would put the
+ * whole command surface behind every consumer of `resolveSessionCommand`, including the plain path.
+ */
+export function resolveSessionCommand(
+    text: string,
+    offered: readonly string[] = [],
+): SessionCommand | undefined {
     const trimmed = text.trim()
     const kind = KNOWN.get(trimmed.toLowerCase())
     if (kind !== undefined) return { kind }
+
+    const names = new Set(offered)
+    if (names.has(trimmed.slice(1).toLowerCase()) && COMMAND_SHAPE.test(trimmed)) {
+        return { kind: "command", name: trimmed.slice(1).toLowerCase(), rest: "" }
+    }
+
+    const withArgs = COMMAND_WITH_ARGS.exec(trimmed)
+    if (withArgs !== null) {
+        const head = (withArgs[1] ?? "").toLowerCase()
+        const rest = withArgs[2] ?? ""
+        const known = KNOWN.get(head)
+        if (known !== undefined) return { kind: known, rest }
+        if (names.has(head.slice(1))) {
+            return { kind: "command", name: head.slice(1), rest }
+        }
+        // Not a known first token, so the narrow rule stands and this is prose.
+        return undefined
+    }
+
     if (!COMMAND_SHAPE.test(trimmed)) return undefined
 
-    const suggestion = nearest(trimmed.toLowerCase(), [...KNOWN.keys()])
+    const suggestion = nearest(trimmed.toLowerCase(), [
+        ...KNOWN.keys(),
+        ...offered.map((name) => `/${name}`),
+    ])
     return {
         kind: "unknown",
         word: trimmed,

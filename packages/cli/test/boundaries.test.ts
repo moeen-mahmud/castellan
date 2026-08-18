@@ -145,6 +145,68 @@ describe("the pure modules stay pure", () => {
     })
 })
 
+describe("no module is both statically and dynamically imported", () => {
+    /**
+     * The bug this exists for is fatal and invisible to every other test.
+     *
+     * `bun build --splitting` emits a module's exports **twice** when one file imports it statically and
+     * another imports it with `await import()`. The bundle then dies at parse time —
+     * `SyntaxError: Duplicate export of 'browseCommand'` — and nothing in the suite notices, because tests
+     * import source. It happened twice in one afternoon, for `browse.ts` and for `SkillBrowser`.
+     *
+     * `bundle.test.ts` starts the binary, which catches it for anything `--version` and `--help` reach.
+     * It cannot reach the rich path: the whole point of the lazy-Ink boundary is that those chunks load
+     * only at a terminal. So the mixing itself is what gets banned, from the source text, where it is
+     * plainly visible.
+     *
+     * Splitting is not negotiable in the other direction: it is what keeps `import("ink")` out of the
+     * startup path, and dropping it would hoist Ink into the main bundle and cost every command ~200 ms.
+     */
+    function dynamicImportsOf(text: string): readonly string[] {
+        return [...text.matchAll(/import\(\s*["']([^"']+)["']\s*\)/g)].map(
+            (match) => match[1] ?? "",
+        )
+    }
+
+    /**
+     * Static specifiers that create a *runtime* edge.
+     *
+     * `import type` is excluded, and has to be: a type import is erased before the bundler sees it, so it
+     * cannot produce a duplicate export — and counting it would forbid the one arrangement that fixes the
+     * problem, which is a component whose props are imported as types and whose implementation is loaded
+     * dynamically.
+     */
+    function staticSpecifiersOf(text: string): readonly string[] {
+        return [
+            ...text.matchAll(
+                /(?:^|\n)\s*(?:import|export)(?!\s+type\s)[^\n]*from\s*["']([^"']+)["']/g,
+            ),
+        ].map((match) => match[1] ?? "")
+    }
+
+    test("the two sets do not overlap for any internal module", () => {
+        const statics = new Set<string>()
+        const dynamics = new Set<string>()
+        for (const file of FILES) {
+            // Internal only. `ink` and `react` are external to the bundle, so importing them both ways is
+            // exactly what the lazy boundary requires and is not this rule's business.
+            for (const spec of staticSpecifiersOf(file.text)) {
+                if (spec.startsWith("#")) statics.add(spec)
+            }
+            for (const spec of dynamicImportsOf(file.text)) {
+                if (spec.startsWith("#")) dynamics.add(spec)
+            }
+        }
+        const both = [...dynamics].filter((spec) => statics.has(spec)).sort()
+        expect(both).toEqual([])
+    })
+
+    test("and there really are dynamic imports, or this test proves nothing", () => {
+        const found = FILES.flatMap((file) => dynamicImportsOf(file.text))
+        expect(found.length).toBeGreaterThan(0)
+    })
+})
+
 describe("every component is verified by a frame test", () => {
     /**
      * The rule that closes the hole this whole area was built in.

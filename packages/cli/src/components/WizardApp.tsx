@@ -9,7 +9,7 @@
 
 import { Box, Text, useApp, useInput } from "ink"
 import { useCallback, useEffect, useReducer, useState } from "react"
-import { fetchCatalogue, widthFor, windowFor } from "#browse"
+import { fetchCatalogue } from "#browse"
 import { Banner } from "#components/Banner"
 import { CheckList } from "#components/CheckList"
 import { SelectList } from "#components/SelectList"
@@ -19,8 +19,10 @@ import { TextField } from "#components/TextField"
 import { WizardFrame } from "#components/WizardFrame"
 import { keyToCheckIntent, keyToWizardIntent } from "#keymap"
 import { type BrowseRow, chosenEntries, selectableOf } from "#lib/browse"
+import { FALLBACK_COLUMNS, FALLBACK_ROWS } from "#lib/const"
 import type { PartialAnswers, QuestionDefaults } from "#lib/init-flow"
 import { firstSelectable, type MultiSelectState, reduceMultiSelect } from "#lib/multiselect"
+import { screenColumns, screenRows } from "#lib/screen"
 import { GLYPH, THEME } from "#lib/theme"
 import {
     answeredRows,
@@ -256,8 +258,8 @@ export function WizardApp({ title, given, defaults, onDone }: WizardAppProps) {
                         rows={catalogue.rows}
                         index={catalogue.picked.cursor.index}
                         chosen={catalogue.picked.chosen}
-                        window={windowFor(undefined)}
-                        width={widthFor(undefined)}
+                        window={screenRows(undefined, FALLBACK_ROWS)}
+                        width={screenColumns(undefined, FALLBACK_COLUMNS)}
                     />
                 </Box>
                 <Box marginTop={1} paddingLeft={2}>
