@@ -1737,6 +1737,38 @@ the spec, never omitted by a second list.
       ⌥↑ parking the window with `↑ n rows above · ↓ n rows below · esc returns`, `esc` returning to the
       newest reply, a resize from 24×80 to 14×70 re-laying the frame, and `^C`,`^C` leaving cleanly.
 
+### Follow-ups landed after the stages (2026-08-18)
+
+Two asks from the owner, taken after Phase 5.5 closed and recorded here because they are the same surface.
+
+**A conversation per run.** `local:default` is gone: a run generates `local:` plus six base-32 symbols
+(11.83), with three routes back — `--continue`/`-c`, a bare `--session` for the picker, and `/sessions` as
+an in-session switcher (11.84). The contradictory pair is refused rather than ranked. Switching rebuilds
+rather than re-keying, because `useReducer` seeds only on mount (11.86), and the banner's `restarted`
+boolean became a three-valued `reopened` so a switch does not claim to be a configuration change.
+
+- [x] Two runs with no `--session` land in two conversations; verified against a live endpoint.
+- [x] `-c` resumes: asked "what did I just ask you?" and the model answered from the previous turn.
+- [x] `-c` with no stored conversation starts a new one and says so; `--continue --session` is refused.
+- [x] A bare `--session` opens the picker at a terminal and lists-and-exits-1 on a pipe.
+- [x] `/sessions` switches in-session — rebuilt into a 4-message conversation in 19 ms, with a note.
+- [x] `FlagSpec.bare` is per-flag; `--session=` stays refused and `--input -5` still means "-5" (11.85).
+
+**A splash for a new conversation.** Wordmark rendered from `BRAND.name` through a 5×5 glyph table in four
+width- and height-aware tiers (11.87), the same composer centred with a placeholder, compact facts, and the
+cwd and version in the footer. `freshSession` is passed rather than derived, because the chat does not
+render stored history and an empty transcript is equally true of a resumed session (11.88).
+
+- [x] The wordmark is derived, so a rename stays one commit — asserted over several names.
+- [x] Every tier fits its space; degradation is by measurement, not a width threshold.
+- [x] The splash fills the terminal exactly at 10/16/24/40 rows and 44/60/80/100/140 columns.
+- [x] It appears for a fresh session, not for a resumed one, and goes on the first message.
+- [x] The composer is pinned to the bottom edge, so the place you type does not walk down the screen.
+- [x] Verified live at 110×30: the `wide` tier, then the transcript with the banner at the top.
+
+One bug came out of it rather than out of review: `screenColumns` treated a pty's `columns === 0` as a
+width of zero, so the session picker's rows were 43 characters wide on an 80-column screen (11.89).
+
 ### Non-goals
 
 A dashboard home screen or panes in one long-lived app — per-command screens were chosen. Mouse

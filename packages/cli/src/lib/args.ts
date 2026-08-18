@@ -316,6 +316,13 @@ export function parse(argv: readonly string[]): ParseResult {
             // whether a token is a value is decided by the spec, never by whether it starts with a
             // dash. `--input -5` means the text "-5".
             const next = argv[i + 1]
+            // Unless the spec declares a bare form, in which case a missing token or one starting with a
+            // dash means the flag was written on its own. Opt-in per flag, because the inversion is only
+            // safe for a field whose values cannot start with a dash — see `FlagSpec.bare`.
+            if (spec.bare !== undefined && (next === undefined || next.startsWith("-"))) {
+                values.set(spec.name, spec.bare)
+                continue
+            }
             if (next === undefined) {
                 errors.push(
                     detail(

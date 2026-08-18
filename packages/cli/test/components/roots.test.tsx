@@ -14,14 +14,17 @@ import { describe, expect, test } from "bun:test"
 import { createElement as h } from "react"
 import { App } from "#components/App"
 import { Picker } from "#components/Picker"
+import { SessionPicker, type SessionPickerProps } from "#components/SessionPicker"
 import { SkillBrowser } from "#components/SkillBrowser"
+import { Splash } from "#components/Splash"
 import { WizardApp } from "#components/WizardApp"
+import { EMPTY_EDITOR } from "#editor"
 import type { BrowseRow, InstallReport } from "#lib/browse"
 import type { SandboxAgent } from "#lib/sandbox"
-import type { AppProps } from "#lib/schema"
+import type { AppProps, SplashProps } from "#lib/schema"
 import type { CatalogueEntry } from "#lib/source-cache"
 import { GLYPH, SPINNER_FRAMES } from "#lib/theme"
-import { KEY, mount, overflowing } from "../helpers/frame.tsx"
+import { KEY, mount, overflowing, renderFrame } from "../helpers/frame.tsx"
 
 const AGENTS: readonly SandboxAgent[] = [
     {
@@ -673,5 +676,223 @@ describe("App, scrolling the conversation", () => {
         harness.unmount()
         expect(frame.text).not.toContain("half a thought")
         expect(frame.text).toContain("message number 59")
+    })
+})
+
+describe("SessionPicker", () => {
+    const NOW = Date.parse("2026-08-18T12:00:00Z")
+    const SESSIONS = [
+        {
+            sessionKey: "local:a7f3c2",
+            messages: 4,
+            turns: 2,
+            lastActivityAt: "2026-08-18T11:58:00Z",
+        },
+        {
+            sessionKey: "local:9b1e04",
+            messages: 18,
+            turns: 7,
+            lastActivityAt: "2026-08-18T09:00:00Z",
+        },
+        { sessionKey: "notes", messages: 61, turns: 22, lastActivityAt: "2026-08-16T09:00:00Z" },
+    ]
+
+    function picker(overrides: Partial<SessionPickerProps> = {}) {
+        return h(SessionPicker, {
+            sessions: SESSIONS,
+            now: NOW,
+            columns: 80,
+            maxRows: 12,
+            onDone: () => {},
+            ...overrides,
+        })
+    }
+
+    test("each row says what the conversation is and how old", () => {
+        const frame = renderFrame(picker(), { columns: 80 })
+        expect(frame.text).toContain("local:a7f3c2")
+        expect(frame.text).toContain("4 messages")
+        expect(frame.text).toContain("2m ago")
+        expect(frame.text).toContain("3h ago")
+        expect(overflowing(frame, 80)).toEqual([])
+    })
+
+    test("a key somebody chose is marked, because it is the one they will recognise", () => {
+        // Everything else in the list is six characters they have never read before.
+        const frame = renderFrame(picker(), { columns: 80 })
+        expect(frame.text).toContain("named")
+    })
+
+    test("the session in use is labelled rather than hidden", () => {
+        const frame = renderFrame(picker({ current: "local:9b1e04" }), { columns: 80 })
+        expect(frame.text).toContain("in use")
+    })
+
+    test("enter reports the highlighted key and esc reports nothing", async () => {
+        const chosen: (string | undefined)[] = []
+        const harness = mount(picker({ onDone: (key) => chosen.push(key) }), { columns: 80 })
+        await harness.press(KEY.down, KEY.enter)
+        await harness.press(KEY.escape)
+        harness.unmount()
+        // `undefined` is "leave things as they are" — a distinct answer from any key, which is why the
+        // callback takes an optional rather than the host inferring it from a sentinel string.
+        expect(chosen).toEqual(["local:9b1e04", undefined])
+    })
+
+    test("an empty store says so instead of drawing an empty box", () => {
+        const frame = renderFrame(picker({ sessions: [] }), { columns: 80 })
+        expect(frame.text).toContain("no stored conversations")
+    })
+
+    test("it scrolls rather than growing past its allowance", () => {
+        // Unbounded, fifty conversations would make the list taller than the terminal — and on the
+        // alternate screen there is no scrollback to recover the top of the frame from.
+        const many = Array.from({ length: 50 }, (_, at) => ({
+            sessionKey: `local:00000${at}`,
+            messages: at,
+            turns: at,
+            lastActivityAt: "2026-08-18T11:00:00Z",
+        }))
+        const frame = renderFrame(picker({ sessions: many, maxRows: 8 }), { columns: 80 })
+        // Eight rows, the "below" notice, and the key hint.
+        expect(frame.lines.length).toBe(10)
+        expect(frame.text).toContain("42 below")
+    })
+
+    test("a narrow terminal clips the hint rather than wrapping the row", () => {
+        const frame = renderFrame(picker({ columns: 44 }), { columns: 44 })
+        expect(overflowing(frame, 44)).toEqual([])
+    })
+})
+
+describe("Splash — a conversation with nothing in it yet", () => {
+    function splash(overrides: Partial<SplashProps> = {}) {
+        return h(Splash, {
+            name: "Kit",
+            version: "0.1.0",
+            agentName: "milo",
+            model: "deepseek-v4-flash",
+            warnings: [],
+            location: "~/work",
+            editor: EMPTY_EDITOR,
+            busy: false,
+            columns: 100,
+            rows: 24,
+            hint: "/ commands · ⏎ sends",
+            ...overrides,
+        })
+    }
+
+    test("it fills the terminal exactly, and nothing overflows", () => {
+        // Same ceiling as the transcript frame, for the same reason: the alternate screen has no
+        // scrollback, so a row too many scrolls the buffer and the footer ends up mid-screen.
+        for (const rows of [10, 16, 24, 40]) {
+            for (const columns of [44, 60, 80, 100, 140]) {
+                const frame = renderFrame(splash({ columns, rows }), { columns, rows })
+                expect(frame.lines.length).toBeLessThanOrEqual(rows)
+                expect(overflowing(frame, columns)).toEqual([])
+            }
+        }
+    })
+
+    test("the wordmark is drawn from the name it was given", () => {
+        // Rendered from `BRAND.name`, never a literal — hard rule 3 means a rename is one commit, and an
+        // ASCII wordmark would otherwise be the largest brand string in the tree.
+        const frame = renderFrame(splash(), { columns: 100, rows: 24 })
+        expect(frame.text).toContain("█")
+    })
+
+    test("it degrades to the letter-spaced name rather than overflowing a narrow screen", () => {
+        // How narrow is too narrow depends on the *name*: three letters still fit the biggest tier at 44
+        // columns, which is why the tiers are chosen by measuring rather than by a width threshold.
+        const frame = renderFrame(splash({ name: "Kitchens", columns: 44 }), {
+            columns: 44,
+            rows: 24,
+        })
+        expect(frame.text).toContain("K I T C H E N S")
+        expect(overflowing(frame, 44)).toEqual([])
+    })
+
+    test("a short name keeps the big tier where a long one would not", () => {
+        const short = renderFrame(splash({ name: "Kit", columns: 44 }), { columns: 44, rows: 24 })
+        expect(short.text).toContain("█")
+    })
+
+    test("the facts under the composer say who and on what", () => {
+        const frame = renderFrame(splash(), { columns: 100, rows: 24 })
+        expect(frame.text).toContain("milo · deepseek-v4-flash")
+    })
+
+    test("warnings are a count, and absent when there are none", () => {
+        // The text is in the banner, which is the first transcript item — this is the pointer to it.
+        expect(renderFrame(splash(), { columns: 100, rows: 24 }).text).not.toContain("⚠")
+        const warned = renderFrame(splash({ warnings: ["a", "b"] }), { columns: 100, rows: 24 })
+        expect(warned.text).toContain("⚠ 2")
+    })
+
+    test("the footer carries where you are and which build", () => {
+        const frame = renderFrame(splash(), { columns: 100, rows: 24 })
+        expect(frame.text).toContain("~/work")
+        expect(frame.text).toContain("Kit 0.1.0")
+    })
+
+    test("the placeholder shows while the buffer is empty and not once it is not", () => {
+        const typed = { ...EMPTY_EDITOR, value: "hello", cursor: 5 }
+        expect(renderFrame(splash(), { columns: 100, rows: 24 }).text).toContain("Ask anything")
+        expect(
+            renderFrame(splash({ editor: typed }), { columns: 100, rows: 24 }).text,
+        ).not.toContain("Ask anything")
+    })
+})
+
+describe("App, choosing between the splash and the transcript", () => {
+    test("a fresh session opens on the splash", () => {
+        const harness = mount(h(App, { ...stubAppProps(), freshSession: true }), {
+            columns: 100,
+            rows: 24,
+        })
+        const frame = harness.frame()
+        harness.unmount()
+        expect(frame.text).toContain("Ask anything")
+    })
+
+    test("a resumed session does not, even though its transcript is also empty", () => {
+        // The chat never renders stored history — a resumed conversation's messages reach the model, not
+        // the screen — so "the transcript is empty" is true of both, and deriving from it would put a
+        // welcome screen in front of a conversation somebody is trying to continue.
+        const harness = mount(h(App, { ...stubAppProps(), freshSession: false }), {
+            columns: 100,
+            rows: 24,
+        })
+        const frame = harness.frame()
+        harness.unmount()
+        expect(frame.text).not.toContain("Ask anything")
+        expect(frame.text).toContain("ready")
+    })
+
+    test("the splash goes away as soon as something is typed and sent", async () => {
+        const harness = mount(h(App, { ...stubAppProps(), freshSession: true }), {
+            columns: 100,
+            rows: 24,
+        })
+        expect(harness.frame().text).toContain("Ask anything")
+        await harness.press("hello", KEY.enter)
+        const after = harness.frame()
+        harness.unmount()
+        expect(after.text).not.toContain("Ask anything")
+        expect(after.text).toContain("hello")
+    })
+
+    test("a pane opened from the splash shows the pane, not a wordmark", async () => {
+        const harness = mount(h(App, { ...stubAppProps(), freshSession: true }), {
+            columns: 100,
+            rows: 24,
+        })
+        await harness.press("/", "h", "e", "l", "p", KEY.enter)
+        const frame = harness.frame()
+        harness.unmount()
+        // `/help` is a session verb, so it notes into the transcript — which is itself enough to retire
+        // the splash. The property under test is that the splash does not sit in front of new content.
+        expect(frame.text).not.toContain("Ask anything")
     })
 })

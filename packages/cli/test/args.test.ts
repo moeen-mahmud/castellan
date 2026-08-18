@@ -114,13 +114,38 @@ describe("flag forms", () => {
     })
 
     test("a value flag at the end of the line is refused", () => {
-        const error = refusal(["run", "a.yaml", "--session"])
+        const error = refusal(["run", "a.yaml", "--store"])
         expect(codes(error)).toEqual(["cli_flag_needs_value"])
-        expect(error.hint).toContain("<key>")
+        expect(error.hint).toContain("<path>")
     })
 
     test("an empty value is refused rather than passed through", () => {
+        expect(codes(refusal(["run", "a.yaml", "--store="]))).toEqual(["cli_flag_empty_value"])
+    })
+
+    test("a flag with a bare form takes it at the end of the line", () => {
+        // `--session` on its own means "show me the list", which is intent rather than a mistake.
+        expect(command(["run", "a.yaml", "--session"]).flags.str("session")).toBe("")
+    })
+
+    test("a bare form is also taken when the next token is a flag", () => {
+        // The inversion `FlagSpec.bare` buys: a value-taking flag normally consumes the next token
+        // whatever it looks like, because `--input -5` is the text "-5". A session key cannot start with
+        // a dash, so here the dash decides — and that safety is a fact about the field, which is why it
+        // is declared per flag rather than applied to all of them.
+        const parsed = command(["run", "a.yaml", "--session", "--quiet"])
+        expect(parsed.flags.str("session")).toBe("")
+        expect(parsed.flags.bool("quiet")).toBe(true)
+    })
+
+    test("`--session=` is still refused, because that one is a typo", () => {
+        // The bare form and an explicit empty value are different claims: somebody who typed `=` meant to
+        // pass something. Keeping the refusal is what makes the bare form readable as deliberate.
         expect(codes(refusal(["run", "a.yaml", "--session="]))).toEqual(["cli_flag_empty_value"])
+    })
+
+    test("a flag with no bare form keeps consuming a dashed value", () => {
+        expect(command(["run", "a.yaml", "--input", "-5"]).flags.str("input")).toBe("-5")
     })
 
     test("a repeated flag takes the last value", () => {

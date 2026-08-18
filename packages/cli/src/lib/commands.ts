@@ -44,6 +44,10 @@ const SESSION: FlagSpec = {
     kind: "string",
     placeholder: "key",
     help: "session key",
+    // Written on its own, it means "ask me which one" — the interactive twin of `--continue`. Safe as a
+    // bare form because a session key cannot start with a dash, which is the condition `FlagSpec.bare`
+    // documents; `run` opens the picker and every other command reports that it needs a key.
+    bare: "",
 }
 
 const JSON_FLAG: FlagSpec = { name: "json", kind: "boolean", help: "machine-readable output" }
@@ -173,7 +177,13 @@ export const COMMANDS: readonly CommandSpec[] = [
             },
         ],
         flags: [
-            { ...SESSION, defaultHelp: "local:default" },
+            { ...SESSION, defaultHelp: "a new one each run; bare --session picks from the list" },
+            {
+                name: "continue",
+                short: "c",
+                kind: "boolean",
+                help: "pick up the most recent conversation with this agent",
+            },
             {
                 name: "input",
                 kind: "string",
@@ -205,7 +215,9 @@ export const COMMANDS: readonly CommandSpec[] = [
     {
         name: "sessions",
 
-        inSession: "output",
+        // A view rather than an output pane: the list is a *choice*, and reading it read-only was the one
+        // thing you could already do by exiting and passing `--session`. Enter switches.
+        inSession: "view",
         summary: "list stored sessions, or inspect one",
         args: [MANIFEST],
         flags: [

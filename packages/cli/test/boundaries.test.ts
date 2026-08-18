@@ -127,6 +127,15 @@ describe("the pure modules stay pure", () => {
         // can only be checked by looking at a terminal is arithmetic nobody checks.
         "lib/scroll.ts",
         "lib/chat-frame.ts",
+        // Naming a conversation and listing them. Pure so the key can be asserted from fixed bytes and the
+        // row layout as strings — the two things that decide whether a key is typeable and whether a list
+        // is legible, neither of which is observable from a running store.
+        "lib/session-key.ts",
+        "lib/sessions-view.ts",
+        // The wordmark. Pure because it is the largest thing hard rule 3 touches — an ASCII wordmark is a
+        // brand string, so it is *rendered* from `BRAND.name` rather than written down, and the property
+        // that a rename still draws is only assertable as strings.
+        "lib/wordmark.ts",
     ]
 
     test("they import no renderer and no node built-ins", () => {

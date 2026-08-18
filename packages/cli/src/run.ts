@@ -13,29 +13,40 @@
  * the streaming writes, because both were verified against a real endpoint and a real SIGINT.
  */
 
+import { randomBytes } from "node:crypto"
 import { existsSync } from "node:fs"
+import { homedir } from "node:os"
 import { createInterface, type Interface } from "node:readline"
 import {
-    Agent,
+    type Agent,
     type AnyEvent,
     BRAND,
     defaultStorePath,
     HarnessError,
     processAlive,
     Runtime as RuntimeClass,
+    type SessionSummary,
     VERSION,
 } from "@castellan/core"
 import { fetchCatalogue } from "#browse"
 import { initInteractive } from "#init"
 import { ambientEnv, demotedKeys } from "#lib/ambient"
 import { installReport } from "#lib/browse"
-import { ENTER_ALT_SCREEN, EXIT_FAILURE, EXIT_OK, PROMPT } from "#lib/const"
+import {
+    ENTER_ALT_SCREEN,
+    EXIT_FAILURE,
+    EXIT_OK,
+    FALLBACK_COLUMNS,
+    PROMPT,
+    SESSION_PICKER_ROWS,
+} from "#lib/const"
 import { flushOutput, markAltScreen, markTerminalDirty, onExit, restoreTerminal } from "#lib/exit"
 import { resolveModeFromProcess } from "#lib/output"
 import { CHANNELS, scriptRunner, TOOL_PROVIDERS } from "#lib/providers"
-import { keyValue } from "#lib/render"
+import { keyValue, tildify } from "#lib/render"
 import { listAgents, storePath } from "#lib/sandbox"
 import type { RunOptions } from "#lib/schema"
+import { screenColumns } from "#lib/screen"
 import {
     resolveSessionCommand,
     sessionHelpText,
@@ -43,7 +54,9 @@ import {
     toolsView,
     unknownCommandText,
 } from "#lib/session-commands"
+import { SESSION_KEY_LENGTH, sessionKeyFrom } from "#lib/session-key"
 import type { CatalogueEntry } from "#lib/source-cache"
+import type { RenderMode } from "#lib/types"
 import { type InstallOutcome, skillsCommand } from "#skills"
 import { seed } from "#transcript"
 
@@ -53,7 +66,16 @@ async function bannerLines(
     sessionKey: string,
     storeLocation: string,
     bootMs: number,
-    restarted: boolean,
+    /**
+     * Why this banner is being printed.
+     *
+     * A boolean answered "is this the first one" and there are now three answers: a `/restart` rebuilt the
+     * agent, and a session switch rebuilt it to move conversations. They need different sentences — the
+     * restart note is about configuration and would be a lie about a switch — and they agree about the
+     * boot number, because in both cases the process has been alive for however long the last conversation
+     * lasted and time-since-process-start has stopped meaning anything.
+     */
+    reopened: "first" | "restart" | "switch",
     demoted: readonly string[] = [],
 ) {
     const described = agent.describe()
@@ -70,9 +92,16 @@ async function bannerLines(
         `ready in ${bootMs.toFixed(0)} ms · /help for commands and keys · /exit to leave`,
     ]
 
-    if (restarted) {
+    if (reopened === "restart") {
         lines.push(
             "restarted — the configuration on disk is now the one in force; the conversation continues from the store.",
+        )
+    }
+    if (reopened === "switch") {
+        // What was left behind is worth naming: the previous conversation is still in the store, and the
+        // key above is the one that reaches this one again.
+        lines.push(
+            "switched conversation — the one you left is still in the store, under its own key.",
         )
     }
 
@@ -151,9 +180,23 @@ export async function runCommand(options: RunOptions): Promise<number> {
     // the command rather than to one mount, and the restart tears the mount down.
     const draft: { current: string } = { current: "" }
 
-    const sessionKey = options.sessionKey ?? Agent.DEFAULT_SESSION
+    // Resolved once per call and then carried, because `/restart` must not silently move the conversation.
+    //
+    // Empty rather than absent means a bare `--session`: "ask me which one". Resolution needs the store, so
+    // it happens inside the loop once a runtime exists — and the box is what keeps a picked key stable
+    // across a restart, the same reason the reader and the draft live out here.
+    const session: { current: string | undefined } = { current: options.sessionKey }
+    // Whether the splash stands in for the transcript. Carried beside the key, and both survive a
+    // `/restart` — which is not new, so the restarted session goes straight to the conversation.
+    const freshSession = { current: false }
     const quiet = options.quiet === true
-    let restarted = false
+    // Why the loop is on this iteration. `switch` is set by the in-session picker, which reaches the loop
+    // the same way `/restart` does — by unmounting — because `useReducer`'s initial state only seeds on
+    // mount, so a transcript cannot be re-keyed in place. Rebuilding is a hundred and fifty milliseconds
+    // and it re-reads the store, which is exactly what moving to another conversation wants.
+    let reopened: "first" | "restart" | "switch" = "first"
+    /** A conversation the running session asked to move to. Applied at the top of the next iteration. */
+    const switchTo: { current: string | undefined } = { current: undefined }
 
     // `/restart` rebuilds the agent in this process rather than replacing the process.
     //
@@ -179,6 +222,28 @@ export async function runCommand(options: RunOptions): Promise<number> {
         const agent = runtime.list()[0]
         if (agent === undefined) throw new Error("The manifest produced no agent.")
 
+        // The conversation this run belongs to.
+        //
+        // After the runtime, because both interesting answers read the store: `--continue` wants the most
+        // recent conversation and a bare `--session` wants the list. Once resolved it is carried, so a
+        // `/restart` rebuilds the agent and stays in the same conversation.
+        if (session.current === undefined || session.current === "") {
+            const resolved = await resolveSession({
+                agent,
+                mode,
+                asked: session.current,
+                wantsContinue: options.continueSession === true,
+                random: randomBytes,
+            })
+            if (typeof resolved === "number") {
+                await runtime.stop("cli-exit")
+                return resolved
+            }
+            session.current = resolved.sessionKey
+            freshSession.current = resolved.fresh
+        }
+        const sessionKey = session.current
+
         // Reasoning is shown by default on a model that has any.
         //
         // It used to be opt-in behind --show-reasoning, which meant the normal experience of a
@@ -199,8 +264,8 @@ export async function runCommand(options: RunOptions): Promise<number> {
                       // After a restart the process has been alive for however long the conversation
                       // lasted, so time-since-process-start stops meaning anything. The first boot
                       // reports it because that is the number the sub-second claim is about.
-                      restarted ? runtime.boot.bootMs : runtime.boot.processMs,
-                      restarted,
+                      reopened === "first" ? runtime.boot.processMs : runtime.boot.bootMs,
+                      reopened,
                       demotedKeys([options.manifestPath]),
                   )
 
@@ -214,12 +279,24 @@ export async function runCommand(options: RunOptions): Promise<number> {
             reader,
             draft,
             showReasoning,
+            freshSession: freshSession.current,
+            switchTo,
         }
         const outcome = mode === "rich" ? await runRich(wired) : await runPlain(wired)
 
         await runtime.stop(outcome === RESTART ? "restart" : "cli-exit")
         if (outcome !== RESTART) return outcome
-        restarted = true
+        if (switchTo.current === undefined) {
+            reopened = "restart"
+        } else {
+            reopened = "switch"
+            session.current = switchTo.current
+            switchTo.current = undefined
+        }
+        // The splash does not come back after a rebuild, even when the key is unchanged and nothing has
+        // been sent. The reason for the rebuild is a line in the banner, and a welcome screen in front of it
+        // would hide the one sentence explaining what just happened.
+        freshSession.current = false
     }
 }
 
@@ -347,6 +424,140 @@ async function pickFromSandbox(
     return picked.manifestPath
 }
 
+/**
+ * Which conversation this run belongs to, or an exit code if the answer is "none".
+ *
+ * Three inputs, and the contradictory pair is refused rather than ranked. `--continue --session x` says
+ * both "the most recent one" and "this one"; picking a winner would silently ignore half of what was
+ * typed, and there is no reading of it that is obviously intended.
+ *
+ * The default is a **new** key. That is the behaviour change: every run used to land in `local:default`,
+ * so an agent's store was one unbroken transcript and this morning's question was conditioned on
+ * yesterday's debugging. It applies to `--input` too, which makes a scripted one-shot stateless unless it
+ * names a session — deliberately, because a one-shot that quietly accumulated history grows its own
+ * context until compaction starts thrashing, and `--session` is right there for the case somebody wants
+ * the thread.
+ */
+export interface ResolvedSession {
+    readonly sessionKey: string
+    /**
+     * The key was generated for this run, so there is nothing behind it.
+     *
+     * Carried rather than re-derived from a message count, because the two answers differ: a conversation
+     * that was resumed and then cleared has no messages and is not new. This is what puts the splash in
+     * front of a new conversation and keeps it away from a resumed one.
+     */
+    readonly fresh: boolean
+}
+
+async function resolveSession(input: {
+    readonly agent: Agent
+    readonly mode: RenderMode
+    /** `""` for a bare `--session`; `undefined` for not asked at all. */
+    readonly asked: string | undefined
+    readonly wantsContinue: boolean
+    readonly random: (count: number) => Uint8Array
+}): Promise<ResolvedSession | number> {
+    const fresh = (): ResolvedSession => ({
+        sessionKey: sessionKeyFrom(input.random(SESSION_KEY_LENGTH)),
+        fresh: true,
+    })
+
+    if (input.wantsContinue && input.asked === "") {
+        throw new HarnessError({
+            code: "cli_session_ambiguous",
+            message: "--continue and a bare --session ask for different things.",
+            hint: "--continue takes the most recent conversation without asking; --session on its own opens the list. Pass one.",
+        })
+    }
+
+    if (input.wantsContinue) {
+        const stored = await input.agent.store.sessions.list(input.agent.id)
+        const recent = mostRecent(stored)
+        if (recent === undefined) {
+            // Not an error: an agent you have never talked to has no most-recent conversation, and refusing
+            // would make `-c` unusable as a habit — you would have to remember whether this is the first time.
+            process.stdout.write(
+                "no stored conversation with this agent yet — starting a new one\n",
+            )
+            return fresh()
+        }
+        return { sessionKey: recent.sessionKey, fresh: false }
+    }
+
+    if (input.asked === "") {
+        const stored = await input.agent.store.sessions.list(input.agent.id)
+        if (stored.length === 0) {
+            process.stdout.write(
+                "no stored conversation with this agent yet — starting a new one\n",
+            )
+            return fresh()
+        }
+        if (input.mode !== "rich") {
+            // The plain path lists them and refuses, rather than guessing. Same shape as the agent picker:
+            // a surface that needs a keyboard says so and prints what you would have chosen from.
+            for (const row of [...stored].sort(byRecency)) {
+                process.stdout.write(
+                    `${row.sessionKey}\t${row.messages}\t${row.turns}\t${row.lastActivityAt}\n`,
+                )
+            }
+            process.stderr.write(
+                "pass --session <key> — the picker needs a terminal, and --continue takes the most recent without one\n",
+            )
+            return EXIT_FAILURE
+        }
+        const picked = await pickSession([...stored].sort(byRecency))
+        // Esc means "leave things as they are", which for a run that has not started yet is a new
+        // conversation rather than no conversation. Quitting would make esc a way to fail to launch.
+        return picked === undefined ? fresh() : { sessionKey: picked, fresh: false }
+    }
+
+    return input.asked === undefined ? fresh() : { sessionKey: input.asked, fresh: false }
+}
+
+/** Most recently touched first. One comparator, so the picker and `--continue` agree about "recent". */
+function byRecency(left: SessionSummary, right: SessionSummary): number {
+    return Date.parse(right.lastActivityAt) - Date.parse(left.lastActivityAt)
+}
+
+function mostRecent(sessions: readonly SessionSummary[]): SessionSummary | undefined {
+    return [...sessions].sort(byRecency)[0]
+}
+
+/** The session picker, mounted the same lazy way as every other Ink surface. */
+async function pickSession(sessions: readonly SessionSummary[]): Promise<string | undefined> {
+    const [{ render }, { createElement }, { SessionPicker }] = await Promise.all([
+        import("ink"),
+        import("react"),
+        import("#components/SessionPicker"),
+    ])
+
+    let picked: string | undefined
+    markTerminalDirty()
+    const instance = render(
+        createElement(SessionPicker, {
+            sessions: sessions.map((row) => ({
+                sessionKey: row.sessionKey,
+                messages: row.messages,
+                turns: row.turns,
+                lastActivityAt: row.lastActivityAt,
+                phase: row.phase,
+            })),
+            now: Date.now(),
+            columns: screenColumns(process.stdout.columns, FALLBACK_COLUMNS),
+            maxRows: SESSION_PICKER_ROWS,
+            onDone: (key) => {
+                picked = key
+                instance.unmount()
+            },
+        }),
+        { exitOnCtrlC: false },
+    )
+    onExit(() => instance.unmount())
+    await instance.waitUntilExit()
+    return picked
+}
+
 interface Wired extends RunOptions {
     readonly agent: Agent
     /**
@@ -358,6 +569,10 @@ interface Wired extends RunOptions {
     readonly sessionKey: string
     readonly banner: readonly string[]
     readonly quiet: boolean
+    /** The session key was generated for this run, so the splash stands in for an empty transcript. */
+    readonly freshSession: boolean
+    /** Where the in-session picker asked to move to. Read by the loop, not by the renderer. */
+    readonly switchTo: { current: string | undefined }
     /**
      * The line reader, owned by `runCommand` so it survives a `/restart`.
      *
@@ -403,6 +618,23 @@ async function runRich(wired: Wired): Promise<RunOutcome> {
     const instance = render(
         createElement(App, {
             agent: wired.agent,
+            onSwitch: (sessionKey: string, draft: string) => {
+                // The same route a `/restart` takes, for the reason stated at `reopened`: a transcript
+                // cannot be re-keyed in place, so the conversation moves by rebuilding.
+                restart = true
+                wired.switchTo.current = sessionKey
+                wired.draft.current = draft
+            },
+            sessions: async () => {
+                const stored = await wired.agent.store.sessions.list(wired.agent.id)
+                return [...stored].sort(byRecency).map((row) => ({
+                    sessionKey: row.sessionKey,
+                    messages: row.messages,
+                    turns: row.turns,
+                    lastActivityAt: row.lastActivityAt,
+                    phase: row.phase,
+                }))
+            },
             onRestart: (draft: string) => {
                 restart = true
                 // Written into the box the loop owns, the same way the readline instance is carried.
@@ -414,6 +646,9 @@ async function runRich(wired: Wired): Promise<RunOutcome> {
             sessionKey: wired.sessionKey,
             model: wired.agent.describe().model,
             agentName: wired.agent.describe().id,
+            // Only before the first message, and only in a conversation with nothing behind it.
+            freshSession: wired.freshSession,
+            location: tildify(process.cwd(), homedir()),
             // The count in the one-line header. The messages themselves are in the banner, which scrolls;
             // on a surface with no scrollback a session-wide fact that has scrolled away is a fact nobody
             // has, so the header keeps the number and says where to find the text.

@@ -308,6 +308,39 @@ Never claim a performance property without a number in `evals/` and a script to 
   --follow` would spin until the 30-second timeout and then report being killed. Dropping the flag and
   returning the tail is worse: it looks like a following command that stopped immediately. `paneRefusal`
   reads the command's **own spec**, so a second `follow` flag is covered with nothing to remember.
+- **A measurement of zero is unknown, and `?? fallback` does not cover it.** A pty reports a width of 0 —
+  recorded beside `FALLBACK_COLUMNS`, handled in `useTerminalSize` from the start, and *not* handled in
+  `screenColumns`, so a caller passing a stream's own measurement clamped to the 40-column floor and laid
+  its rows out for half the terminal. Found in a capture rather than by reading: the session picker's rows
+  came out **43 characters wide on an 80-column screen**, uniformly, which reads as a design choice.
+- **A key that gets typed back has no confusable symbols in it.** A session key is `local:` plus six
+  base-32 symbols with `i`, `l`, `o` and `u` removed, because `local:1i0o` is one nobody transcribes
+  reliably off a screen. Exactly 32 symbols also divides a byte's low five bits — an alphabet that does not
+  divide evenly makes its first symbols likelier than its last, so collisions become more likely than the
+  arithmetic claims. A timestamp was the alternative and lost: `sessions` already sorts by
+  `lastActivityAt`, so the ordering it carries is information the listing has and the key does not need.
+- **A transcript cannot be re-keyed in place, so switching conversation rebuilds.** `useReducer`'s initial
+  state seeds only on mount. `/restart` already tears a mount down and reopens, so `/sessions` reaches the
+  loop the same way and carries the draft across — measured at 19 ms, and the rebuild re-reads the store,
+  which is what moving conversations wants anyway. The banner's `restarted` boolean had to become a
+  three-valued `reopened`: the restart note is about configuration and would be a lie about a switch.
+- **A wordmark is rendered from `BRAND.name`, never written down.** An ASCII wordmark *is* a brand string,
+  so a literal one is the largest hard-rule-3 violation available and a rename stops being one commit. One
+  5×5 glyph table (the researched floor for a legible Latin glyph without anti-aliasing) renders four
+  tiers, and the degradation is mandatory rather than polish — the big figlet faces pass 120 columns on a
+  nine-letter word and this CLI's floor is 40. Two non-obvious details: half-blocks are what make the
+  compact tier read as type, because one cell per pixel renders a 5×5 glyph tall and thin (a cell is
+  roughly 1:2); and the odd fifth row pairs with a blank at the **top**, since padding the bottom leaves
+  every baseline a thin `▀` while padding the top makes it a full `█`, and caps want to be bottom-heavy.
+- **The chat never renders stored history, so "the transcript is empty" does not mean "new".** A resumed
+  conversation's messages reach the *model*, not the screen. Deriving the splash from an empty transcript
+  therefore puts a welcome screen in front of a conversation somebody is continuing — `freshSession` is
+  passed by `run`, which is the only layer that knows whether the key it resolved was generated.
+- **A value flag's bare form is declared per flag, because its safety is a fact about the field.** The
+  parser consumes the next token unconditionally, dash or not, since `--input -5` is the text "-5".
+  `FlagSpec.bare` inverts that for one flag — a session key cannot start with a dash — and a global
+  inversion would make a real message unsendable. `--session=` stays refused: an explicit `=` with nothing
+  after it is a typo, and keeping that error is what makes the bare form read as intent.
 - **Nothing on a shared CLI path may import Ink or React.** They cost ~170-210 ms under Node,
   more than the entire runtime of `validate --json`. A structural test enforces it.
 - **`--plain` at a terminal must produce exactly what a pipe produces.** That is why the

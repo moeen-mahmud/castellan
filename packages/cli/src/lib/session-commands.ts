@@ -90,6 +90,16 @@ export interface KeyBindingSpec {
  */
 export const NEWLINE_HINT = "⌥⏎ or a trailing \\ for a new line · ⏎ sends"
 
+/**
+ * The one line of guidance a brand-new conversation carries.
+ *
+ * Everything on it is true of this runtime, which is the whole reason it is written here rather than
+ * copied from a screenshot of another tool: `/` really does open the palette, and `^C` really does take
+ * two presses. A hint naming a chord that does something else — or nothing — is worse than no hint, and
+ * this is the one screen where a person has no conversation to learn the keys from.
+ */
+export const NEW_SESSION_HINT = "/ commands · ⏎ sends · ⌥⏎ new line · ^C twice leaves"
+
 export const KEY_BINDINGS: readonly KeyBindingSpec[] = [
     {
         chord: "^C",

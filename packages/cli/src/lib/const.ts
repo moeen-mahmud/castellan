@@ -120,6 +120,9 @@ export const PANE_ROWS = 16
  */
 export const MIN_BODY_ROWS = 3
 
+/** Conversations the session picker shows at once. The list scrolls inside this. */
+export const SESSION_PICKER_ROWS = 12
+
 /**
  * How often `daemon logs --follow` checks a service log for new bytes.
  *

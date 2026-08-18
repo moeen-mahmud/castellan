@@ -121,3 +121,28 @@ export function tildify(path: string, home: string): string {
     const rest = path.slice(home.length)
     return rest === "" ? "~" : rest.startsWith("/") ? `~${rest}` : path
 }
+
+const MINUTE_MS = 60_000
+const HOURS_PER_DAY = 24
+
+/**
+ * How long ago, in the shortest honest form.
+ *
+ * `now` is a parameter rather than a `Date.now()` call, which is what lets this live in a pure module and
+ * be shared. It was previously private to `sessions.ts` and read the clock itself, so the session picker
+ * would have had to reimplement it — and two renderings of "how old is this conversation" that disagree
+ * is the drift this module exists to end.
+ *
+ * An unparseable timestamp is returned as itself. A store row with a bad date is a real thing to see, and
+ * "NaNm ago" says nothing about it.
+ */
+export function ago(iso: string, now: number): string {
+    const ms = now - Date.parse(iso)
+    if (Number.isNaN(ms)) return iso
+    const mins = Math.floor(ms / MINUTE_MS)
+    if (mins < 1) return "just now"
+    if (mins < 60) return `${mins}m ago`
+    const hours = Math.floor(mins / 60)
+    if (hours < HOURS_PER_DAY) return `${hours}h ago`
+    return `${Math.floor(hours / HOURS_PER_DAY)}d ago`
+}

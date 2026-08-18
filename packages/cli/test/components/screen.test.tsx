@@ -10,7 +10,15 @@ import { Text } from "ink"
 import { createElement as h } from "react"
 import { Screen, screenWidth } from "#components/Screen"
 import { MAX_SCREEN_COLUMNS, MIN_SCREEN_COLUMNS } from "#lib/const"
-import { headerLines, hintLine, QUIT_HINT, type ScreenHeader } from "#lib/screen"
+import {
+    headerLines,
+    hintLine,
+    QUIT_HINT,
+    type ScreenHeader,
+    screenColumns,
+    screenRows,
+    titleLine,
+} from "#lib/screen"
 import { overflowing, renderFrame, width } from "../helpers/frame.tsx"
 
 const HEADER: ScreenHeader = { title: "castellan 0.1.0", summary: "sources · 2 registered" }
@@ -177,5 +185,63 @@ describe("the width clamp", () => {
         // Measured under `script -q`: `columns` can genuinely be 0, and every layout that divides by
         // the width has to survive it.
         expect(screenWidth(0)).toBe(MIN_SCREEN_COLUMNS)
+    })
+})
+
+describe("the clamps", () => {
+    test("a measured width is used, clamped at both ends", () => {
+        expect(screenColumns(100, 80)).toBe(100)
+        expect(screenColumns(20, 80)).toBe(MIN_SCREEN_COLUMNS)
+        expect(screenColumns(300, 80)).toBe(MAX_SCREEN_COLUMNS)
+    })
+
+    test("zero means unknown, not zero", () => {
+        // A pty genuinely reports 0 — measured under `script -q`, recorded beside `FALLBACK_COLUMNS`, and
+        // handled in `useTerminalSize` from the start. It was missing here, so a caller reading
+        // `process.stdout.columns` clamped to the floor: the session picker laid its rows out at 43
+        // characters on an 80-column screen, uniformly, which looks deliberate. `?? fallback` does not
+        // cover it, because 0 is not nullish.
+        expect(screenColumns(0, 80)).toBe(80)
+        expect(screenColumns(undefined, 80)).toBe(80)
+        expect(screenRows(0, 24)).toBe(24 - 8)
+        expect(screenRows(undefined, 24)).toBe(24 - 8)
+    })
+
+    test("a negative measurement is unknown too", () => {
+        expect(screenColumns(-1, 80)).toBe(80)
+    })
+})
+
+describe("titleLine — the whole header on one line", () => {
+    test("identity, then scope", () => {
+        expect(
+            titleLine({ title: "Kit 1.0", summary: "", agent: { name: "milo", model: "m" } }, 80),
+        ).toBe("Kit 1.0 · milo · m")
+    })
+
+    test("warnings become a count, because a header cannot change height", () => {
+        // One warning wrapped over two lines is a header that grows, which is the one thing a
+        // fixed-height frame cannot have.
+        const line = titleLine(
+            {
+                title: "Kit 1.0",
+                summary: "",
+                agent: { name: "milo", model: "m" },
+                warnings: ["the catalogue was trimmed", "a tool declared itself trusted"],
+            },
+            80,
+        )
+        expect(line).toContain("2 notes at the top")
+        expect(line).not.toContain("trimmed")
+    })
+
+    test("one note is singular", () => {
+        expect(titleLine({ title: "K", summary: "", warnings: ["x"] }, 80)).toContain("1 note")
+    })
+
+    test("it is clipped to the width, never wrapped", () => {
+        expect(width(titleLine({ title: "K".repeat(200), summary: "" }, 40))).toBeLessThanOrEqual(
+            40,
+        )
     })
 })

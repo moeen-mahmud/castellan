@@ -181,13 +181,28 @@ export const QUIT_HINT: KeyHint = { key: "q", does: "back" }
  * emitted the export twice, producing a `Duplicate export of 'windowFor'` that every test passed straight
  * through because tests import source, not the bundle. Screen arithmetic belongs with the screen.
  */
+/**
+ * Zero means unknown, not zero.
+ *
+ * A pty genuinely reports a width of 0 — recorded in `lib/const.ts` beside `FALLBACK_COLUMNS`, measured
+ * under `script -q`, and handled correctly in `useTerminalSize` since it was written. It was *not* handled
+ * here, so a caller passing the stream's own measurement clamped to the 40-column floor and laid its rows
+ * out for half the terminal. Found in a real capture: the session picker's rows came out 43 characters wide
+ * on an 80-column screen, uniformly — which reads as a design choice rather than as a bug.
+ *
+ * `?? fallback` alone does not cover it, because 0 is not nullish. The same trap, one operator away.
+ */
+function known(measured: number | undefined, fallback: number): number {
+    return measured === undefined || measured <= 0 ? fallback : measured
+}
+
 export function screenColumns(columns: number | undefined, fallback: number): number {
-    return Math.max(MIN_SCREEN_COLUMNS, Math.min(MAX_SCREEN_COLUMNS, columns ?? fallback))
+    return Math.max(MIN_SCREEN_COLUMNS, Math.min(MAX_SCREEN_COLUMNS, known(columns, fallback)))
 }
 
 export function screenRows(rows: number | undefined, fallback: number): number {
     return Math.max(
         MIN_SCREEN_ROWS,
-        Math.min(MAX_SCREEN_ROWS, (rows ?? fallback) - SCREEN_CHROME_ROWS),
+        Math.min(MAX_SCREEN_ROWS, known(rows, fallback) - SCREEN_CHROME_ROWS),
     )
 }

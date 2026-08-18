@@ -14,22 +14,9 @@ import { ambientEnv } from "#lib/ambient"
 import { DEFAULT_ROW_LIMIT, EXIT_FAILURE, EXIT_OK } from "#lib/const"
 import { onExit } from "#lib/exit"
 import { CHANNELS, scriptRunner, TOOL_PROVIDERS } from "#lib/providers"
+import { ago } from "#lib/render"
 import { storePath } from "#lib/sandbox"
 import type { SessionsOptions } from "#lib/schema"
-
-const MINUTE_MS = 60_000
-const HOURS_PER_DAY = 24
-
-function ago(iso: string): string {
-    const ms = Date.now() - Date.parse(iso)
-    if (Number.isNaN(ms)) return iso
-    const mins = Math.floor(ms / MINUTE_MS)
-    if (mins < 1) return "just now"
-    if (mins < 60) return `${mins}m ago`
-    const hours = Math.floor(mins / 60)
-    if (hours < HOURS_PER_DAY) return `${hours}h ago`
-    return `${Math.floor(hours / HOURS_PER_DAY)}d ago`
-}
 
 function pad(value: string, width: number): string {
     return value.length >= width ? value : value + " ".repeat(width - value.length)
@@ -50,7 +37,7 @@ function printList(sessions: readonly SessionSummary[]): void {
     for (const session of sessions) {
         process.stdout.write(
             `${pad(session.sessionKey, keyWidth)}  ${pad(String(session.messages), 5)}  ` +
-                `${pad(String(session.turns), 5)}  ${pad(session.phase ?? "-", 8)}  ${ago(session.lastActivityAt)}\n`,
+                `${pad(String(session.turns), 5)}  ${pad(session.phase ?? "-", 8)}  ${ago(session.lastActivityAt, Date.now())}\n`,
         )
     }
 }

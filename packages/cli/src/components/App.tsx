@@ -32,7 +32,10 @@ import { HistorySearch } from "#components/HistorySearch"
 import { Live } from "#components/Live"
 import { Palette } from "#components/Palette"
 import { Prompt } from "#components/Prompt"
+import type { SessionPickerProps } from "#components/SessionPicker"
 import type { SkillBrowserProps } from "#components/SkillBrowser"
+import { Spinner } from "#components/Spinner"
+import { Splash } from "#components/Splash"
 import { StatusBar } from "#components/StatusBar"
 import { Transcript } from "#components/Transcript"
 import { applyIntent, EMPTY_EDITOR, submit } from "#editor"
@@ -41,18 +44,20 @@ import { useTerminalSize } from "#hooks/useTerminalSize"
 import { useTurn } from "#hooks/useTurn"
 import { keyContext, keyToIntent } from "#keymap"
 import { chatFrame } from "#lib/chat-frame"
-import { EXIT_ARM_MS, FALLBACK_COLUMNS, SEARCH_ROWS } from "#lib/const"
+import { EXIT_ARM_MS, FALLBACK_COLUMNS, SEARCH_ROWS, SESSION_PICKER_ROWS } from "#lib/const"
 import { paletteEntries, paletteFor, paletteSelection } from "#lib/palette"
 import type { AppProps } from "#lib/schema"
 import { screenColumns, titleLine } from "#lib/screen"
 import { FOLLOWING, scroll, slice } from "#lib/scroll"
 import {
+    NEW_SESSION_HINT,
     resolveSessionCommand,
     sessionHelpText,
     toolsReport,
     toolsView,
     unknownCommandText,
 } from "#lib/session-commands"
+import type { SessionRowSource } from "#lib/sessions-view"
 import { runSubcommand } from "#lib/subcommand"
 import { THEME } from "#lib/theme"
 import { lastStats, transcriptRows } from "#transcript"
@@ -76,6 +81,13 @@ type Pane =
           readonly offset: number
       }
     | { readonly kind: "skills" }
+    /**
+     * The conversation switcher. `undefined` while the store is being read.
+     *
+     * Loaded when the pane opens rather than kept current, because the list changes only when a turn ends
+     * and re-reading it on every frame would put a database query in the render path.
+     */
+    | { readonly kind: "sessions"; readonly stored: readonly SessionRowSource[] | undefined }
 
 export function App({
     agent,
@@ -84,10 +96,14 @@ export function App({
     model,
     agentName,
     warnings,
+    freshSession,
+    location,
     initial,
     showReasoning,
     quiet,
     onRestart,
+    onSwitch,
+    sessions,
     initialDraft,
     manifestPath,
     catalogue,
@@ -122,6 +138,18 @@ export function App({
      * edge. `boundaries.test.ts` bans the mixing outright.
      */
     const [Browser, setBrowser] = useState<ComponentType<SkillBrowserProps> | undefined>(undefined)
+    /**
+     * The session switcher's implementation, loaded when the pane first opens.
+     *
+     * Dynamically for the same reason `Browser` is, and it was caught by the boundaries test rather than
+     * remembered: `run.ts` mounts this component too, for a bare `--session` before any chat exists. One
+     * static importer and one dynamic one makes bun's `--splitting` emit its exports **twice**, and the
+     * built binary then dies at parse time with `Duplicate export of 'SessionPicker'` while every test —
+     * which imports source — passes. Both edges dynamic, no duplicate.
+     */
+    const [Sessions, setSessions] = useState<ComponentType<SessionPickerProps> | undefined>(
+        undefined,
+    )
     /** Where the conversation window sits. Starts and returns to following the newest row. */
     const [view, setView] = useState(FOLLOWING)
     /** A first ^C has landed. Expires, which is why it is here and not in the keymap. */
@@ -260,6 +288,29 @@ export function App({
             const entry = paletteEntries().find((candidate) => candidate.word === word)
             if (entry === undefined) return false
             if (entry.kind === "view") {
+                if (
+                    entry.word === "/sessions" &&
+                    sessions !== undefined &&
+                    onSwitch !== undefined
+                ) {
+                    // Opened before the read finishes, with the spinner the pane draws for an undefined
+                    // list — the same reason the catalogue mounts before it fetches: a keystroke followed
+                    // by nothing is indistinguishable from a keystroke that did nothing.
+                    setPane({ kind: "sessions", stored: undefined })
+                    void import("#components/SessionPicker").then((module) =>
+                        // Wrapped in a function, or `useState` would call the component as an updater.
+                        setSessions(() => module.SessionPicker),
+                    )
+                    void sessions()
+                        .then((stored) => setPane({ kind: "sessions", stored }))
+                        .catch((error: unknown) => {
+                            setPane({ kind: "none" })
+                            note(
+                                `could not read the stored conversations: ${error instanceof Error ? error.message : String(error)}`,
+                            )
+                        })
+                    return true
+                }
                 if (entry.word === "/skills" && catalogue !== undefined) {
                     setPane({ kind: "skills" })
                     void import("#components/SkillBrowser").then((module) =>
@@ -279,7 +330,7 @@ export function App({
             }
             return false
         },
-        [openCommand, catalogue],
+        [openCommand, catalogue, sessions, onSwitch, note],
     )
 
     // ── the pane has the keyboard while it is open ────────────────────────────────────────
@@ -420,6 +471,43 @@ export function App({
         { isActive: pane.kind === "none" },
     )
 
+    if (pane.kind === "sessions") {
+        return (
+            <Box flexDirection="column" width={columns} height={size.rows}>
+                <Text color={THEME.accent} bold wrap="truncate">
+                    {titleLine(
+                        { title: `${BRAND.name} ${VERSION}`, summary: "pick a conversation" },
+                        columns,
+                    )}
+                </Text>
+                <Box flexGrow={1} />
+                {pane.stored === undefined || Sessions === undefined ? (
+                    <Box marginLeft={2}>
+                        <Spinner label="reading the stored conversations" />
+                    </Box>
+                ) : (
+                    <Sessions
+                        sessions={pane.stored}
+                        now={Date.now()}
+                        columns={columns}
+                        maxRows={SESSION_PICKER_ROWS}
+                        current={sessionKey}
+                        onDone={(picked) => {
+                            if (picked === undefined || picked === sessionKey) {
+                                // Esc, or the one already open. Either way nothing is worth a rebuild.
+                                setPane({ kind: "none" })
+                                return
+                            }
+                            onSwitch?.(picked, editor.value)
+                            exit()
+                        }}
+                    />
+                )}
+                <Box flexGrow={1} />
+            </Box>
+        )
+    }
+
     if (pane.kind === "skills" && catalogue !== undefined && Browser !== undefined) {
         return (
             <Browser
@@ -429,6 +517,36 @@ export function App({
                 load={catalogue.load}
                 install={catalogue.install}
                 onDone={() => setPane({ kind: "none" })}
+            />
+        )
+    }
+
+    /**
+     * Nothing has been said in a brand-new conversation, so the splash stands in for the transcript.
+     *
+     * Both halves matter. `freshSession` is the host's answer to "is there history" — the chat never
+     * renders stored messages, so an empty transcript is also what a *resumed* session looks like, and a
+     * welcome screen in front of a conversation somebody is continuing would be the wrong screen. The
+     * banner check is what makes it go away the instant a message is sent, without a second flag to keep
+     * in step.
+     *
+     * A pane is checked first: `/skills` from the splash should show the catalogue, not a wordmark.
+     */
+    const untouched = state.items.every((item) => item.role === "banner")
+    if (pane.kind === "none" && freshSession === true && untouched && state.live === undefined) {
+        return (
+            <Splash
+                name={BRAND.name}
+                version={VERSION}
+                agentName={agentName}
+                model={model}
+                warnings={warnings ?? []}
+                location={location ?? ""}
+                editor={editor}
+                busy={busy}
+                columns={columns}
+                rows={size.rows}
+                hint={NEW_SESSION_HINT}
             />
         )
     }
@@ -467,6 +585,16 @@ export function App({
             ) : (
                 <Transcript rows={rows} slice={window} />
             )}
+
+            {/*
+             * Absorbs the slack, so the composer sits on the bottom edge from the first frame.
+             *
+             * Without it the input box is drawn immediately under whatever content exists, which means it
+             * walks down the screen as the first few messages arrive and only settles once the transcript
+             * fills the window. The place you type should not move; a spacer costs nothing when the
+             * transcript is full, because there is no slack left to absorb.
+             */}
+            <Box flexGrow={1} />
 
             {state.live === undefined ? null : (
                 <Live live={state.live} showReasoning={showReasoning} columns={columns} />

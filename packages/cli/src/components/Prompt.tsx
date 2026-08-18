@@ -23,7 +23,7 @@ import type { PromptProps } from "#lib/schema"
 import { NEWLINE_HINT } from "#lib/session-commands"
 import { BORDER_STYLE, THEME } from "#lib/theme"
 
-export function Prompt({ editor, busy }: PromptProps) {
+export function Prompt({ editor, busy, placeholder }: PromptProps) {
     const lines = editor.value.split("\n").length
     return (
         <Box flexDirection="column">
@@ -32,7 +32,12 @@ export function Prompt({ editor, busy }: PromptProps) {
                 borderColor={busy ? THEME.border : THEME.borderActive}
                 paddingX={1}
             >
-                <LineCursor editor={editor} gutter={PROMPT} maxRows={MAX_INPUT_ROWS} />
+                <LineCursor
+                    editor={editor}
+                    gutter={PROMPT}
+                    maxRows={MAX_INPUT_ROWS}
+                    {...(placeholder === undefined ? {} : { placeholder })}
+                />
             </Box>
             {/*
              * Named only once the message has more than one line. Advertising it on every empty prompt

@@ -138,6 +138,7 @@ async function dispatch(argv: readonly string[]): Promise<number> {
                 // Bare `run` hands the sandbox the decision; a given ref resolves path-or-name.
                 ...(positionals[0] === undefined ? {} : { manifestPath: resolved() }),
                 ...(session === undefined ? {} : { sessionKey: session }),
+                continueSession: flags.bool("continue"),
                 ...(input === undefined ? {} : { once: input }),
                 ...(store === undefined ? {} : { store }),
                 ephemeral: flags.bool("ephemeral"),

@@ -6,6 +6,7 @@
 import type { Agent, EventBus } from "@castellan/core"
 import type { BrowseRow, InstallReport } from "#lib/browse"
 import type { Slice } from "#lib/scroll"
+import type { SessionRowSource } from "#lib/sessions-view"
 import type { CatalogueEntry } from "#lib/source-cache"
 import type {
     EditorState,
@@ -35,6 +36,20 @@ export interface FlagSpec {
     /** Numbers only. Both are enforced by the parser, not by the call site. */
     readonly min?: number
     readonly integer?: boolean
+    /**
+     * The value to use when the flag is written with nothing after it.
+     *
+     * A value-taking flag normally consumes the next token *unconditionally*, dash or not, because
+     * whether a token is a value is the spec's decision and not the token's — `--input -5` means the
+     * text "-5". Declaring `bare` inverts that for one flag: a missing next token, or one starting with
+     * a dash, means the flag was written on its own and this value stands in.
+     *
+     * Per-spec rather than global, because the safety of the inversion is a fact about the *field*.
+     * A session key never starts with a dash, so `--session --plain` can only mean a bare `--session`;
+     * an `--input` beginning with a dash is ordinary text, and giving that flag a bare form would make
+     * a real message unsendable.
+     */
+    readonly bare?: string
 }
 
 export interface ArgSpec {
@@ -140,7 +155,16 @@ export interface TerminalHandles {
 export interface RunOptions {
     /** Absent = bare `run`: the sandbox decides (picker, auto-run, or the wizard). */
     readonly manifestPath?: string
+    /**
+     * Which conversation to open.
+     *
+     * Three states, not two. A key names one; **`""`** is a bare `--session`, meaning "show me the list";
+     * absent means a new conversation. The empty string carries real intent here, which is why it is not
+     * normalised away on the boundary — `lib/args.ts` produces it from `FlagSpec.bare`.
+     */
     readonly sessionKey?: string
+    /** `--continue`: the most recent conversation with this agent, without asking. */
+    readonly continueSession?: boolean
     /** Run a single turn with this input and exit. Non-interactive, and always plain. */
     readonly once?: string
     readonly store?: string
@@ -261,6 +285,35 @@ export interface AppProps {
     /** The agent's id, for the one-line header. Distinct from `model`, which is the endpoint's. */
     readonly agentName: string
     /**
+     * This conversation has no history, so the splash stands in for the transcript until something is said.
+     *
+     * Passed rather than derived, and that is the point: the chat does not render stored history — a
+     * resumed session's messages live in the store and reach the *model*, not the screen — so "the
+     * transcript is empty" is true of a resumed conversation as well, and deriving from it would put a
+     * welcome screen in front of a conversation somebody is trying to continue. Only `run` knows whether
+     * the key it resolved was freshly generated.
+     */
+    readonly freshSession?: boolean
+    /** Where the session was launched from, tilde-shortened, for the splash footer. */
+    readonly location?: string
+    /**
+     * Move to another stored conversation.
+     *
+     * The component unmounts and the host reopens with the key given — the same route `onRestart` takes,
+     * because `useReducer`'s initial state seeds only on mount and a transcript therefore cannot be
+     * re-keyed in place. The draft rides across for the same reason it rides across a restart: throwing
+     * away a half-written message is a second consequence of asking for the first.
+     */
+    readonly onSwitch?: (sessionKey: string, draft: string) => void
+    /**
+     * The stored conversations, for the `/sessions` switcher.
+     *
+     * A function rather than an array, because the list is only wanted when the pane opens and it is a
+     * store read — and injected rather than imported, which is the view contract applied one level up: the
+     * host owns the filesystem, the screen owns neither it nor the network.
+     */
+    readonly sessions?: () => Promise<readonly SessionRowSource[]>
+    /**
      * Load warnings, as a count in the header.
      *
      * The messages themselves are already in the banner. What the header needs is the *number*, because
@@ -305,4 +358,29 @@ export interface StatusBarProps {
 export interface PromptProps {
     readonly editor: EditorState
     readonly busy: boolean
+    /**
+     * Shown dim, with the cursor on its first character, while the buffer is empty.
+     *
+     * Only the splash passes one. In the transcript the prompt sits under a conversation that already
+     * says what this is, and a permanent "Ask anything…" there would be a label on something obvious.
+     */
+    readonly placeholder?: string
+}
+
+export interface SplashProps {
+    /** `BRAND.name`, rendered large by `lib/wordmark.ts`. Never a literal — hard rule 3. */
+    readonly name: string
+    readonly version: string
+    readonly agentName: string
+    readonly model: string
+    /** Counted, not listed. The text is in the banner, which is the first transcript item. */
+    readonly warnings: readonly string[]
+    /** Where the session was launched from, tilde-shortened. */
+    readonly location: string
+    readonly editor: EditorState
+    readonly busy: boolean
+    readonly columns: number
+    readonly rows: number
+    /** One line naming the keys worth knowing before anything has been typed. */
+    readonly hint: string
 }
