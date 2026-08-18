@@ -1,8 +1,8 @@
 # 05 — Implementation Plan
 
-Nineteen phases, dependency-ordered — thirteen numbered, plus 2.5, 3.5, 3.6, 3.7, 3.8 and 4.1 inserted rather
-than renumbered, because the later numbers are named across the source and the other docs. Every phase
-ends at a **running state** — nothing is half-wired across a boundary.
+Twenty phases, dependency-ordered — thirteen numbered, plus 2.5, 3.5, 3.6, 3.7, 3.8, 4.1 and 5.5
+inserted rather than renumbered, because the later numbers are named across the source and the other
+docs. Every phase ends at a **running state** — nothing is half-wired across a boundary.
 
 ## How to use this
 
@@ -12,6 +12,12 @@ stops at the acceptance criteria and reports.
 
 **Do not start Phase N+1 until Phase N's criteria pass.** Several subsystems here are only
 testable end-to-end, and skipping ahead produces a state where nothing can be isolated.
+
+**Build order is the document order, which is not numeric order.** Phase 7 is delivered as **7A**
+(budget and the compaction ladder) then **7B** (phase-scoped tools), and both come **before Phase 6**
+— decided 2026-08-19. The numbers stayed put because `manifest/validate.ts` and
+`02-SPEC-MANIFEST.md` name them in errors a user reads, and a renumber would make a shipped message
+wrong. Where a phase is out of numeric order, its heading says so and says why.
 
 Non-goals are binding. A phase that quietly implements the next one's work destroys the
 ability to review it.
@@ -1776,7 +1782,144 @@ support. A live `serve` dashboard: a process a supervisor runs must never take a
 themes (11.14 stands). `/plugin` — plugins are Phase 9 and there is nothing to show. Any new
 *runtime* dependency; 11.10 is untouched.
 
+## Phase 7A — Budget and the compaction ladder
+
+**Built before Phase 6, deliberately.** The numbers are not swapped — `validate.ts:447` and
+`02-SPEC-MANIFEST.md` name "Phase 6" and "Phase 7" in errors a user reads, so renumbering would
+make a shipped message wrong. Only the order changes, and the reason is that a long session today
+loses its oldest turns outright (`context/assemble.ts:194`, honest about it in a comment and in
+`droppedMessages`), while memory's slot 4 would have to negotiate a budget with a ladder that does
+not exist yet.
+
+What is already standing, and what it is worth knowing before touching any of it:
+
+| | |
+| --- | --- |
+| `context.thresholds` — trim .6, snip .7, micro .8, collapse .88, reset .95 | in the schema with defaults, **order- and range-validated** (`validate.ts:110-143`), and read by nothing. The one manifest field that is accepted and inert: someone who writes `trim: 0.5` today gets a clean load and no effect. This phase closes that. |
+| `model.compactor` | accepted at `schema.ts:100`, unused |
+| `context.compactionNotice` | refused at load (`validate.ts:482`) |
+| `GET /v1/agents/:id/context` | **already built** in Phase 4 (`server/handler.ts:333`), via `Agent.previewContext` |
+
+**Goal.** A session under pressure degrades in five ordered stages rather than losing its oldest
+turns, every stage is reported, and nothing a compaction dropped is unreachable.
+
+### Decisions (2026-08-19, binding)
+
+**Mechanical to S3; the model is asked only at S4 and S5.** trim, snip and micro are deterministic
+— drop whole turns, replace observation bodies with artifact pointers, cut a long observation to
+head plus tail. collapse and reset ask `model.compactor` for a rolling digest and fall back to a
+deterministic digest when no compactor role is configured *or* the call fails. So no model call
+happens below 88% pressure, which keeps the common case fast, offline and testable; and a
+compaction can never fail the turn it was trying to rescue.
+
+**Trimmed observations live in the store, in the next contiguous migration** — one durability boundary, deleted with
+their session, identical under `bun:sqlite` and `node:sqlite`. Pointer keys stay printable ASCII,
+per the NUL-truncation row in `sqlite/driver.ts`. Files under the state dir were the alternative
+and lose on cleanup: nothing has ever been written to retire them, and a store deletion orphans
+them silently.
+
+**Compaction may not touch slots 0–2.** The ladder rewrites history, which sits after breakpoint A,
+so the cache-stable prefix survives every stage — asserted on the assembled prefix rather than
+assumed, because this is the property that silently costs money when it breaks.
+
+**Deliverables**
+
+- `context/budget.ts` — the `prompt_tokens` anchor from the previous response, plus the local
+  estimator. The anchor exists to correct the estimator, which is biased ~10% high by design; a
+  ladder driven by the biased figure fires every stage early.
+- `context/compaction/ladder.ts` — measures pressure, selects a stage from `context.thresholds`,
+  runs strictly in the validated order, never skips
+- `context/compaction/stages.ts` — S1 trim · S2 snip · S3 micro · S4 collapse · S5 reset
+- `store` migration **005** — the list is contiguous *by position* and there are already four, so
+  this plan's older "migration 00N" numbers are off by one; see the note at `migrations.ts:124`.
+  Adds `artifacts`, the pointer format, and `artifact_read` as an opt-in
+  `tools.local` entry — a tool every agent gets whether it needs one or not is slot-1 tokens
+  charged to agents that never compact
+- `context/compaction-notice.ts` — generated, never authored, because the author does not know the
+  thresholds. `context.compactionNotice` stops being refused.
+- Events: `context.pressure`, `compaction.stage` (before/after), `context.reset`
+- CLI: pressure and last-compaction in the status bar — reducer cases and a row, not a new screen
+
+**Files.** `packages/core/src/context/`, `packages/core/src/store/sqlite/migrations.ts`,
+`packages/cli/src/lib/`
+
+**Acceptance**
+
+- [ ] A 200-turn synthetic session never exceeds the window and never hard-fails
+- [ ] Each stage fires at its own threshold, in order; `compaction.stage` reports tokens before and
+      after, and a stage that changed nothing says so rather than reporting success
+- [ ] Pinned blocks survive every stage including S5
+- [ ] Slots 0–2 are byte-identical before and after S1–S4, asserted on the assembled prefix
+- [ ] A trimmed observation is retrievable through its pointer, and the pointer is stable across a
+      restart
+- [ ] Token estimate within 10% of API-reported across 50 real calls
+- [ ] No model call below the `collapse` threshold — asserted by recording `fetch`, not by reading
+- [ ] With no `compactor` role, S4 and S5 complete deterministically and warn once
+- [ ] A manifest that sets `context.thresholds` measurably changes when a stage fires — the
+      accepted-and-ignored field is live
+- [ ] S5 firing twice in one session emits a misconfiguration warning
+- [ ] With `compactionNotice: true` a long session does not show the model wrapping up work early on
+      budget grounds; with it false, the behaviour reappears
+- [ ] `bun run bench:boot` under 1000 ms
+
+**Non-goals.** Phase-scoped tools — that is 7B. Agent-triggered compaction (5.2). Learned
+compaction. Any change to what `assemble` puts in slots 0–2.
+
+---
+
+## Phase 7B — Phase-scoped tool visibility
+
+`phases` is **refused** at load today (`validate.ts:447`), and everything it needs is already
+standing: `PhaseSchema`, `ToolSpec.tags` for `tag:<name>` matching, and the `02-SPEC-MANIFEST.md:505`
+contract including the rule that every `allow` entry must match at least one resolved tool.
+
+**Goal.** A manifest declaring `triage` and `act` exposes read tools until the model calls
+`phase_set("act")`, and the improvement is a number rather than a claim.
+
+### Decisions (2026-08-19, binding)
+
+**A phase change takes effect immediately, and the prefix cache pays for it.** `triage` →
+`phase_set("act")` → write, inside one turn, is the whole feature; deferring to the next turn
+recreates exactly the two-hop shape decision 4.7 refuses, in the feature that exists for the models
+that fail it. Slot 1 is re-rendered, so the cached prefix is invalidated from slot 1 onward for that
+turn only. Rendering every tool and marking the out-of-phase ones unavailable was the third option
+and loses: it puts the write tools back in front of the model during triage, which is the tool-space
+constraint the phase exists to remove. The cost is **measured and recorded**, not asserted.
+
+**Deliverables**
+
+- `loop/phases.ts` — phase state, transitions, and the allow-matching over slugs, `tag:<name>`, `*`
+- `phase_set` local tool, auto-registered when more than one phase is declared, absent otherwise
+- Phase state persisted per session in the existing `kv` table — no migration; the phase is one
+  string per session and a table for it would be a table per fact
+- `phase.changed` event; the phase named in the CLI status bar
+- `evals/phases/` — the same catalogue and tasks, run with phases on and off against
+  `SMALL_MODEL_BASE_URL`, committed results
+
+**Files.** `packages/core/src/loop/phases.ts`, `packages/core/src/tools/`, `evals/phases/`
+
+**Acceptance**
+
+- [ ] Two-phase manifest: `triage` exposes only read tools; after `phase_set("act")` the writes
+      appear **in the same turn**
+- [ ] `allow` matches slugs, tags and `*`; an entry matching no resolved tool fails the load with
+      the documented error
+- [ ] A single-phase (or absent) `phases` block registers no `phase_set` and changes nothing
+- [ ] Phase survives a restart and is reported by `/status`
+- [ ] Small-model eval improves measurably with phases on versus off, number committed in `evals/`
+- [ ] The prompt-cache cost of a mid-turn phase change is measured and recorded, not estimated
+- [ ] `phases` stops being listed in `UNSUPPORTED_SECTIONS`
+
+**Non-goals.** Phase transitions decided by the harness rather than the model. Per-phase prompts,
+per-phase models, or per-phase thresholds. Nested phases.
+
+---
+
 ## Phase 6 — Memory
+
+**Follows 7A and 7B.** Retrieval has to negotiate a budget with the compaction ladder, and slot 4
+competing with a window that drops oldest-first would be tuned against behaviour that is about to
+change.
 
 **Goal.** The agent remembers across sessions without an embedding model.
 
@@ -1789,7 +1932,7 @@ themes (11.14 stands). `/plugin` — plugins are Phase 9 and there is nothing to
 - Context slot 4
 - `castellan memory search|rebuild` — table entry plus a plain writer, `--json` included
 
-**Files.** `packages/core/src/memory/`, migration 003
+**Files.** `packages/core/src/memory/`, migration **006** (005 is the artifact store)
 
 **Acceptance**
 
@@ -1800,45 +1943,9 @@ themes (11.14 stands). `/plugin` — plugins are Phase 9 and there is nothing to
 - [ ] Deleting a session leaves memory files untouched
 - [ ] Boot budget met with a 5000-passage index
 - [ ] Zero Python, zero model weights, zero network in the memory path
+- [ ] The retriever reuses Phase 3.5's ranking seam rather than building a second index
 
 **Non-goals.** Vectors. Reranking. Knowledge graphs.
-
----
-
-## Phase 7 — Budget, compaction, phases
-
-**Goal.** Long sessions degrade gracefully. Phase-scoped tools work.
-
-**Deliverables**
-
-- `context/budget.ts` — `prompt_tokens` anchor + local estimator
-- `context/compaction/ladder.ts` + `stages.ts` — S1–S5
-- Artifact store for trimmed observations; pointer format the agent can re-read
-- `loop/phases.ts` + `phase_set` local tool
-- `GET /v1/agents/:id/context`
-- `context/compaction-notice.ts` — the runtime-generated line telling the model its context compacts
-  automatically. Generated rather than authored because the author does not know the thresholds;
-  without it, models sense the approaching limit and wrap up work early. `compactionNotice: false`
-  suppresses it. Specified in `07-SPEC-WORKSPACE.md`, delivered here with the ladder it describes
-- Events: `context.pressure`, `compaction.stage`, `context.reset`, `phase.changed`
-- CLI: compaction and phase indicators in the status bar — reducer cases, not a new screen
-
-**Files.** `packages/core/src/context/`, `loop/phases.ts`, migration 004
-
-**Acceptance**
-
-- [ ] 200-turn synthetic session never exceeds the window and never hard-fails
-- [ ] Each stage fires at its threshold in order; `compaction.stage` reports before/after
-- [ ] Pinned blocks survive every stage including S5
-- [ ] Trimmed observation retrievable via its artifact pointer
-- [ ] Token estimate within 10% of API-reported across 50 calls
-- [ ] Two-phase manifest: `triage` exposes only read tools; after `phase_set("act")`, writes appear
-- [ ] Small-model eval improves measurably with phases on vs off — number recorded in `evals/`
-- [ ] S5 firing twice in one session emits a misconfiguration warning
-- [ ] With `compactionNotice: true` a long session does not show the model wrapping up work early on
-      budget grounds; with it false, the behaviour reappears
-
-**Non-goals.** Agent-triggered compaction. Learned compaction.
 
 ---
 

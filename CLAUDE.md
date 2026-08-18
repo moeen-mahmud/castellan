@@ -1151,3 +1151,17 @@ Never claim a performance property without a number in `evals/` and a script to 
   only, and the root holds the fetch and the selection because those are the two things a pure synchronous
   function cannot do. Trigger off the answer **log**, not `partialOf`, or a `--skills find` flag opens the
   picker before the first question.
+- **A landing state is a collapsed header, not a second layout — and the brand's row *allowance* is not its
+  *height*.** Three separately-reported chat bugs (`/exit` never showing its confirmation, `/help` and
+  `/restart` wiping the landing screen) were one defect: two branches, so anything added to one was silently
+  missing from the other and any transcript write swapped the whole branch out. There is now one frame whose
+  wordmark collapses on the first message sent; palette, confirm line and composer are rendered once,
+  unconditionally. The arithmetic trap sits next to it: `ChatFrame.brand` is what the mark is *permitted*,
+  because the budget must be decided before anything is drawn, so the caller has to charge the conversation
+  `mark.lines.length` via `transcriptRowsAfterBrand` — charging the allowance instead sent eleven rows nowhere
+  on a 30-row terminal and scrolled the banner to a mid-wrap fragment while a third of the screen sat blank.
+- **A handler that reads `editor.value` reads the buffer from *before* the submit.** `/restart` looked broken
+  for a round: the runtime really did rebuild, and then the pre-submit closure carried `/restart` back into the
+  new buffer and re-opened the palette over the fresh banner, so the screen looked untouched. Anything that
+  survives a submit — a restart, a session switch — takes the **residual** buffer as an argument
+  (`onSubmit(committed.text, committed.state.value)`), never the captured one.
