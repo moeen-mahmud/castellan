@@ -19,7 +19,11 @@
  */
 
 import { Box, Text } from "ink"
+import { HistorySearch } from "#components/HistorySearch"
+import { Palette } from "#components/Palette"
 import { Prompt } from "#components/Prompt"
+import { paletteRows, searchRows } from "#lib/chat-frame"
+import { SEARCH_ROWS } from "#lib/const"
 import type { SplashProps } from "#lib/schema"
 import { GLYPH, THEME } from "#lib/theme"
 import { wordmark } from "#lib/wordmark"
@@ -39,12 +43,22 @@ export function Splash({
     columns,
     rows,
     hint,
+    palette,
+    paletteIndex,
 }: SplashProps) {
-    // The wordmark takes whatever is left after the composer, and degrades rather than overflowing —
-    // there is no scrollback on the alternate screen to recover an overflowed frame from.
+    // The lists that open above the composer. Both are the *same* components the transcript uses, for the
+    // same reason the composer is: `/` and `^R` work here because the screen root's `useInput` is active
+    // here, and a key that works while nothing draws is worse than a key that does not work at all — which
+    // is exactly what shipped, and what this fixes.
+    const listRows = paletteRows(palette, SEARCH_ROWS) + searchRows(editor, SEARCH_ROWS)
+
+    // The wordmark takes whatever is left after the composer and whatever is open above it, and degrades
+    // rather than overflowing — there is no scrollback on the alternate screen to recover a spilled frame
+    // from. Subtracting the lists is what makes an open palette shrink the wordmark instead of pushing the
+    // footer off the bottom.
     const mark = wordmark(name, {
         columns: columns - 2,
-        rows: Math.max(1, rows - BELOW_WORDMARK),
+        rows: Math.max(1, rows - BELOW_WORDMARK - listRows),
     })
 
     const notes = warnings.length
@@ -74,6 +88,20 @@ export function Splash({
             </Box>
 
             <Box flexDirection="column" marginLeft={indent} width={boxWidth}>
+                {/*
+                 * Above the composer, in the same centred column, and in the same order the transcript
+                 * draws them — one interaction learned once. A palette that appeared somewhere else on the
+                 * splash would be a second idiom for the same list.
+                 */}
+                {palette === undefined ? null : (
+                    <Palette
+                        palette={palette}
+                        index={paletteIndex}
+                        width={boxWidth}
+                        maxRows={SEARCH_ROWS}
+                    />
+                )}
+                <HistorySearch editor={editor} width={boxWidth} maxRows={SEARCH_ROWS} />
                 <Prompt editor={editor} busy={busy} placeholder="Ask anything…" />
                 <Text color={THEME.muted} wrap="truncate">
                     {"  "}

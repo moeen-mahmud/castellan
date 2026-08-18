@@ -20,6 +20,7 @@ import { Splash } from "#components/Splash"
 import { WizardApp } from "#components/WizardApp"
 import { EMPTY_EDITOR } from "#editor"
 import type { BrowseRow, InstallReport } from "#lib/browse"
+import { paletteFor } from "#lib/palette"
 import type { SandboxAgent } from "#lib/sandbox"
 import type { AppProps, SplashProps } from "#lib/schema"
 import type { CatalogueEntry } from "#lib/source-cache"
@@ -779,6 +780,7 @@ describe("Splash — a conversation with nothing in it yet", () => {
             columns: 100,
             rows: 24,
             hint: "/ commands · ⏎ sends",
+            paletteIndex: 0,
             ...overrides,
         })
     }
@@ -834,6 +836,44 @@ describe("Splash — a conversation with nothing in it yet", () => {
         const frame = renderFrame(splash(), { columns: 100, rows: 24 })
         expect(frame.text).toContain("~/work")
         expect(frame.text).toContain("Kit 0.1.0")
+    })
+
+    test("an open palette is drawn above the composer, not swallowed", async () => {
+        // The bug this covers: the screen root's `useInput` is active on the splash, so `/` already
+        // narrowed a palette and enter already ran the command — and nothing was rendered, which is the
+        // worst version of a working key. The `/` lands in the buffer, no list appears, and the feature
+        // reads as absent rather than broken.
+        const typed = { ...EMPTY_EDITOR, value: "/s", cursor: 2 }
+        const frame = renderFrame(splash({ editor: typed, palette: must(paletteFor("/s")) }), {
+            columns: 100,
+            rows: 30,
+        })
+        expect(frame.text).toContain("/status")
+        expect(frame.text).toContain("tab complete")
+        expect(overflowing(frame, 100)).toEqual([])
+    })
+
+    test("an open palette shrinks the wordmark rather than spilling the frame", () => {
+        const typed = { ...EMPTY_EDITOR, value: "/", cursor: 1 }
+        const open = splash({ editor: typed, palette: must(paletteFor("/")), rows: 20 })
+        const frame = renderFrame(open, { columns: 100, rows: 20 })
+        expect(frame.lines.length).toBeLessThanOrEqual(20)
+        // Still on screen: the footer is what would have been pushed off.
+        expect(frame.text).toContain("~/work")
+    })
+
+    test("the frame still fits with a palette open at every size", () => {
+        const typed = { ...EMPTY_EDITOR, value: "/", cursor: 1 }
+        for (const rows of [10, 16, 24, 40]) {
+            for (const columns of [44, 60, 80, 100, 140]) {
+                const frame = renderFrame(
+                    splash({ editor: typed, palette: must(paletteFor("/")), columns, rows }),
+                    { columns, rows },
+                )
+                expect(frame.lines.length).toBeLessThanOrEqual(rows)
+                expect(overflowing(frame, columns)).toEqual([])
+            }
+        }
     })
 
     test("the placeholder shows while the buffer is empty and not once it is not", () => {
@@ -896,3 +936,9 @@ describe("App, choosing between the splash and the transcript", () => {
         expect(frame.text).not.toContain("Ask anything")
     })
 })
+
+/** Narrows an optional the tests know is present, without a non-null assertion. */
+function must<T>(value: T | undefined): T {
+    if (value === undefined) throw new Error("expected a value")
+    return value
+}

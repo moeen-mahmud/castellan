@@ -547,6 +547,8 @@ export function App({
                 columns={columns}
                 rows={size.rows}
                 hint={NEW_SESSION_HINT}
+                {...(palette === undefined ? {} : { palette })}
+                paletteIndex={paletteIndex}
             />
         )
     }

@@ -5,6 +5,7 @@
 
 import type { Agent, EventBus } from "@castellan/core"
 import type { BrowseRow, InstallReport } from "#lib/browse"
+import type { Palette as PaletteModel } from "#lib/palette"
 import type { Slice } from "#lib/scroll"
 import type { SessionRowSource } from "#lib/sessions-view"
 import type { CatalogueEntry } from "#lib/source-cache"
@@ -383,4 +384,14 @@ export interface SplashProps {
     readonly rows: number
     /** One line naming the keys worth knowing before anything has been typed. */
     readonly hint: string
+    /**
+     * The slash-command list, when one is open.
+     *
+     * The splash has to render it, not just tolerate it. The screen root's `useInput` is active here, so
+     * typing `/` already narrows a palette and enter already runs the command — and the first version drew
+     * none of it, which is the worst version of a working key: the `/` lands in the buffer, nothing
+     * appears, and the feature looks absent rather than broken.
+     */
+    readonly palette?: PaletteModel
+    readonly paletteIndex: number
 }
