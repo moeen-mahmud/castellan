@@ -18,7 +18,15 @@
  * terminal.
  */
 
-import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs"
+import {
+    closeSync,
+    existsSync,
+    mkdirSync,
+    openSync,
+    readFileSync,
+    readSync,
+    statSync,
+} from "node:fs"
 import { homedir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import {
@@ -31,7 +39,7 @@ import {
     SqliteStore,
 } from "@castellan/core"
 import { ambientEnv } from "#lib/ambient"
-import { EXIT_FAILURE, EXIT_OK } from "#lib/const"
+import { EXIT_FAILURE, EXIT_OK, LOG_POLL_MS } from "#lib/const"
 import {
     type Attention,
     attentionFrom,
@@ -44,6 +52,7 @@ import {
     type ServiceFacts,
     summariseStatus,
 } from "#lib/daemon-plan"
+import { onExit } from "#lib/exit"
 import {
     labelFor,
     plistEnvAllowed,
@@ -51,6 +60,7 @@ import {
     type ServicePlan,
     THROTTLE_SECONDS,
 } from "#lib/launchd"
+import { type FollowIO, followLogs } from "#lib/log-follow"
 import { CHANNEL_IDS, CHANNELS, PROVIDER_IDS } from "#lib/providers"
 import { bytes, indent, keyValue, tildify } from "#lib/render"
 import { sandboxRoot, storePath } from "#lib/sandbox"
@@ -131,7 +141,7 @@ export async function daemonCommand(options: DaemonOptions): Promise<number> {
         case "restart":
             return lifecycleAction(action, options, manager)
         case "logs":
-            return logsAction(options)
+            return await logsAction(options)
     }
 }
 
@@ -525,7 +535,7 @@ async function gatherStatus(
     }
 }
 
-function logsAction(options: DaemonOptions): number {
+async function logsAction(options: DaemonOptions): Promise<number> {
     const agentId = agentIdOf(options.manifestPath as string)
     const logs = logPaths(agentId)
     if (options.truncate === true) {
@@ -543,12 +553,86 @@ function logsAction(options: DaemonOptions): number {
     }
     const body = tail(logs.err, options.lines ?? 40)
     process.stdout.write(body === "" ? `${short(logs.err)} is empty\n` : `${body}\n`)
-    if (options.follow === true) {
-        process.stdout.write(
-            `\nhint: this prints the tail and exits. To follow: tail -f ${logs.err}\n`,
-        )
-    }
+    if (options.follow !== true) return EXIT_OK
+
+    // Both files, and that is the point of following rather than tailing one.
+    //
+    // A service can be perfectly healthy and completely useless at the same time: a sender refused by
+    // `allowFrom` is the runtime working as configured, so it goes to *stdout* and never reaches the
+    // failure path. `status` already reads both for exactly that reason. Somebody watching a log live is
+    // watching because they do not trust what they are being told, and giving them half of it is how the
+    // 57 MB lesson repeats — a good message in a file nobody opens.
+    await followLogs(
+        [
+            { path: logs.err, label: "stderr" },
+            { path: logs.out, label: "stdout" },
+        ],
+        followIO(),
+        {
+            // From the end of what was just printed, so nothing is reprinted and nothing that arrived
+            // between the tail and the first poll is skipped.
+            offsets: { [logs.err]: sizeOf(logs.err) ?? 0, [logs.out]: sizeOf(logs.out) ?? 0 },
+            intervalMs: LOG_POLL_MS,
+        },
+    )
     return EXIT_OK
+}
+
+/**
+ * The follower's streams, its clock, and its stop condition.
+ *
+ * `SIGINT` is claimed here and nowhere else in this file, which is safe precisely because
+ * `installGuards` deliberately leaves it alone — the chat path owns it, and a guard that exited would
+ * break the cancel-the-turn contract. A foreground `--follow` is the one command where ctrl-C means
+ * "stop watching", so it handles it itself and removes the listener on the way out.
+ */
+function followIO(): FollowIO {
+    let stop = false
+    let wake: (() => void) | undefined
+    const onInterrupt = () => {
+        stop = true
+        // Wakes the pending sleep rather than waiting out the poll interval: a follower that took a
+        // third of a second to notice ctrl-C would read as one that ignored it.
+        wake?.()
+    }
+    process.on("SIGINT", onInterrupt)
+    onExit(() => {
+        process.off("SIGINT", onInterrupt)
+    })
+
+    return {
+        sizeOf: (path) => sizeOf(path),
+        read: (path, from, to) => {
+            try {
+                const handle = openSync(path, "r")
+                try {
+                    const buffer = Buffer.alloc(to - from)
+                    const read = readSync(handle, buffer, 0, buffer.length, from)
+                    return buffer.subarray(0, read).toString("utf8")
+                } finally {
+                    closeSync(handle)
+                }
+            } catch {
+                // Gone or unreadable between the stat and the read. Nothing to print, and the next poll
+                // decides what that means.
+                return ""
+            }
+        },
+        write: (text) => void process.stdout.write(text),
+        wait: (ms) =>
+            new Promise<void>((resolve) => {
+                if (stop) {
+                    resolve()
+                    return
+                }
+                const timer = setTimeout(resolve, ms)
+                wake = () => {
+                    clearTimeout(timer)
+                    resolve()
+                }
+            }),
+        stopped: () => stop,
+    }
 }
 
 // ─── small helpers ──────────────────────────────────────────────────────────────────────

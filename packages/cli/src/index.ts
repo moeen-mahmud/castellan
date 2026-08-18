@@ -264,6 +264,7 @@ async function dispatch(argv: readonly string[]): Promise<number> {
                     ? {}
                     : { manifestPath: resolveAgentRef(positionals[1]) }),
                 ...(lines === undefined ? {} : { lines }),
+                follow: flags.bool("follow"),
                 truncate: flags.bool("truncate"),
                 dryRun: flags.bool("dry-run"),
                 json: flags.bool("json"),

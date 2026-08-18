@@ -29,8 +29,8 @@ import { fetchCatalogue } from "#browse"
 import { initInteractive } from "#init"
 import { ambientEnv, demotedKeys } from "#lib/ambient"
 import { installReport } from "#lib/browse"
-import { EXIT_FAILURE, EXIT_OK, PROMPT } from "#lib/const"
-import { flushOutput, markTerminalDirty, onExit } from "#lib/exit"
+import { ENTER_ALT_SCREEN, EXIT_FAILURE, EXIT_OK, PROMPT } from "#lib/const"
+import { flushOutput, markAltScreen, markTerminalDirty, onExit, restoreTerminal } from "#lib/exit"
 import { resolveModeFromProcess } from "#lib/output"
 import { CHANNELS, scriptRunner, TOOL_PROVIDERS } from "#lib/providers"
 import { keyValue } from "#lib/render"
@@ -386,10 +386,18 @@ async function runRich(wired: Wired): Promise<RunOutcome> {
         import("#components/App"),
     ])
 
-    // From here on the terminal is in raw mode with the cursor hidden, so every exit route has
-    // something to undo. The plain path never marks this, which is what keeps its output free of the
-    // trailing reset sequence.
-    markTerminalDirty()
+    // The session takes the whole terminal.
+    //
+    // `markAltScreen` before the sequence, not after: it is what teaches every exit route — an explicit
+    // `finish`, a signal, a crash guard, `process.on("exit")` — to swap back out. Setting it and failing
+    // to enter would be the worse order, because a `1049l` sent to a terminal that never entered the
+    // buffer clears the output that was just written to it.
+    //
+    // The buffer is discarded on the way out and never joins the scrollback, which is the whole point and
+    // also the cost: the conversation is gone from the screen the moment the session ends. That is what
+    // the pointer line below exists for, and what makes `^C` take two presses.
+    markAltScreen()
+    process.stdout.write(ENTER_ALT_SCREEN)
 
     let restart = false
     const instance = render(
@@ -405,6 +413,14 @@ async function runRich(wired: Wired): Promise<RunOutcome> {
             bus: wired.runtime.bus,
             sessionKey: wired.sessionKey,
             model: wired.agent.describe().model,
+            agentName: wired.agent.describe().id,
+            // The count in the one-line header. The messages themselves are in the banner, which scrolls;
+            // on a surface with no scrollback a session-wide fact that has scrolled away is a fact nobody
+            // has, so the header keeps the number and says where to find the text.
+            warnings: [
+                ...wired.agent.warnings.map((warning) => warning.message),
+                ...wired.agent.tools.warnings.map((warning) => warning.message),
+            ],
             initial: seed(wired.banner),
             showReasoning: wired.showReasoning,
             quiet: wired.quiet,
@@ -424,7 +440,29 @@ async function runRich(wired: Wired): Promise<RunOutcome> {
     onExit(() => instance.unmount())
 
     await instance.waitUntilExit()
+
+    // Restore *before* writing, or the pointer line lands on the buffer that is about to be discarded.
+    // `restoreTerminal` is idempotent and runs again from the exit hook, so doing it here costs nothing
+    // and is the only way to get a byte onto the shell's own screen.
+    restoreTerminal()
+    if (!restart) process.stdout.write(resumeLine(wired))
     return restart ? RESTART : EXIT_OK
+}
+
+/**
+ * The one line a clean exit leaves behind.
+ *
+ * Nothing else survives — that was the decision, and the alternate screen enforces it whether we agree
+ * or not. What a person needs afterwards is not the conversation, which is in the store, but the two
+ * facts that reach it again: which session it was, and the command that resumes it. A failure prints its
+ * own error and its hint; this is the success case, and one line is what success is worth.
+ *
+ * The agent is named by the path it was loaded from rather than by its id, because that is what
+ * `resolveAgentRef` accepts — a line you cannot paste is a line that reads as help and is not.
+ */
+function resumeLine(wired: Wired): string {
+    const ref = wired.manifestPath ?? wired.agent.describe().id
+    return `session ${wired.sessionKey} · resume with: ${BRAND.slug} run ${ref} --session ${wired.sessionKey}\n`
 }
 
 /** Line-oriented, and byte-identical whether stdout is a terminal or a pipe. */

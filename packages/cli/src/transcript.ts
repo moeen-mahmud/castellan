@@ -17,7 +17,15 @@
  */
 
 import type { AnyEvent } from "@castellan/core"
-import type { TranscriptItem, TranscriptRole, TranscriptState, TurnStats } from "#lib/types"
+import { ROLE_PREFIX } from "#lib/theme"
+import type {
+    TranscriptItem,
+    TranscriptRole,
+    TranscriptRow,
+    TranscriptState,
+    TurnStats,
+} from "#lib/types"
+import { wrapText } from "#lib/wrap"
 
 /**
  * The transcript is driven by more than the bus — a typed line and a cancellation request are not
@@ -230,4 +238,85 @@ export function lastStats(items: readonly TranscriptItem[]): TurnStats | undefin
         if (stats !== undefined) return stats
     }
     return undefined
+}
+
+// ─── the finished conversation, as rows ──────────────────────────────────────────────────
+
+/**
+ * Flatten items into the rows a windowed transcript scrolls through.
+ *
+ * ## Why rows rather than items
+ *
+ * Scrolling by item is the cheaper thing to build and the wrong unit. One assistant reply is a single
+ * item and forty rows on screen, so an item-indexed window either shows the whole answer or none of it —
+ * page-up from the bottom of a long reply would jump over the entire thing and land on the question
+ * before it. Rows are what a reader moves through, so rows are what the offset counts.
+ *
+ * Wrapping happens here, not in Ink. A window has to know its content's height before it draws any of
+ * it, and a count Ink might disagree with is a window off by however many lines wrapped — which shows up
+ * as the last line of a reply hidden under the composer, intermittently, depending on the text.
+ *
+ * Pure, and one derivation for both halves of the frame: the component renders these rows and the layout
+ * asks how many there are.
+ */
+export function transcriptRows(
+    items: readonly TranscriptItem[],
+    options: {
+        readonly showReasoning: boolean
+        readonly quiet: boolean
+        readonly columns: number
+    },
+): readonly TranscriptRow[] {
+    const rows: TranscriptRow[] = []
+    const visible = items.filter((item) => item.role !== "reasoning" || options.showReasoning)
+
+    for (const [at, item] of visible.entries()) {
+        // A blank row between items, and never a trailing one. The rich transcript is read rather than
+        // grepped, and two turns that touch each other read as one wall of text; a blank row at the end
+        // would instead be a permanent gap above the composer.
+        if (at > 0) rows.push({ key: `${item.id}:gap`, role: item.role, text: "" })
+
+        if (item.role === "banner") {
+            // The banner keeps its content and loses its border. A bordered box inside a windowed list
+            // costs two rows this module cannot count — Ink measures the frame, not us — and the frame
+            // was decoration on a surface that is now itself a frame.
+            const [title = "", ...lines] = item.text.split("\n")
+            rows.push({ key: `${item.id}:title`, role: "banner", text: title, bold: true })
+            for (const [n, line] of lines.entries()) {
+                for (const [w, wrapped] of wrapText(line, options.columns).entries()) {
+                    rows.push({
+                        key: `${item.id}:note-${n}-${w}`,
+                        role: "banner",
+                        text: wrapped,
+                        dim: true,
+                    })
+                }
+            }
+            continue
+        }
+
+        const prefix = ROLE_PREFIX[item.role]
+        const pad = " ".repeat([...prefix].length)
+        // The prefix is part of the first row's width and an indent on every row after it, so a reply
+        // that wraps stays in one column instead of reading as a second message.
+        const body = wrapText(item.text, Math.max(1, options.columns - [...prefix].length))
+        for (const [n, line] of body.entries()) {
+            rows.push({
+                key: `${item.id}:${n}`,
+                role: item.role,
+                text: `${n === 0 ? prefix : pad}${line}`,
+            })
+        }
+
+        if (item.stats !== undefined && !options.quiet) {
+            rows.push({
+                key: `${item.id}:stats`,
+                role: item.role,
+                text: `  ${formatStats(item.stats)}`,
+                dim: true,
+            })
+        }
+    }
+
+    return rows
 }

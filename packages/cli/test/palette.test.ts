@@ -10,7 +10,7 @@ import { describe, expect, test } from "bun:test"
 import { COMMANDS } from "#lib/commands"
 import { paletteEntries, paletteFor, paletteSelection } from "#lib/palette"
 import { resolveSessionCommand, SESSION_COMMANDS } from "#lib/session-commands"
-import { subcommandArgv } from "#lib/subcommand"
+import { paneRefusal, subcommandArgv } from "#lib/subcommand"
 
 describe("every command declares how it appears in a session", () => {
     test("no command is left undeclared", () => {
@@ -174,5 +174,31 @@ describe("the argv a pane runs", () => {
             "list",
             "--plain",
         ])
+    })
+})
+
+describe("what a pane refuses to run", () => {
+    const BASE = { manifestPath: "/agents/milo/agent.yaml" }
+
+    test("a following command is refused, and told where it does work", () => {
+        // A pane captures a child to completion, so `--follow` would spin until the timeout and then
+        // report being killed — thirty seconds of a frozen surface for a flag that works fine at a shell.
+        const refusal = paneRefusal({ ...BASE, name: "daemon", rest: "logs milo --follow" })
+        expect(refusal).toContain("nothing to interrupt it with")
+        expect(refusal).toContain("daemon logs milo --follow")
+    })
+
+    test("the short form too, read off the spec rather than a second list", () => {
+        expect(paneRefusal({ ...BASE, name: "daemon", rest: "logs milo -f" })).toBeDefined()
+    })
+
+    test("the same command without the flag is fine", () => {
+        expect(paneRefusal({ ...BASE, name: "daemon", rest: "logs milo" })).toBeUndefined()
+        expect(paneRefusal({ ...BASE, name: "daemon", rest: "status" })).toBeUndefined()
+    })
+
+    test("a command with no follow flag is never refused for one", () => {
+        // `-f` is not reserved globally: it is refused only where the spec declares it.
+        expect(paneRefusal({ ...BASE, name: "validate", rest: "-f" })).toBeUndefined()
     })
 })

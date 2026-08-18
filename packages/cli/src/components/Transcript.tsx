@@ -1,66 +1,64 @@
 /**
- * Finished conversation, rendered once.
+ * The finished conversation, as a window over rows we own.
  *
- * `<Static>` is the load-bearing part. Ink erases and redraws its dynamic tree on every frame; a
- * transcript in that tree would be redrawn on every streamed token, which flickers, burns CPU, and
- * destroys scrollback on a long session. `<Static>` writes each node to the terminal once and never
- * touches it again — so history costs nothing to keep, no matter how much of it there is.
+ * ## What replaced `<Static>`, and why it had to
  *
- * Two consequences worth knowing before editing this file:
+ * Through Phase 5 this rendered inside Ink's `<Static>`, which writes a node to the terminal once and
+ * never touches it again — so history cost nothing to keep and scrolling was the terminal's own
+ * scrollback. Phase 5.5 puts the session on the alternate screen buffer, and the two are incompatible
+ * rather than merely awkward: `<Static>` appends to the scrollback, and the alternate buffer is
+ * discarded on the way out with a scrollbar that reaches nothing. Everything Static wrote would be
+ * invisible from the moment it was written.
  *
- * - Items must be **append-only and immutable**. Changing one already written is a change to
- *   something the renderer will never look at again, so it silently does not appear.
- * - `key` must be stable and unique, which is why `TranscriptItem.id` comes from a counter in the
- *   reducer rather than from an array index.
+ * So the conversation is a buffer this code owns and this component shows a slice of. That moves the
+ * transcript into the tree Ink redraws every frame, which is exactly the cost `<Static>` existed to
+ * avoid — and is why the window is bounded in rows. A frame redraws its window regardless of how long
+ * the conversation is, so the per-token cost stops growing with the answer.
+ *
+ * Controlled, like every component in this kit: the offset lives in the screen root, the rows come from
+ * `transcriptRows`, and this owns no keyboard and no state.
  */
 
-import { Box, Static, Text } from "ink"
-import { Banner } from "#components/Banner"
+import { Box, Text } from "ink"
 import type { TranscriptProps } from "#lib/schema"
-import { ROLE_COLOR, ROLE_PREFIX } from "#lib/theme"
-import { formatStats } from "#transcript"
+import { scrollHint } from "#lib/scroll"
+import { ROLE_COLOR, THEME } from "#lib/theme"
 
-export function Transcript({ items, showReasoning, quiet }: TranscriptProps) {
-    const visible = items.filter((item) => item.role !== "reasoning" || showReasoning)
+export function Transcript({ rows, slice }: TranscriptProps) {
+    const visible = rows.slice(slice.from, slice.to)
+    const hint = scrollHint(slice)
 
     return (
-        <Static items={visible}>
-            {(item) => {
-                // The banner is one item, written once like everything else in Static — a sibling
-                // above the transcript would live in the dynamic region, which draws *below*
-                // Static output and redraws every frame.
-                if (item.role === "banner") {
-                    const [title = "", ...lines] = item.text.split("\n")
-                    return (
-                        <Box key={item.id} flexDirection="column" marginBottom={1}>
-                            <Banner title={title} lines={lines} />
-                        </Box>
-                    )
-                }
-
-                // Spread rather than `color={ROLE_COLOR[...]}`: Ink declares `color?: string`, so
-                // under `exactOptionalPropertyTypes` an explicit `undefined` is a type error.
-                // Omitting it is also what we want at runtime — an assistant reply should use the
-                // terminal's own foreground colour rather than one we picked for it.
-                const colour = ROLE_COLOR[item.role]
+        <Box flexDirection="column">
+            {/*
+             * Always drawn, blank included — the caller's window already excludes this row, so making it
+             * conditional would hand the conversation one extra row on exactly the frames where it has
+             * least to spare. Blank is one line nobody reads; a moving layout is one everybody notices.
+             */}
+            <Text color={THEME.muted} wrap="truncate">
+                {hint === "" ? " " : hint}
+            </Text>
+            {visible.map((row) => {
+                // Spread rather than `color={...}`: Ink declares `color?: string`, so under
+                // `exactOptionalPropertyTypes` an explicit `undefined` is a type error — and omitting it
+                // is also what we want, because an assistant reply should use the terminal's own
+                // foreground rather than a colour we picked for it.
+                const colour = row.dim === true ? THEME.muted : ROLE_COLOR[row.role]
                 return (
-                    // One blank line after every item — the rich transcript is read, not grepped,
-                    // and turns that touch each other read as one wall. The plain path formats its
-                    // own lines and is untouched by this, which is what keeps pipe output stable.
-                    <Box key={item.id} flexDirection="column" marginBottom={1}>
-                        <Text
-                            {...(colour === undefined ? {} : { color: colour })}
-                            dimColor={item.role === "reasoning" || item.role === "tool"}
-                        >
-                            {ROLE_PREFIX[item.role]}
-                            {item.text}
-                        </Text>
-                        {item.stats === undefined || quiet ? null : (
-                            <Text dimColor>{`  ${formatStats(item.stats)}`}</Text>
-                        )}
-                    </Box>
+                    <Text
+                        key={row.key}
+                        // Truncate rather than wrap, and that is load-bearing. `transcriptRows` has
+                        // already broken the text to the width; letting Ink wrap it again would paint
+                        // more rows than the window counted, which puts the tail of a reply underneath
+                        // the composer.
+                        wrap="truncate"
+                        bold={row.bold === true}
+                        {...(colour === undefined ? {} : { color: colour })}
+                    >
+                        {row.text === "" ? " " : row.text}
+                    </Text>
                 )
-            }}
-        </Static>
+            })}
+        </Box>
     )
 }

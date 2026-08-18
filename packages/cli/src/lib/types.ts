@@ -57,6 +57,23 @@ export interface TranscriptItem {
     readonly stats?: TurnStats
 }
 
+/**
+ * One drawn line of the finished conversation.
+ *
+ * The transcript is windowed rather than written once, so its unit is a row on screen instead of a
+ * message: an offset counting items would page over a forty-row reply in a single keystroke. Wrapping
+ * has already happened — `text` is exactly what is painted, prefix and indent included — which is what
+ * makes the row count the scroll layer works in the row count the terminal shows.
+ */
+export interface TranscriptRow {
+    /** Stable per item and per row within it. React keys off it; two identical replies are two rows. */
+    readonly key: string
+    readonly role: TranscriptRole
+    readonly text: string
+    readonly dim?: boolean
+    readonly bold?: boolean
+}
+
 export interface TurnStats {
     readonly promptTokens: number
     readonly outputTokens: number
@@ -100,6 +117,12 @@ export interface KeyState {
     readonly downArrow: boolean
     readonly leftArrow: boolean
     readonly rightArrow: boolean
+    /**
+     * Page keys. Ink has always reported these; nothing asked for them until the transcript stopped
+     * being the terminal's scrollback and became a buffer with a window over it.
+     */
+    readonly pageUp: boolean
+    readonly pageDown: boolean
     readonly return: boolean
     readonly escape: boolean
     readonly ctrl: boolean
@@ -110,12 +133,31 @@ export interface KeyState {
     readonly meta: boolean
 }
 
+/**
+ * A move of a scrolling window: a row, a page, or an end.
+ *
+ * Here rather than in `lib/scroll.ts` because it is a shape the keymap produces and the reducer
+ * consumes, and neither should have to import the other — the same reason `KeyState` is declared here
+ * rather than imported from Ink.
+ */
+export type ScrollMove = "up" | "down" | "pageUp" | "pageDown" | "top" | "bottom"
+
 export type Intent =
     | { readonly kind: "submit" }
     /** Ctrl-C while a turn is running: cancel the turn, keep the process. */
     | { readonly kind: "cancel" }
     /** Ctrl-C at an idle prompt, or Ctrl-D. */
     | { readonly kind: "exit" }
+    /**
+     * A first Ctrl-C at an idle prompt: say what a second one will do, and do nothing else.
+     *
+     * An intent rather than a component detail, because it is the same decision `cancel` and `exit` are —
+     * what one keystroke means given what the session is doing — and the three have to be decided
+     * together or the chord that cancels a turn becomes the chord that ends the session a moment later.
+     */
+    | { readonly kind: "arm" }
+    /** Move the transcript window. The buffer is ours now, so its scrolling is a keystroke away. */
+    | { readonly kind: "scroll"; readonly move: ScrollMove }
     | { readonly kind: "insert"; readonly text: string }
     /**
      * Text arriving as one chunk with newlines in it — a paste, or a here-doc fed to the process.

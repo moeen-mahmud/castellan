@@ -438,9 +438,24 @@ function stubAppProps(): AppProps {
         bus: bus as unknown as AppProps["bus"],
         sessionKey: "local:default",
         model: "qwen3.5:9b",
+        agentName: "milo",
         initial: { items: [], live: undefined, status: "idle", nextId: 1 },
         showReasoning: false,
         quiet: false,
+    }
+}
+
+/** A conversation long enough that no terminal shows all of it. */
+function longHistory(turns: number): AppProps["initial"] {
+    return {
+        items: Array.from({ length: turns }, (_, at) => ({
+            id: `t${at}`,
+            role: at % 2 === 0 ? ("user" as const) : ("assistant" as const),
+            text: `message number ${at}`,
+        })),
+        live: undefined,
+        status: "idle" as const,
+        nextId: turns,
     }
 }
 
@@ -501,5 +516,162 @@ describe("App", () => {
         const frame = harness.frame()
         harness.unmount()
         expect(frame.text).toContain("not a command")
+    })
+
+    test("the header names the agent and the model, and stays put", () => {
+        // The banner says all of this too, and on the alternate screen the banner scrolls out of the
+        // window — so the two facts that identify what you are talking to have to be somewhere that does
+        // not move.
+        const harness = mount(h(App, { ...stubAppProps(), initial: longHistory(40) }), {
+            columns: 100,
+            rows: 24,
+        })
+        const frame = harness.frame()
+        harness.unmount()
+        expect(frame.lines[0]).toContain("milo")
+        expect(frame.lines[0]).toContain("qwen3.5:9b")
+    })
+})
+
+describe("App, on a screen with a hard ceiling", () => {
+    /**
+     * The one property the alternate screen makes non-negotiable.
+     *
+     * There is no scrollback to absorb an overshoot: a frame one row taller than the terminal makes Ink's
+     * own output scroll the buffer, which leaves the status line halfway up the display and the composer
+     * where the status line was. `chatFrame` restates each component's geometry to prevent that, and this
+     * is what stops the restatement drifting from the components it describes.
+     */
+    for (const rows of [10, 16, 24, 40]) {
+        for (const columns of [60, 80, 100]) {
+            test(`the whole frame fits ${rows} rows at ${columns} columns`, () => {
+                // Narrow widths are in the loop because that is how the first real overflow happened: the
+                // status line was longer than 80 columns, Ink wrapped it onto a second row, and the frame
+                // came out one row taller than it was laid out for. At 100 columns it fit and nothing was
+                // wrong. A height check at one width is a height check that passes at one width.
+                const props = {
+                    ...stubAppProps(),
+                    initial: longHistory(60),
+                    // The longest status line this component can produce: a model id, a session key and a
+                    // finished turn's counters.
+                    model: "deepseek-v4-pro",
+                    sessionKey: "live:two",
+                }
+                const harness = mount(h(App, props), { columns, rows })
+                const frame = harness.frame()
+                harness.unmount()
+                expect(frame.lines.length).toBeLessThanOrEqual(rows)
+                expect(overflowing(frame, columns)).toEqual([])
+            })
+        }
+    }
+
+    test("it still fits once the composer has scrolled internally", async () => {
+        const harness = mount(h(App, { ...stubAppProps(), initial: longHistory(60) }), {
+            columns: 100,
+            rows: 24,
+        })
+        for (let line = 0; line < 14; line += 1) {
+            await harness.press("a line", KEY.metaEnter)
+        }
+        const frame = harness.frame()
+        harness.unmount()
+        expect(frame.lines.length).toBeLessThanOrEqual(24)
+        // Scrolled, not grown past its cap: the notice is what says so.
+        expect(frame.text).toContain("lines above")
+    })
+
+    test("it still fits with the palette open", async () => {
+        // Separately from the composer, and that is not laziness. `paletteFor` matches the *whole* buffer
+        // against a lone `/word`, so a palette over a multi-line message is unreachable by construction —
+        // `chatFrame` adds both anyway, which over-counts in the safe direction.
+        const harness = mount(h(App, { ...stubAppProps(), initial: longHistory(60) }), {
+            columns: 100,
+            rows: 24,
+        })
+        await harness.press("/")
+        const frame = harness.frame()
+        harness.unmount()
+        expect(frame.lines.length).toBeLessThanOrEqual(24)
+        expect(frame.text).toContain("/status")
+    })
+
+    test("resizing re-lays the frame rather than keeping the launch height", async () => {
+        const harness = mount(h(App, { ...stubAppProps(), initial: longHistory(60) }), {
+            columns: 100,
+            rows: 40,
+        })
+        expect(harness.frame().lines.length).toBeLessThanOrEqual(40)
+        await harness.resize(80, 12)
+        const small = harness.frame()
+        harness.unmount()
+        expect(small.lines.length).toBeLessThanOrEqual(12)
+    })
+})
+
+describe("App, leaving", () => {
+    test("^C at an idle prompt arms, and says so before the second press", async () => {
+        const harness = mount(h(App, stubAppProps()), { columns: 100 })
+        const before = harness.frame()
+        await harness.press(KEY.ctrl("c"))
+        const armed = harness.frame()
+        harness.unmount()
+        expect(before.text).toContain("^C twice to leave")
+        expect(armed.text).toContain("^C again to leave")
+    })
+
+    test("a keystroke that is not ^C disarms", async () => {
+        // Otherwise the warning stays true while a whole message is typed, and the ^C at the end of it —
+        // meaning "cancel that" — ends the session instead.
+        const harness = mount(h(App, stubAppProps()), { columns: 100 })
+        await harness.press(KEY.ctrl("c"), "h")
+        const frame = harness.frame()
+        harness.unmount()
+        expect(frame.text).toContain("^C twice to leave")
+    })
+
+    test("/exit asks before it goes", async () => {
+        const harness = mount(h(App, stubAppProps()), { columns: 100 })
+        await harness.press("/exit", KEY.enter)
+        const asking = harness.frame()
+        await harness.press("n")
+        const stayed = harness.frame()
+        harness.unmount()
+        expect(asking.text).toContain("leave this session?")
+        expect(stayed.text).not.toContain("leave this session?")
+    })
+})
+
+describe("App, scrolling the conversation", () => {
+    test("page up parks the window and esc brings it back", async () => {
+        const harness = mount(h(App, { ...stubAppProps(), initial: longHistory(60) }), {
+            columns: 100,
+            rows: 20,
+        })
+        const bottom = harness.frame()
+        await harness.press(KEY.pageUp)
+        const parked = harness.frame()
+        await harness.press(KEY.escape)
+        const back = harness.frame()
+        harness.unmount()
+        // The newest message is visible at the bottom, gone once parked, and back again after esc.
+        expect(bottom.text).toContain("message number 59")
+        expect(parked.text).not.toContain("message number 59")
+        expect(parked.text).toContain("rows below")
+        expect(back.text).toContain("message number 59")
+    })
+
+    test("page up is not ^U, which still deletes to the start of the line", async () => {
+        // The plan named ^U/^D for scrolling. Both were already taken by the editor and both are
+        // documented, so a scroll key that silently deleted half a message would be the worse bug.
+        const harness = mount(h(App, { ...stubAppProps(), initial: longHistory(60) }), {
+            columns: 100,
+            rows: 20,
+        })
+        await harness.press("half a thought", KEY.ctrl("u"))
+        const frame = harness.frame()
+        harness.unmount()
+        expect(frame.text).not.toContain("half a thought")
+        expect(frame.text).toContain("message number 59")
     })
 })

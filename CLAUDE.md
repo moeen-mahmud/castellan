@@ -256,14 +256,58 @@ Never claim a performance property without a number in `evals/` and a script to 
   slugs: on a cold agent it read "no provider resolved GMAIL_FETCH_EMAILS … Available: now,
   memory_write". Only the provider knows the cache is empty, so only it can say so.
 - **The outbox must be idempotent.** A crash mid-delivery must not double-send.
-- **Ink redraws its whole dynamic tree every frame.** Finished transcript items belong in
-  `<Static>`, which writes once and never touches the node again — so they must be append-only
-  and immutable, and mutating one is a change that silently never appears. The live pane is
-  capped in terminal *rows*, not lines. **Phase 5.5 retires this for chat**: `<Static>` and the
-  alternate screen are incompatible — Static appends to the scrollback, the alternate buffer is wiped
-  on leave and its scrollbar reaches nothing — so a full-screen `run` needs a windowed transcript over a
-  buffer we own. The row cap is what keeps that affordable, and it is now load-bearing rather than
-  merely prudent.
+- **Ink redraws its whole dynamic tree every frame, and chat no longer has a `<Static>` to escape
+  into.** `<Static>` writes a node once and never touches it again, so history used to cost nothing —
+  but it appends to the *scrollback*, and the alternate buffer is wiped on leave with a scrollbar that
+  reaches nothing, so the two cannot both be true. The chat transcript is a buffer of rows we own with
+  a window over it (`lib/scroll.ts`), which puts it back in the redrawn tree; the row cap is what
+  bounds that and is now load-bearing rather than prudent. `<Static>` is still right for the wizard
+  and the picker, which do not take the screen. The unit is a **row, not an item** — an item-indexed
+  offset pages over a forty-row reply in one keystroke and lands on the question before it.
+- **Whoever owns a bounded window wraps the text itself, and every piece of chrome reports its height.**
+  `visualRows` counted rows by dividing the character count by the width; Ink breaks at spaces, so 240
+  characters at 80 columns is **four** rows drawn and three counted — every cap built on that division
+  was short, and short by a row on the alternate screen is a frame taller than the terminal, which
+  scrolls the buffer and leaves the status line halfway up the display. So `wrapText` decides the rows
+  and each renders `wrap="truncate"`. `lib/chat-frame.ts` sums the chrome and spends one further row as
+  a margin, in the direction that cannot be seen: an underestimate is a blank line, an overestimate is
+  corruption. It restates each component's geometry, so **every function is asserted against the line
+  count of a real render** — deriving it from a render is not available, because the layout has to be
+  decided before anything is drawn.
+- **A height check at one width is a height check that passes at one width.** The first real overflow
+  was the status line, which had no `wrap="truncate"`: at 80 columns `ready · deepseek-v4-pro ·
+  live:two · last 2369 prompt · 119 output · 3180 ms · ^C twice to leave · /exit` wrapped onto a second
+  row, and at 100 columns it fit and nothing looked wrong. The App height test loops over widths for
+  that reason, and a status line is the one thing that must never change height, because everything
+  else is laid out against it.
+- **`pinned` is a flag, not a comparison against the bottom.** Deriving "follow the tail only when
+  already at the tail" from the offset looks equivalent and is not: the instant a row is appended the
+  old offset *is* one short of the bottom, so a reader who deliberately scrolled up one row gets yanked
+  back down. And scrolling back down to the bottom re-**pins** rather than parking there — parking
+  looks identical and then quietly stops updating, which is a session that appears live and is not.
+- **`^U` and `^D` are not the scroll keys, whatever the shell habit says.** Both are taken by the
+  editor, both are documented, and both are reached by muscle memory — a scroll key that silently
+  deleted half a message is a worse bug than no scroll key. Paging is PgUp/PgDn, a row is ⌥↑/⌥↓, the
+  ends are ⌥PgUp/⌥PgDn, `esc` returns to the newest reply. Relatedly, an idle `^C` **arms** rather than
+  exiting: the alternate buffer is discarded on leave, so one reflexive press during a long reply would
+  throw the visible conversation away. `keymap.ts` decides; only the expiry clock lives in the component.
+- **A probe that writes a whole line in one call is testing the paste path.** Ink delivers `"/help\r"`
+  written in a single `os.write` as one input chunk with no `return` flag, which the keymap reads as a
+  paste — and a paste *composes* rather than sends, deliberately. The first pty run of the full-screen
+  session reported `/help` as broken when the buffer read `/help/help`: two pastes, no submit, working
+  exactly as designed. Type keystroke by keystroke when driving the composer.
+- **A log follower is polled, follows both streams, and must notice a file getting *shorter*.**
+  `--truncate` empties a service log **in place** — launchd holds the descriptor, so deleting it leaves
+  output flowing into a deleted inode — and an offset carried across that means never printing another
+  line and never explaining why. `fs.watch` on macOS reports another process's appends unreliably, so
+  polling is the honest choice: a follower that misses the line somebody is waiting for is worse than one
+  300 ms late. Both streams, because a sender refused by `allowFrom` is the runtime working as configured
+  and therefore goes to *stdout*, never to the failure path — the same reason `status` reads both. The
+  blind spot is a rewrite to exactly the same byte count, which is asserted by a test rather than hidden.
+- **A pane runs a child to completion, so it must refuse a command that never finishes.** `/daemon logs
+  --follow` would spin until the 30-second timeout and then report being killed. Dropping the flag and
+  returning the tail is worse: it looks like a following command that stopped immediately. `paneRefusal`
+  reads the command's **own spec**, so a second `follow` flag is covered with nothing to remember.
 - **Nothing on a shared CLI path may import Ink or React.** They cost ~170-210 ms under Node,
   more than the entire runtime of `validate --json`. A structural test enforces it.
 - **`--plain` at a terminal must produce exactly what a pipe produces.** That is why the

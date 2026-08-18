@@ -1,19 +1,32 @@
 /**
- * The chat surface.
+ * The chat surface — a full-screen session on the alternate buffer.
  *
- * Thin on purpose. Everything worth testing already lives in pure modules — `keymap.ts` decides what
- * a keystroke means, `editor.ts` applies it to the line, `transcript.ts` turns bus events into view
- * state — so this file is composition plus the three decisions that need Ink itself: when to unmount,
- * what to do about a submission arriving mid-turn, and how the pieces stack on screen.
+ * Thin on purpose. Everything worth testing lives in pure modules — `keymap.ts` decides what a keystroke
+ * means, `editor.ts` applies it to the line, `transcript.ts` turns bus events into rows, `lib/scroll.ts`
+ * moves the window, `lib/chat-frame.ts` decides how many rows each part of the frame may have — so this
+ * file is composition plus the decisions that need Ink itself: when to unmount, what to do about a
+ * submission arriving mid-turn, and which surface currently owns the keyboard.
  *
- * The Ctrl-C contract from Phase 1 holds unchanged: during a turn it cancels the turn and the prompt
- * comes back; at an idle prompt it exits. `keymap.ts` owns that decision so it can be tested in both
- * states rather than only by hand.
+ * ## What Phase 5.5 changed here
+ *
+ * The conversation is no longer in `<Static>`. It is a buffer of rows with a window over it, because
+ * `<Static>` writes to the scrollback and the alternate screen discards its buffer on the way out — the
+ * two cannot both be true. That has two consequences worth stating before editing:
+ *
+ * - **The frame has a hard height.** Everything visible must add up to at most the terminal's rows, or
+ *   Ink's own output scrolls the buffer and the layout comes apart. `chatFrame` owns that arithmetic; no
+ *   row count is invented in this file.
+ * - **^C at an idle prompt takes two presses.** With the buffer discarded on exit, a single reflexive ^C
+ *   during a long reply would throw the visible conversation away. `keymap.ts` owns the decision; the
+ *   timer that expires it lives here, because a pure function cannot hold a clock.
+ *
+ * The Ctrl-C contract from Phase 1 is otherwise unchanged: during a turn it cancels the turn and the
+ * prompt comes back.
  */
 
 import { BRAND, VERSION } from "@castellan/core"
 import { Box, Text, useApp, useInput } from "ink"
-import { type ComponentType, useCallback, useMemo, useState } from "react"
+import { type ComponentType, useCallback, useEffect, useMemo, useState } from "react"
 import { CommandOutput } from "#components/CommandOutput"
 import { HistorySearch } from "#components/HistorySearch"
 import { Live } from "#components/Live"
@@ -27,9 +40,12 @@ import { useElapsed } from "#hooks/useElapsed"
 import { useTerminalSize } from "#hooks/useTerminalSize"
 import { useTurn } from "#hooks/useTurn"
 import { keyContext, keyToIntent } from "#keymap"
-import { PANE_ROWS, SEARCH_ROWS } from "#lib/const"
+import { chatFrame } from "#lib/chat-frame"
+import { EXIT_ARM_MS, FALLBACK_COLUMNS, SEARCH_ROWS } from "#lib/const"
 import { paletteEntries, paletteFor, paletteSelection } from "#lib/palette"
 import type { AppProps } from "#lib/schema"
+import { screenColumns, titleLine } from "#lib/screen"
+import { FOLLOWING, scroll, slice } from "#lib/scroll"
 import {
     resolveSessionCommand,
     sessionHelpText,
@@ -38,14 +54,17 @@ import {
     unknownCommandText,
 } from "#lib/session-commands"
 import { runSubcommand } from "#lib/subcommand"
-import { lastStats } from "#transcript"
+import { THEME } from "#lib/theme"
+import { lastStats, transcriptRows } from "#transcript"
 
 /**
  * What is layered over the conversation.
  *
  * `output` is a command's captured text; `skills` is the one bespoke view a session hosts so far. Both
- * take the keyboard while open, and closing either returns to the prompt with the draft untouched — which
- * is the property that makes a pane an interlude rather than a detour.
+ * take the keyboard while open and both *replace* the transcript rather than sitting under it — sharing
+ * the screen pushed the conversation off the top of a full-screen frame, which on a surface with no
+ * scrollback means gone. Closing either returns to the prompt with the draft untouched, which is what
+ * makes a pane an interlude rather than a detour.
  */
 type Pane =
     | { readonly kind: "none" }
@@ -63,6 +82,8 @@ export function App({
     bus,
     sessionKey,
     model,
+    agentName,
+    warnings,
     initial,
     showReasoning,
     quiet,
@@ -72,7 +93,8 @@ export function App({
     catalogue,
 }: AppProps) {
     const { exit } = useApp()
-    const { columns } = useTerminalSize()
+    const size = useTerminalSize()
+    const columns = screenColumns(size.columns, FALLBACK_COLUMNS)
     const { state, busy, send, cancel, note } = useTurn({ agent, bus, sessionKey, initial })
     // A draft handed in by a `/restart` opens the prompt with the cursor at its end, which is where the
     // person left it. Only the initial value — a later prop change must not overwrite what is being
@@ -100,12 +122,50 @@ export function App({
      * edge. `boundaries.test.ts` bans the mixing outright.
      */
     const [Browser, setBrowser] = useState<ComponentType<SkillBrowserProps> | undefined>(undefined)
+    /** Where the conversation window sits. Starts and returns to following the newest row. */
+    const [view, setView] = useState(FOLLOWING)
+    /** A first ^C has landed. Expires, which is why it is here and not in the keymap. */
+    const [armed, setArmed] = useState(false)
+    /** `/exit` asked; the next keystroke answers. `undefined` means nothing is being confirmed. */
+    const [confirming, setConfirming] = useState(false)
     // Derived from the buffer rather than stored, so the only palette state is where the cursor is.
     const palette = pane.kind === "none" ? paletteFor(editor.value) : undefined
     const [paletteIndex, setPaletteIndex] = useState(0)
 
     const elapsed = useElapsed(busy)
     const last = useMemo(() => lastStats(state.items), [state.items])
+
+    /**
+     * The conversation, wrapped to the width and flattened to rows.
+     *
+     * Memoised on the three things it depends on. Without that it would re-flatten and re-wrap the whole
+     * history on every streamed token, which is the cost `<Static>` used to remove for free.
+     */
+    const rows = useMemo(
+        () => transcriptRows(state.items, { showReasoning, quiet, columns }),
+        [state.items, showReasoning, quiet, columns],
+    )
+
+    const frame = chatFrame({
+        rows: size.rows,
+        columns,
+        editor,
+        live: state.live,
+        showReasoning,
+        palette,
+        paletteMaxRows: SEARCH_ROWS,
+        searchMaxRows: SEARCH_ROWS,
+        confirming,
+    })
+    const window = slice(view, rows.length, frame.transcript)
+
+    // The armed ^C expires on its own. A prompt that stayed armed indefinitely would turn a ^C pressed
+    // minutes ago into the reason a later one ended the session.
+    useEffect(() => {
+        if (!armed) return
+        const timer = setTimeout(() => setArmed(false), EXIT_ARM_MS)
+        return () => clearTimeout(timer)
+    }, [armed])
 
     const onSubmit = (text: string): void => {
         // Both renderers dispatch through the same table, so `--plain` and the rich path cannot
@@ -114,7 +174,10 @@ export function App({
         if (command !== undefined) {
             switch (command.kind) {
                 case "exit":
-                    exit()
+                    // Asked, not done. `/exit` is typed deliberately, but so is every other slash command,
+                    // and the one that discards the visible conversation is worth one keystroke of
+                    // confirmation on a surface where leaving takes the screen with it.
+                    setConfirming(true)
                     return
                 case "restart":
                     // The settings an agent booted with are fixed for its lifetime, so a
@@ -228,7 +291,7 @@ export function App({
                 return
             }
             const total = pane.lines?.length ?? 0
-            const step = key.pageDown || key.pageUp ? PANE_ROWS : 1
+            const step = key.pageDown || key.pageUp ? frame.pane : 1
             const delta =
                 key.downArrow || key.pageDown ? step : key.upArrow || key.pageUp ? -step : 0
             if (delta !== 0) {
@@ -243,6 +306,14 @@ export function App({
 
     useInput(
         (input, key) => {
+            // A pending confirmation owns the keyboard for exactly one keystroke. Anything other than a
+            // yes is a no — including a stray arrow, because the safe answer to an unclear one is to stay.
+            if (confirming) {
+                setConfirming(false)
+                if (input.toLowerCase() === "y" || key.return) exit()
+                return
+            }
+
             // The palette owns the keys it needs while it is open, and hands everything else to the editor —
             // so typing continues to narrow the list rather than being swallowed by it.
             if (palette !== undefined) {
@@ -291,8 +362,25 @@ export function App({
                 }
             }
 
-            const intent = keyToIntent(input, key, keyContext(editor, busy))
+            const intent = keyToIntent(
+                input,
+                key,
+                keyContext(editor, busy, { armed, scrolled: !view.pinned }),
+            )
 
+            // Any keystroke that is not the second ^C disarms. Without this the warning would stay true
+            // while somebody typed a whole message, and the ^C they pressed at the end of it — meaning
+            // "cancel that" — would end the session instead.
+            if (armed && intent.kind !== "exit") setArmed(false)
+
+            if (intent.kind === "arm") {
+                setArmed(true)
+                return
+            }
+            if (intent.kind === "scroll") {
+                setView((current) => scroll(current, intent.move, rows.length, frame.transcript))
+                return
+            }
             if (intent.kind === "exit") {
                 exit()
                 return
@@ -304,6 +392,9 @@ export function App({
             if (intent.kind === "submit") {
                 const committed = submit(editor)
                 setEditor(committed.state)
+                // Sending is an implicit "take me back to the newest row": a reply arriving into a window
+                // parked ten screens up would be generated where nobody can see it.
+                setView(FOLLOWING)
                 if (committed.text !== "") onSubmit(committed.text)
                 return
             }
@@ -342,26 +433,44 @@ export function App({
         )
     }
 
+    const header = titleLine(
+        {
+            title: `${BRAND.name} ${VERSION}`,
+            summary: "",
+            agent: { name: agentName, model },
+            ...(warnings === undefined || warnings.length === 0 ? {} : { warnings }),
+        },
+        columns,
+    )
+
     return (
-        <Box flexDirection="column">
-            <Transcript items={state.items} showReasoning={showReasoning} quiet={quiet} />
-            {state.live === undefined ? null : (
-                <Live live={state.live} showReasoning={showReasoning} columns={columns} />
-            )}
+        // Fixed height, because the alternate screen has no scrollback to absorb an overshoot: one row too
+        // many and Ink's own output scrolls the buffer, which leaves the status line halfway up the display.
+        <Box flexDirection="column" width={columns} height={size.rows}>
+            <Text color={THEME.accent} bold wrap="truncate">
+                {header}
+            </Text>
+
             {pane.kind === "output" ? (
-                <Box flexDirection="column" marginTop={1}>
+                <Box flexDirection="column">
                     <CommandOutput
                         lines={pane.lines}
                         label={pane.label}
                         offset={pane.offset}
-                        maxRows={PANE_ROWS}
+                        maxRows={frame.pane}
                         {...(pane.code === undefined ? {} : { code: pane.code })}
                     />
                     <Text dimColor wrap="truncate">
                         {"  "}↑↓ scroll · esc back to the prompt
                     </Text>
                 </Box>
-            ) : null}
+            ) : (
+                <Transcript rows={rows} slice={window} />
+            )}
+
+            {state.live === undefined ? null : (
+                <Live live={state.live} showReasoning={showReasoning} columns={columns} />
+            )}
             {palette === undefined ? null : (
                 <Palette
                     palette={palette}
@@ -371,6 +480,11 @@ export function App({
                 />
             )}
             <HistorySearch editor={editor} width={columns} maxRows={SEARCH_ROWS} />
+            {confirming ? (
+                <Text color={THEME.warning} wrap="truncate">
+                    {"  leave this session? y to confirm · any other key stays"}
+                </Text>
+            ) : null}
             <Prompt editor={editor} busy={busy} />
             {/* The status line is the footer, under the input — where every reference CLI puts
                 it, and where the eye rests between keystrokes. */}
@@ -381,6 +495,7 @@ export function App({
                 elapsedMs={elapsed}
                 last={last}
                 quiet={quiet}
+                armed={armed}
             />
         </Box>
     )

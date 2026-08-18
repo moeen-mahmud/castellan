@@ -430,6 +430,12 @@ export function applyIntent(state: EditorState, intent: Intent): EditorState {
         case "submit":
         case "cancel":
         case "exit":
+        // The session's, not the line's: arming ^C and moving the transcript window change what is on
+        // screen and nothing about what is being typed. The exhaustive switch is what surfaced them —
+        // added to `Intent` for the keymap's benefit, they made this function stop returning, which is a
+        // compile error rather than a silent edit applied to somebody's message.
+        case "arm":
+        case "scroll":
         case "paste":
         case "none":
             return state

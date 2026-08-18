@@ -506,7 +506,10 @@ export const COMMANDS: readonly CommandSpec[] = [
                         value: "status",
                         help: "running? how many restarts? why did it stop? — bare, reports every agent",
                     },
-                    { value: "logs", help: "the tail of stderr; --lines, --truncate" },
+                    {
+                        value: "logs",
+                        help: "the tail of stderr; --lines, --follow, --truncate",
+                    },
                 ],
             },
             {
@@ -526,6 +529,12 @@ export const COMMANDS: readonly CommandSpec[] = [
                 min: 1,
                 help: "how much of the log to show",
                 defaultHelp: "40",
+            },
+            {
+                name: "follow",
+                short: "f",
+                kind: "boolean",
+                help: "keep printing as the service writes — both streams; ctrl-C stops (logs)",
             },
             { name: "truncate", kind: "boolean", help: "empty the log files (logs)" },
             {

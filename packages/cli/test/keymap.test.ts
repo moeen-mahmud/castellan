@@ -7,6 +7,8 @@ const NO_KEYS: KeyState = {
     downArrow: false,
     leftArrow: false,
     rightArrow: false,
+    pageUp: false,
+    pageDown: false,
     return: false,
     escape: false,
     ctrl: false,
@@ -18,7 +20,13 @@ const NO_KEYS: KeyState = {
 }
 
 /** A single-line buffer sits on both the first and the last line, which is the common case. */
-const ONE_LINE = { firstLine: true, lastLine: true, searching: false } as const
+const ONE_LINE = {
+    firstLine: true,
+    lastLine: true,
+    searching: false,
+    armed: false,
+    scrolled: false,
+} as const
 
 const IDLE: KeyContext = { busy: false, empty: true, ...ONE_LINE }
 const BUSY: KeyContext = { busy: true, empty: false, ...ONE_LINE }
@@ -30,6 +38,8 @@ const MID_BUFFER: KeyContext = {
     firstLine: false,
     lastLine: false,
     searching: false,
+    armed: false,
+    scrolled: false,
 }
 const SEARCHING: KeyContext = { busy: false, empty: false, ...ONE_LINE, searching: true }
 
@@ -42,14 +52,25 @@ describe("Ctrl-C — the contract Phase 1 measured", () => {
         expect(press("c", { ctrl: true }, BUSY)).toEqual({ kind: "cancel" })
     })
 
-    test("exits at an idle prompt", () => {
-        expect(press("c", { ctrl: true }, IDLE)).toEqual({ kind: "exit" })
+    test("arms at an idle prompt, and the second press leaves", () => {
+        // Two presses rather than one, because the alternate screen discards the buffer on the way out:
+        // a reflexive ^C during a long reply used to end the session *and* take the visible conversation
+        // with it. `^D` still leaves in one.
+        expect(press("c", { ctrl: true }, IDLE)).toEqual({ kind: "arm" })
+        expect(press("c", { ctrl: true }, { ...IDLE, armed: true })).toEqual({ kind: "exit" })
     })
 
     test("cancels while busy even with text on the line", () => {
         expect(press("c", { ctrl: true }, { busy: true, empty: true, ...ONE_LINE })).toEqual({
             kind: "cancel",
         })
+    })
+
+    test("a busy turn is cancelled even when the prompt was already armed", () => {
+        // Arming is an idle-prompt state and a turn starting does not clear it, so the flag can still be
+        // set when a reply arrives. Cancel has to win: the alternative is a ^C aimed at a running turn
+        // ending the session, which is precisely the accident the arming exists to prevent.
+        expect(press("c", { ctrl: true }, { ...BUSY, armed: true })).toEqual({ kind: "cancel" })
     })
 
     test("is recognised whatever case the terminal reports", () => {

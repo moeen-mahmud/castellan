@@ -121,6 +121,12 @@ describe("the pure modules stay pure", () => {
         "lib/rows.ts",
         "lib/multiselect.ts",
         "lib/browse.ts",
+        // Stage 7's two. `scroll.ts` is where a window sits in a buffer; `chat-frame.ts` is how many rows
+        // each part of a full-screen session may have. Pure because the alternate screen makes both
+        // load-bearing — a frame one row too tall scrolls the buffer it is drawn on — and arithmetic that
+        // can only be checked by looking at a terminal is arithmetic nobody checks.
+        "lib/scroll.ts",
+        "lib/chat-frame.ts",
     ]
 
     test("they import no renderer and no node built-ins", () => {

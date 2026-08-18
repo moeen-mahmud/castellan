@@ -59,7 +59,15 @@ export const SESSION_COMMANDS: readonly SessionCommandSpec[] = [
         aliases: [],
         summary: "clear this session's history — memory files on disk are untouched",
     },
-    { kind: "exit", word: "/exit", aliases: ["/quit", ":q"], summary: "leave" },
+    {
+        kind: "exit",
+        word: "/exit",
+        aliases: ["/quit", ":q"],
+        // Says that it asks, because it does. The session takes the whole terminal and its buffer is
+        // discarded on the way out, so leaving is not a keystroke to make by accident — the same reasoning
+        // that made ^C take two presses.
+        summary: "leave — asks first, because the screen goes with it",
+    },
 ]
 
 export interface KeyBindingSpec {
@@ -83,7 +91,11 @@ export interface KeyBindingSpec {
 export const NEWLINE_HINT = "⌥⏎ or a trailing \\ for a new line · ⏎ sends"
 
 export const KEY_BINDINGS: readonly KeyBindingSpec[] = [
-    { chord: "^C", summary: "cancel the turn in flight — at an idle prompt, leave" },
+    {
+        chord: "^C",
+        summary:
+            "cancel the turn in flight — at an idle prompt, press it twice to leave (the screen goes with it)",
+    },
     { chord: "^D", summary: "leave when the line is empty; delete forward when it is not" },
     { chord: "^A / ^E", summary: "start of line / end of line" },
     { chord: "^B / ^F", summary: "back one character / forward one" },
@@ -108,6 +120,15 @@ export const KEY_BINDINGS: readonly KeyBindingSpec[] = [
         chord: "^Z / ^Y",
         summary: "undo / redo the last edit — suspend is not available inside a session",
     },
+    {
+        // Deliberately not ^U/^D, which would be the shell habit: both are already taken above, both are
+        // documented, and a scroll key that silently deleted half a message is the worse bug by far.
+        chord: "PgUp / PgDn",
+        summary: "back and forward through the conversation a screen at a time",
+    },
+    { chord: "⌥↑ / ⌥↓", summary: "the same, one row at a time" },
+    { chord: "⌥PgUp / ⌥PgDn", summary: "the start of the conversation / back to the newest reply" },
+    { chord: "esc", summary: "return to the newest reply when you have scrolled away" },
 ]
 
 /**

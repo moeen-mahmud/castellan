@@ -1672,13 +1672,19 @@ the spec, never omitted by a second list.
 4. **The palette.** Generated from `COMMANDS`, `inSession` required on every spec, the known-first-token
    argument rule. **Done** — except a flag *form*; flags are typed after the word for now.
 5. **The remaining commands.** One `CommandOutput` pane runs any non-hidden command and shows its text,
-   so every one is reachable from the palette. **Done as the generic mechanism.** Bespoke interactive
-   views for `/channels` and `/logs` — including implementing `daemon --follow` — are not built.
+   so every one is reachable from the palette. **Done as the generic mechanism**, and `daemon logs
+   --follow` is now implemented rather than a hint telling you to run `tail -f` — both streams, polled,
+   with truncation detected (11.81). A pane refuses it by name, because a pane has nothing to interrupt a
+   following command with (11.82). Bespoke interactive views for `/channels` and `/logs` are **not built**:
+   the pane covers reading, and a `/channels` toggle writes `agent.yaml`, which wants its own review.
 6. **One-shot reports, inline.** Satisfied by decision rather than by code: these commands already print
    inline and keep doing so. Restyling them through the kit is **not done**, and is cosmetic.
-7. **`run` on the alternate screen.** Windowed transcript, our own scrolling, the exit semantics above.
-   **Not started** — deliberately deferred: it replaces `<Static>` in the screen people look at most,
-   and it needs a session with room to verify the scrolling properly.
+7. **`run` on the alternate screen.** Windowed transcript over rows we own (`transcriptRows` +
+   `lib/scroll.ts`), a one-line header that does not scroll away, a row budget every piece of chrome
+   reports into (`lib/chat-frame.ts`), PgUp/PgDn and ⌥↑/⌥↓ scrolling with `esc` to return, an idle `^C`
+   that arms, `/exit` that asks, and one pointer line after the restore. **Done.** Two things it changed
+   on the way: `<Static>` is retired for chat (11.75) and the row count is now ours to compute, because
+   Ink word-wraps and a division does not (11.76).
 
 ### Acceptance criteria
 
@@ -1706,9 +1712,30 @@ the spec, never omitted by a second list.
 - [x] No internal module is both statically and dynamically imported, and the built binary starts —
       two guards, because `bun test` imports source and cannot see a broken bundle.
 - [x] Verified live in the real binary: `/` lists session verbs first, `/s` narrows, ↓ then tab completes.
-- [ ] `q` from every alternate-screen surface leaves the terminal as found — `stty -a` unchanged.
-- [ ] `time node packages/cli/dist/index.js validate --json` stays ~90 ms: no Ink on a shared path.
-- [ ] Stage 7: the windowed transcript, its scrolling, and the chat's exit semantics.
+- [x] Leaving an alternate-screen surface restores it: style and cursor first, the buffer swap second,
+      and only when `markAltScreen` ran. Verified in the pty bytes — one `1049h`, one `1049l`, and the
+      pointer line lands *after* the swap, on the shell's own screen.
+- [x] `time node packages/cli/dist/index.js validate --json` stays ~90 ms: no Ink on a shared path.
+      Measured 0.13 s total for the process.
+- [x] The chat transcript is a window over rows, not `<Static>`: it scrolls by row, counts what is out
+      of sight, and follows the newest reply only while nothing has parked it.
+- [x] The whole frame fits the terminal at 10/16/24/40 rows and 60/80/100 columns, and no row exceeds
+      the width — asserted on the render, because `chat-frame.ts` restates each component's geometry.
+- [x] Every chrome function's row count equals the line count of its real render: composer (empty,
+      composing, internally scrolled), palette (many/one/none), `^R` (matches and none), live pane
+      (short and clipped).
+- [x] Mid-turn `^C` still cancels the turn. An idle `^C` arms, the status line says so, any other
+      keystroke disarms, and the second press leaves. `^D` still leaves in one.
+- [x] `/exit` asks before it goes, and any key other than `y` stays.
+- [x] A clean exit leaves exactly one line: the session key and a pasteable resume command.
+- [x] `--plain` at a terminal writes **zero** escape bytes and matches a pipe — verified through a pty.
+- [x] `daemon logs --follow` prints the tail, then keeps printing: verified live against a file being
+      appended to on both streams, with `--truncate` mid-follow announced as `── stderr was emptied ──`
+      and ctrl-C stopping at exit 0.
+- [x] A pane refuses `--follow` by name and exits non-zero, keyed off the command's own flag table.
+- [x] Verified live in the real binary against a live endpoint: a streamed turn with reasoning, PgUp and
+      ⌥↑ parking the window with `↑ n rows above · ↓ n rows below · esc returns`, `esc` returning to the
+      newest reply, a resize from 24×80 to 14×70 re-laying the frame, and `^C`,`^C` leaving cleanly.
 
 ### Non-goals
 

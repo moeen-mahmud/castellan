@@ -148,6 +148,28 @@ export function hintLine(hints: readonly KeyHint[], width: number): string {
     return line === "" ? clip(rendered[0] ?? "", width) : line
 }
 
+/**
+ * The whole header on one line, for a surface that cannot spare three.
+ *
+ * The chat is that surface. Its opening banner already says the version, the store, the session and every
+ * load warning — and on the alternate screen that banner scrolls out of the window, taking the
+ * session-wide facts with it. `headerLines`' three-to-six rows would fix that and cost a fifth of a short
+ * terminal permanently, so this is the compromise the rule actually asks for: identity and scope always
+ * visible, warnings reduced to a count that says where the detail is.
+ *
+ * A count rather than the text, deliberately. One warning wrapped over two lines is a header that changes
+ * height, which is the one thing a fixed-height frame cannot have.
+ */
+export function titleLine(header: ScreenHeader, width: number): string {
+    const parts = [header.title]
+    if (header.agent !== undefined) parts.push(header.agent.name, header.agent.model)
+    const warnings = header.warnings ?? []
+    if (warnings.length > 0) {
+        parts.push(`\u26a0 ${warnings.length} note${warnings.length === 1 ? "" : "s"} at the top`)
+    }
+    return clip(parts.join(SEPARATOR), width)
+}
+
 /** The hint every alternate-screen surface carries, so no screen invents its own word for leaving. */
 export const QUIT_HINT: KeyHint = { key: "q", does: "back" }
 

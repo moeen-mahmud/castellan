@@ -27,6 +27,22 @@ export interface KeyContext {
     readonly lastLine: boolean
     /** `^R` is open, so enter accepts a match and escape closes it. */
     readonly searching: boolean
+    /**
+     * A first ^C has already been pressed at an idle prompt, so the next one leaves.
+     *
+     * Held by the caller rather than derived, because it is the one piece of keyboard state with a
+     * *clock* attached — it expires — and a pure function cannot own that. What it must not do is
+     * decide what an armed ^C means, which is why the flag comes in here and the decision stays below.
+     */
+    readonly armed: boolean
+    /**
+     * The transcript window is parked above the newest row, so escape means "come back down".
+     *
+     * Escape had nothing to do at an idle prompt and was claimed as `none` to keep control characters
+     * out of the buffer. A scrolled-away view is the one state where a reader plainly wants a way out
+     * of where they are, and escape is the key they will press.
+     */
+    readonly scrolled: boolean
 }
 
 /**
@@ -36,7 +52,11 @@ export interface KeyContext {
  * — editor state passed to the keymap as context — and the two line flags are the same idea; a caller
  * that got `firstLine` wrong would make the arrows misbehave in a way no test of this module would see.
  */
-export function keyContext(editor: EditorState, busy: boolean): KeyContext {
+export function keyContext(
+    editor: EditorState,
+    busy: boolean,
+    session: { readonly armed?: boolean; readonly scrolled?: boolean } = {},
+): KeyContext {
     const { line, lines } = lineInfo(editor)
     return {
         busy,
@@ -44,6 +64,8 @@ export function keyContext(editor: EditorState, busy: boolean): KeyContext {
         firstLine: line === 0,
         lastLine: line === lines - 1,
         searching: editor.search !== undefined,
+        armed: session.armed ?? false,
+        scrolled: session.scrolled ?? false,
     }
 }
 
@@ -57,7 +79,16 @@ function ctrlIntent(letter: string, context: KeyContext): Intent {
             if (context.searching) return { kind: "searchCancel" }
             // The whole point. Busy means a turn is generating; interrupting it must leave the
             // prompt behind, not the shell.
-            return context.busy ? { kind: "cancel" } : { kind: "exit" }
+            if (context.busy) return { kind: "cancel" }
+            // At an idle prompt it takes two, and the first one says so.
+            //
+            // One press used to exit, which was defensible while the session left its conversation in
+            // the scrollback: ^C landed you back in a shell with the transcript still above it. On the
+            // alternate screen the buffer is discarded on the way out, so the same keystroke now throws
+            // the visible conversation away — and it is one press away from the chord that means
+            // "cancel this turn", pressed reflexively when a reply runs long. ^D still leaves in one,
+            // for anyone who wants that, and the status line names whichever is live.
+            return context.armed ? { kind: "exit" } : { kind: "arm" }
         case "d":
             // Ctrl-D is end-of-input, so it only ends the session when there is nothing to submit.
             // On a line with text it is a forward delete, as in a shell.
@@ -112,6 +143,13 @@ export function keyToIntent(input: string, key: KeyState, context: KeyContext): 
     // Both spellings of each are honoured, so the same binding works in both families of terminal.
     if (key.meta) {
         if (key.return) return { kind: "newline" }
+        // ⌥↑/⌥↓ walk the conversation a row at a time, and ⌥PgUp/⌥PgDn go to its ends. Bare ↑/↓ cannot
+        // do this: they already mean line movement inside a message and history at its edges, and a
+        // third meaning on one key is how a keyboard stops being predictable.
+        if (key.pageUp) return { kind: "scroll", move: "top" }
+        if (key.pageDown) return { kind: "scroll", move: "bottom" }
+        if (key.upArrow) return { kind: "scroll", move: "up" }
+        if (key.downArrow) return { kind: "scroll", move: "down" }
         if (key.leftArrow || input === "b") return { kind: "wordLeft" }
         if (key.rightArrow || input === "f") return { kind: "wordRight" }
         if (key.backspace) return { kind: "killWord" }
@@ -126,6 +164,15 @@ export function keyToIntent(input: string, key: KeyState, context: KeyContext): 
     // iTerm2, VS Code, Ghostty and Kitty to send the sequence Ink already understands. Where it
     // cannot, this is never true and ⏎ submits, which is why ⌥⏎ is the documented chord.
     if (key.return && key.shift) return { kind: "newline" }
+
+    // Paging the conversation, unmodified.
+    //
+    // Deliberately not ^U/^D, which the plan named: both are already taken by the editor — ^U deletes to
+    // the start of the line and ^D leaves an empty one — and they are documented, shell-standard, and
+    // reached by muscle memory. A scroll key that silently deleted half a message would be a worse bug
+    // than no scroll key.
+    if (key.pageUp) return { kind: "scroll", move: "pageUp" }
+    if (key.pageDown) return { kind: "scroll", move: "pageDown" }
 
     if (key.return) return context.searching ? { kind: "searchAccept" } : { kind: "submit" }
     if (key.backspace) return { kind: "backspace" }
@@ -146,7 +193,10 @@ export function keyToIntent(input: string, key: KeyState, context: KeyContext): 
     // Escape closes a search; otherwise it is claimed deliberately and does nothing, rather than
     // falling through to the insert branch where it would put a control character into the buffer and
     // be sent to a model. Tab is claimed for the same reason.
-    if (key.escape) return context.searching ? { kind: "searchCancel" } : { kind: "none" }
+    if (key.escape) {
+        if (context.searching) return { kind: "searchCancel" }
+        return context.scrolled ? { kind: "scroll", move: "bottom" } : { kind: "none" }
+    }
     if (key.tab) return { kind: "none" }
 
     // A paste arrives as one large `input` with no key flags, so insert has to accept many
@@ -304,6 +354,10 @@ export function keyToWizardIntent(
         firstLine: true,
         lastLine: true,
         searching: false,
+        // A question is not a conversation: there is nothing to scroll and nothing to arm, and Esc is
+        // claimed above as "back a question" before this is ever reached.
+        armed: false,
+        scrolled: false,
     })
     switch (intent.kind) {
         case "submit":
@@ -311,6 +365,12 @@ export function keyToWizardIntent(
         case "exit":
             // ^D on an empty question line reads as "get me out", same as ^C.
             return { kind: "abort" }
+        case "arm":
+        case "scroll":
+            // Unreachable in practice — ^C is claimed as `abort` above and there is nothing to scroll —
+            // and listed rather than left to the default, so adding a session-only intent cannot
+            // silently become an edit the wizard applies to a field.
+            return { kind: "edit", intent: { kind: "none" } }
         case "historyPrev":
         case "historyNext":
             return { kind: "edit", intent: { kind: "none" } }

@@ -18,6 +18,7 @@
  * escape sequences, and the pane would render them as text.
  */
 
+import { findCommand } from "#lib/commands"
 import { spawnCaptureAsync } from "#lib/spawn"
 
 export interface SubcommandResult {
@@ -55,7 +56,38 @@ export function subcommandArgv(request: SubcommandRequest): readonly string[] {
     return [request.name, ...manifest, ...rest, "--plain"]
 }
 
+/**
+ * Why a pane must not run this request, if it must not.
+ *
+ * A pane captures a child to completion, so a command that never finishes is a pane that shows a spinner
+ * until the timeout fires and then reports being killed — thirty seconds of a frozen surface for a flag
+ * that worked perfectly at a shell. `daemon logs --follow` is the case: it exists precisely to keep
+ * printing until interrupted, and there is nothing for it to be interrupted *by* in here.
+ *
+ * Refused rather than quietly dropped. Dropping the flag would hand back the tail, which looks like a
+ * following command that stopped immediately — a wrong answer that reads as a right one. Keyed off the
+ * command's own spec, so a second command that grows a `follow` flag is covered with nothing to remember.
+ */
+export function paneRefusal(request: SubcommandRequest): string | undefined {
+    const spec = findCommand(request.name)
+    if (spec === undefined) return undefined
+    const follow = spec.flags.find((flag) => flag.name === "follow")
+    if (follow === undefined) return undefined
+    const tokens = request.rest.trim().split(/\s+/)
+    const asked = tokens.some(
+        (token) =>
+            token === "--follow" || (follow.short !== undefined && token === `-${follow.short}`),
+    )
+    if (!asked) return undefined
+    return `--follow keeps printing until it is interrupted, and a pane has nothing to interrupt it with. Run it in its own terminal: ${request.name} ${request.rest.trim()}`
+}
+
 export async function runSubcommand(request: SubcommandRequest): Promise<SubcommandResult> {
+    const refusal = paneRefusal(request)
+    // Non-zero, because it did not do what was asked. A refusal reported as success is the shape hard
+    // rule 8 forbids, whatever the message says.
+    if (refusal !== undefined) return { lines: [refusal], code: 1 }
+
     const interpreter = request.interpreter ?? process.execPath
     const script = request.script ?? process.argv[1] ?? ""
     const result = await spawnCaptureAsync({

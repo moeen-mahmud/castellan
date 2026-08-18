@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { AnyEvent } from "@castellan/core"
 import type { TranscriptState } from "#lib/types"
-import { EMPTY_TRANSCRIPT, reduce, type TranscriptAction } from "#transcript"
+import { EMPTY_TRANSCRIPT, reduce, type TranscriptAction, transcriptRows } from "#transcript"
 
 /**
  * Envelope fields the reducer never reads. The cast is needed only because TypeScript cannot check
@@ -405,5 +405,107 @@ describe("filtered deltas", () => {
             { kind: "delta", of: "text", text: "answer" },
         ])
         expect(state.live).toEqual({ text: "answer", reasoning: "thinking…", last: "text" })
+    })
+})
+
+describe("transcriptRows — the finished conversation as rows", () => {
+    const ITEMS = [
+        { id: "a", role: "user" as const, text: "what is the time" },
+        { id: "b", role: "assistant" as const, text: "half past four" },
+    ]
+
+    test("a row is a row on screen: prefix included, width respected", () => {
+        const rows = transcriptRows(ITEMS, { showReasoning: false, quiet: false, columns: 80 })
+        expect(rows.map((row) => row.text)).toEqual(["› what is the time", "", "half past four"])
+        for (const row of rows) expect([...row.text].length).toBeLessThanOrEqual(80)
+    })
+
+    test("a wrapped reply is indented to its prefix, so it reads as one message", () => {
+        const rows = transcriptRows([{ id: "a", role: "user", text: "alpha beta gamma delta" }], {
+            showReasoning: false,
+            quiet: false,
+            columns: 14,
+        })
+        // The continuation lines carry a blank gutter of the prefix's width rather than starting a column
+        // to its left, which is what made a two-line message read as two messages.
+        expect(rows.map((row) => row.text)).toEqual(["› alpha beta", "  gamma delta"])
+    })
+
+    test("scrolling by rows means a long reply can be entered part-way", () => {
+        // The property an item-indexed window cannot have: page-up from the bottom of a forty-row answer
+        // would jump over the whole thing and land on the question before it.
+        const long = [{ id: "a", role: "assistant" as const, text: "word ".repeat(200) }]
+        const rows = transcriptRows(long, { showReasoning: false, quiet: false, columns: 40 })
+        expect(rows.length).toBeGreaterThan(10)
+    })
+
+    test("reasoning is dropped unless asked for", () => {
+        const items = [
+            { id: "a", role: "reasoning" as const, text: "thinking" },
+            { id: "b", role: "assistant" as const, text: "answer" },
+        ]
+        const hidden = transcriptRows(items, {
+            showReasoning: false,
+            quiet: false,
+            columns: 80,
+        })
+        const shown = transcriptRows(items, { showReasoning: true, quiet: false, columns: 80 })
+        expect(hidden.map((row) => row.text).join(" ")).not.toContain("thinking")
+        expect(shown.map((row) => row.text).join(" ")).toContain("thinking")
+    })
+
+    test("stats ride under their reply, and quiet drops them", () => {
+        const items = [
+            {
+                id: "a",
+                role: "assistant" as const,
+                text: "done",
+                stats: {
+                    promptTokens: 10,
+                    outputTokens: 5,
+                    durationMs: 1000,
+                    steps: 1,
+                    reason: "final",
+                },
+            },
+        ]
+        const loud = transcriptRows(items, { showReasoning: false, quiet: false, columns: 80 })
+        const quiet = transcriptRows(items, { showReasoning: false, quiet: true, columns: 80 })
+        expect(loud.length).toBe(2)
+        expect(loud[1]?.dim).toBe(true)
+        expect(quiet.length).toBe(1)
+    })
+
+    test("the banner loses its border and keeps its content", () => {
+        // A bordered box inside a windowed list costs two rows this module cannot count, because Ink
+        // measures the frame and we do not. The frame was decoration on a surface that is now one.
+        const rows = transcriptRows(
+            [{ id: "a", role: "banner", text: "the product 0.1.0\nsession local:default" }],
+            { showReasoning: false, quiet: false, columns: 80 },
+        )
+        expect(rows[0]).toEqual({
+            key: "a:title",
+            role: "banner",
+            text: "the product 0.1.0",
+            bold: true,
+        })
+        expect(rows[1]?.text).toBe("session local:default")
+        expect(rows.every((row) => !row.text.includes("╭"))).toBe(true)
+    })
+
+    test("keys are unique, so two identical replies are two rows", () => {
+        const twice = [
+            { id: "a", role: "assistant" as const, text: "yes" },
+            { id: "b", role: "assistant" as const, text: "yes" },
+        ]
+        const rows = transcriptRows(twice, { showReasoning: false, quiet: false, columns: 80 })
+        expect(new Set(rows.map((row) => row.key)).size).toBe(rows.length)
+    })
+
+    test("no trailing blank row", () => {
+        // A gap before each item after the first, never after the last: a trailing one would be a
+        // permanent empty line above the composer.
+        const rows = transcriptRows(ITEMS, { showReasoning: false, quiet: false, columns: 80 })
+        expect(rows.at(-1)?.text).not.toBe("")
     })
 })

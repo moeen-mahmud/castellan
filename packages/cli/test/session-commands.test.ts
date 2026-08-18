@@ -179,6 +179,8 @@ const NO_KEYS: KeyState = {
     downArrow: false,
     leftArrow: false,
     rightArrow: false,
+    pageUp: false,
+    pageDown: false,
     return: false,
     escape: false,
     ctrl: false,
@@ -191,8 +193,24 @@ const NO_KEYS: KeyState = {
 
 /** Both, because `^C` and `^D` answer differently depending on which one holds. */
 const CONTEXTS: readonly KeyContext[] = [
-    { busy: false, empty: true, firstLine: true, lastLine: true, searching: false },
-    { busy: true, empty: false, firstLine: true, lastLine: true, searching: false },
+    {
+        busy: false,
+        empty: true,
+        firstLine: true,
+        lastLine: true,
+        searching: false,
+        armed: false,
+        scrolled: false,
+    },
+    {
+        busy: true,
+        empty: false,
+        firstLine: true,
+        lastLine: true,
+        searching: false,
+        armed: false,
+        scrolled: false,
+    },
 ]
 
 function honoured(letter: string): boolean {

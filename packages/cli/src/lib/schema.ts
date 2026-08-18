@@ -5,13 +5,14 @@
 
 import type { Agent, EventBus } from "@castellan/core"
 import type { BrowseRow, InstallReport } from "#lib/browse"
+import type { Slice } from "#lib/scroll"
 import type { CatalogueEntry } from "#lib/source-cache"
 import type {
     EditorState,
     EnvFacts,
     LiveTurn,
     RenderMode,
-    TranscriptItem,
+    TranscriptRow,
     TranscriptState,
     TurnStats,
     TurnStatus,
@@ -257,12 +258,25 @@ export interface AppProps {
             manifestPath: string,
         ) => Promise<InstallReport>
     }
+    /** The agent's id, for the one-line header. Distinct from `model`, which is the endpoint's. */
+    readonly agentName: string
+    /**
+     * Load warnings, as a count in the header.
+     *
+     * The messages themselves are already in the banner. What the header needs is the *number*, because
+     * on the alternate screen the banner scrolls out of the window and a session-wide fact that has
+     * scrolled away is a fact nobody has. Passed in rather than read off the agent here, so the component
+     * stays testable with a plain array — and so the CLI's own demoted-variable notes are counted
+     * alongside the runtime's, which only the host knows about.
+     */
+    readonly warnings?: readonly string[]
 }
 
 export interface TranscriptProps {
-    readonly items: readonly TranscriptItem[]
-    readonly showReasoning: boolean
-    readonly quiet: boolean
+    /** Already flattened and wrapped by `transcriptRows`, so a row here is a row on screen. */
+    readonly rows: readonly TranscriptRow[]
+    /** Which of them to draw, and how many are out of sight. Decided by `lib/scroll.ts`. */
+    readonly slice: Slice
 }
 
 export interface LiveProps {
@@ -278,6 +292,14 @@ export interface StatusBarProps {
     readonly elapsedMs: number
     readonly last: TurnStats | undefined
     readonly quiet: boolean
+    /**
+     * A ^C has been pressed at an idle prompt and the next one leaves.
+     *
+     * On the status line rather than in a popup because this is where the ^C hint already lives, and the
+     * two have to be the same sentence: a footer that reads "^C exits" while a first press has already
+     * been absorbed is a footer that lied about the keystroke somebody just made.
+     */
+    readonly armed?: boolean
 }
 
 export interface PromptProps {

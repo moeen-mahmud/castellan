@@ -109,3 +109,32 @@ export const EXIT_SIGTERM = 143
 
 /** Rows a pane over the conversation may use — a command's output, or a hosted view. */
 export const PANE_ROWS = 16
+
+/**
+ * The fewest rows a scrolling body is ever given.
+ *
+ * A floor rather than a target. At eight terminal rows the chrome alone — header, composer, status —
+ * accounts for most of the screen, and the alternative to a floor is a body of zero rows: a session
+ * that shows the prompt and no conversation at all, which reads as a broken renderer rather than as a
+ * window somebody should make taller.
+ */
+export const MIN_BODY_ROWS = 3
+
+/**
+ * How often `daemon logs --follow` checks a service log for new bytes.
+ *
+ * Polled rather than watched: `fs.watch` on macOS reports another process's appends unreliably, and a
+ * follower that misses the line somebody is waiting for is worse than one that arrives a third of a
+ * second late — the reason to watch a log live is not trusting what you have been told. Ctrl-C wakes the
+ * pending sleep rather than waiting it out, so this interval never delays a stop.
+ */
+export const LOG_POLL_MS = 300
+
+/**
+ * How long a ^C at an idle prompt stays armed.
+ *
+ * The chord is doubled rather than immediate because a single ^C means "cancel the turn" everywhere
+ * else in this session, and the two are one keystroke apart. Long enough to be a deliberate second
+ * press, short enough that an armed prompt left alone goes back to being safe.
+ */
+export const EXIT_ARM_MS = 2000

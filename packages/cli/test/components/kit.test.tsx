@@ -27,9 +27,14 @@ import { TextField } from "#components/TextField"
 import { Transcript } from "#components/Transcript"
 import { WizardFrame } from "#components/WizardFrame"
 import { applyIntent, EMPTY_EDITOR } from "#editor"
-import { MAX_INPUT_ROWS } from "#lib/const"
+import { paletteRows, promptRows, searchRows } from "#lib/chat-frame"
+import { LIVE_PANE_MAX_ROWS, MAX_INPUT_ROWS, SEARCH_ROWS } from "#lib/const"
 import { paletteFor } from "#lib/palette"
+import { FOLLOWING, slice } from "#lib/scroll"
 import { GLYPH, SPINNER_FRAMES, SPINNER_INTERVAL_MS } from "#lib/theme"
+import type { EditorState } from "#lib/types"
+import { livePane } from "#lib/wrap"
+import { transcriptRows } from "#transcript"
 import { mount, overflowing, renderFrame } from "../helpers/frame.tsx"
 
 const editorWith = (value: string, cursor = value.length) => ({ ...EMPTY_EDITOR, value, cursor })
@@ -292,22 +297,71 @@ describe("Live", () => {
 })
 
 describe("Transcript", () => {
+    const ITEMS = [
+        { id: "1", role: "user" as const, text: "hello" },
+        { id: "2", role: "assistant" as const, text: "hi" },
+        { id: "3", role: "error" as const, text: "it broke" },
+    ]
+
+    function rowsOf(columns = 80) {
+        return transcriptRows(ITEMS, { showReasoning: false, quiet: false, columns })
+    }
+
     test("prefixes each role distinctly", () => {
+        const rows = rowsOf()
         const frame = renderFrame(
-            h(Transcript, {
-                items: [
-                    { id: "1", role: "user", text: "hello" },
-                    { id: "2", role: "assistant", text: "hi" },
-                    { id: "3", role: "error", text: "it broke" },
-                ],
-                showReasoning: false,
-                quiet: false,
-            }),
+            h(Transcript, { rows, slice: slice(FOLLOWING, rows.length, rows.length) }),
             { columns: 80 },
         )
         expect(frame.text).toContain("hello")
         expect(frame.text).toContain("hi")
         expect(frame.text).toContain("it broke")
+    })
+
+    test("a window shows its slice and counts what is out of sight", () => {
+        // The property `<Static>` used to make impossible: a transcript taller than its window, with the
+        // reader parked somewhere in the middle of it and told so.
+        const rows = rowsOf()
+        const frame = renderFrame(
+            h(Transcript, { rows, slice: slice({ offset: 0, pinned: false }, rows.length, 2) }),
+            { columns: 80 },
+        )
+        expect(frame.text).toContain("hello")
+        expect(frame.text).not.toContain("it broke")
+        expect(frame.text).toContain(`${rows.length - 2} rows below`)
+    })
+
+    test("the counter row is drawn even when there is nothing to count", () => {
+        // Reserved rather than conditional. The caller's window already excludes this row, so appearing
+        // only when it has something to say would hand the conversation an extra row on exactly the frame
+        // where somebody scrolled — and the layout would jump at the moment they were reading it.
+        const rows = rowsOf()
+        const whole = renderFrame(
+            h(Transcript, { rows, slice: slice(FOLLOWING, rows.length, rows.length) }),
+            { columns: 80 },
+        )
+        expect(whole.lines.length).toBe(rows.length + 1)
+    })
+
+    test("every row fits the width it was wrapped for", () => {
+        for (const columns of [40, 60, 80, 100, 140]) {
+            const long = [
+                {
+                    id: "1",
+                    role: "assistant" as const,
+                    text: "the quick brown fox ".repeat(30),
+                },
+            ]
+            const rows = transcriptRows(long, { showReasoning: false, quiet: false, columns })
+            const frame = renderFrame(
+                h(Transcript, { rows, slice: slice(FOLLOWING, rows.length, rows.length) }),
+                { columns },
+            )
+            expect(overflowing(frame, columns)).toEqual([])
+            // Wrapped by us, not by Ink: the row count the window scrolled by has to be the row count
+            // painted, or the tail of a reply ends up under the composer.
+            expect(frame.lines.length).toBe(rows.length + 1)
+        }
     })
 })
 
@@ -653,5 +707,76 @@ describe("CommandOutput", () => {
             { columns: 60 },
         )
         expect(overflowing(frame, 60)).toEqual([])
+    })
+})
+
+describe("the chat frame's arithmetic matches what is drawn", () => {
+    /**
+     * The hazard `lib/chat-frame.ts` documents, pinned.
+     *
+     * That module restates each component's geometry, because the layout has to be decided before
+     * anything is drawn — on the alternate screen a frame one row too tall scrolls the buffer and the
+     * status line ends up halfway up the display. A restatement can drift from what it describes, and the
+     * only thing that catches it is asserting the number against the actual render.
+     */
+    function multi(lines: number): EditorState {
+        return {
+            ...EMPTY_EDITOR,
+            value: Array.from({ length: lines }, (_, at) => `line ${at}`).join("\n"),
+        }
+    }
+
+    test("the composer, empty and composing", () => {
+        for (const lines of [1, 2, 5, MAX_INPUT_ROWS, MAX_INPUT_ROWS + 4]) {
+            const editor = multi(lines)
+            const frame = renderFrame(h(Prompt, { editor, busy: false }), { columns: 80 })
+            expect(promptRows(editor)).toBe(frame.lines.length)
+        }
+    })
+
+    test("the composer with the cursor scrolled into a long message", () => {
+        // `LineCursor` follows the cursor through `viewport`, so which notices it draws depends on where
+        // the cursor is — which is why `promptRows` calls the same function rather than guessing.
+        let editor = multi(MAX_INPUT_ROWS + 6)
+        for (let up = 0; up < 8; up += 1) editor = applyIntent(editor, { kind: "lineUp" })
+        const frame = renderFrame(h(Prompt, { editor, busy: false }), { columns: 80 })
+        expect(promptRows(editor)).toBe(frame.lines.length)
+    })
+
+    test("the palette, matching many, one, and nothing", () => {
+        for (const query of ["/", "/st", "/status", "/zzz"]) {
+            const palette = paletteFor(query)
+            expect(palette).toBeDefined()
+            if (palette === undefined) continue
+            const frame = renderFrame(
+                h(Palette, { palette, index: 0, width: 80, maxRows: SEARCH_ROWS }),
+                { columns: 80 },
+            )
+            expect(paletteRows(palette, SEARCH_ROWS)).toBe(frame.lines.length)
+        }
+    })
+
+    test("the history search, with matches and without", () => {
+        const typed = { ...EMPTY_EDITOR, history: ["what is the time", "who am i"] }
+        for (const query of ["", "who", "nothing like this"] as const) {
+            let editor = applyIntent(typed, { kind: "searchOpen" })
+            for (const char of query) editor = applyIntent(editor, { kind: "insert", text: char })
+            const frame = renderFrame(
+                h(HistorySearch, { editor, width: 80, maxRows: SEARCH_ROWS }),
+                { columns: 80 },
+            )
+            expect(searchRows(editor, SEARCH_ROWS)).toBe(frame.lines.length)
+        }
+    })
+
+    test("the live pane, short and clipped", () => {
+        for (const words of [3, 40, 400]) {
+            const text = "token ".repeat(words).trim()
+            const live = { text, reasoning: "", last: "text" as const }
+            const frame = renderFrame(h(Live, { live, showReasoning: false, columns: 80 }), {
+                columns: 80,
+            })
+            expect(livePane(text, 80, LIVE_PANE_MAX_ROWS).rows).toBe(frame.lines.length)
+        }
     })
 })
