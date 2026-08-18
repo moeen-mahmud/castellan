@@ -191,8 +191,8 @@ const NO_KEYS: KeyState = {
 
 /** Both, because `^C` and `^D` answer differently depending on which one holds. */
 const CONTEXTS: readonly KeyContext[] = [
-    { busy: false, empty: true },
-    { busy: true, empty: false },
+    { busy: false, empty: true, firstLine: true, lastLine: true, searching: false },
+    { busy: true, empty: false, firstLine: true, lastLine: true, searching: false },
 ]
 
 function honoured(letter: string): boolean {

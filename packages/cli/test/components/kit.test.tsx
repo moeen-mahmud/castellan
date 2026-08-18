@@ -1,0 +1,527 @@
+/**
+ * The kit's small components, as painted.
+ *
+ * One file for the presentational pieces — banner, spinner, lists, cards, fields, cursor — because each
+ * is a handful of assertions and a file each would be sixteen imports of the same harness. The screen
+ * roots that own state and input get their own files.
+ *
+ * What these are worth: `LineCursor` splits on code points so a cursor never lands inside a surrogate
+ * pair, and `maskSecret`-adjacent rendering must never leak a value. Both were only ever asserted at the
+ * data layer, where "the state is right" and "the screen shows the right thing" are different claims.
+ */
+
+import { describe, expect, test } from "bun:test"
+import { createElement as h } from "react"
+import { Banner } from "#components/Banner"
+import { HistorySearch } from "#components/HistorySearch"
+import { LineCursor } from "#components/LineCursor"
+import { Live } from "#components/Live"
+import { Prompt } from "#components/Prompt"
+import { SelectList } from "#components/SelectList"
+import { Spinner } from "#components/Spinner"
+import { StatusBar } from "#components/StatusBar"
+import { SummaryCard } from "#components/SummaryCard"
+import { TextField } from "#components/TextField"
+import { Transcript } from "#components/Transcript"
+import { WizardFrame } from "#components/WizardFrame"
+import { applyIntent, EMPTY_EDITOR } from "#editor"
+import { MAX_INPUT_ROWS } from "#lib/const"
+import { GLYPH, SPINNER_FRAMES, SPINNER_INTERVAL_MS } from "#lib/theme"
+import { mount, overflowing, renderFrame } from "../helpers/frame.tsx"
+
+const editorWith = (value: string, cursor = value.length) => ({ ...EMPTY_EDITOR, value, cursor })
+
+describe("Banner", () => {
+    test("shows the title and every context line", () => {
+        const frame = renderFrame(
+            h(Banner, { title: "Skills", lines: ["space ticks", "enter installs"] }),
+            { columns: 80 },
+        )
+        expect(frame.text).toContain("Skills")
+        expect(frame.text).toContain("space ticks")
+        expect(frame.text).toContain("enter installs")
+    })
+
+    test("stretches to the terminal rather than fitting its content", () => {
+        // Every boxed surface is full width — content-fit boxes beside full-width ones read as
+        // different components, and one rule everywhere is what makes the screens look like one thing.
+        const narrow = renderFrame(h(Banner, { title: "x", lines: [] }), { columns: 60 })
+        const wide = renderFrame(h(Banner, { title: "x", lines: [] }), { columns: 100 })
+        expect(wide.widest).toBeGreaterThan(narrow.widest)
+    })
+})
+
+describe("Spinner", () => {
+    test("shows a frame glyph beside its label", () => {
+        const frame = renderFrame(h(Spinner, { label: "fetching the catalogue" }), { columns: 80 })
+        expect(frame.text).toContain("fetching the catalogue")
+        expect(SPINNER_FRAMES.some((glyph) => frame.text.includes(glyph))).toBe(true)
+    })
+
+    test("advances — the whole reason it exists", async () => {
+        // A spinner that renders one frame and stops is indistinguishable from a hung process, which
+        // is the failure it was added to prevent.
+        const harness = mount(h(Spinner, { label: "working" }), { columns: 80 })
+        const first = harness.frame().text
+        await harness.settle(SPINNER_INTERVAL_MS * 3)
+        const later = harness.frame().text
+        harness.unmount()
+        expect(later).not.toBe(first)
+    })
+})
+
+describe("SelectList", () => {
+    const items = [
+        { label: "milo", hint: "qwen3.5:9b" },
+        { label: "ada", hint: "claude-sonnet" },
+    ]
+
+    test("marks exactly one row and shows the hints", () => {
+        const frame = renderFrame(h(SelectList, { items, index: 1 }), { columns: 80 })
+        expect(frame.lines.filter((line) => line.includes(GLYPH.pointer.trim()))).toHaveLength(1)
+        expect(frame.lines[1]).toContain("ada")
+        expect(frame.text).toContain("qwen3.5:9b")
+    })
+
+    test("numbers the rows when asked, starting at one", () => {
+        const frame = renderFrame(h(SelectList, { items, index: 0, numbered: true }), {
+            columns: 80,
+        })
+        expect(frame.lines[0]).toContain("1. milo")
+        expect(frame.lines[1]).toContain("2. ada")
+    })
+})
+
+describe("SummaryCard", () => {
+    test("aligns the values in a column past the widest label", () => {
+        const frame = renderFrame(
+            h(SummaryCard, {
+                rows: [
+                    { label: "agent", value: "milo" },
+                    { label: "endpoint", value: "http://localhost:11434/v1" },
+                ],
+            }),
+            { columns: 80 },
+        )
+        const starts = ["milo", "http://localhost:11434/v1"].map((value) =>
+            (frame.lines.find((line) => line.includes(value)) ?? "").indexOf(value),
+        )
+        expect(new Set(starts).size).toBe(1)
+    })
+})
+
+describe("LineCursor", () => {
+    test("draws the cursor inside the line, not past it", () => {
+        const frame = renderFrame(h(LineCursor, { editor: editorWith("hello", 2) }), {
+            columns: 80,
+        })
+        expect(frame.text).toContain("hello")
+    })
+
+    test("an emoji is one cursor step, not two", () => {
+        // `"👍".length` is 2, so a cursor counted in UTF-16 units lands inside the surrogate pair and
+        // one backspace leaves half a character that renders as a replacement glyph.
+        const frame = renderFrame(h(LineCursor, { editor: editorWith("👍ok", 1) }), { columns: 80 })
+        expect(frame.text).toContain("👍")
+        expect(frame.text).not.toContain("�")
+    })
+
+    test("a secret is never rendered, not even to the person typing it", () => {
+        const frame = renderFrame(
+            h(LineCursor, { editor: editorWith("sk-live-abc123"), secret: true }),
+            { columns: 80 },
+        )
+        expect(frame.text).not.toContain("sk-live")
+        expect(frame.text).not.toContain("abc123")
+    })
+
+    test("the placeholder shows only while the buffer is empty", () => {
+        expect(
+            renderFrame(h(LineCursor, { editor: EMPTY_EDITOR, placeholder: "local:default" }), {
+                columns: 80,
+            }).text,
+        ).toContain("local:default")
+        expect(
+            renderFrame(
+                h(LineCursor, { editor: editorWith("mine"), placeholder: "local:default" }),
+                {
+                    columns: 80,
+                },
+            ).text,
+        ).not.toContain("local:default")
+    })
+})
+
+describe("TextField", () => {
+    test("shows the label, the value and a validation failure together", () => {
+        const frame = renderFrame(
+            h(TextField, {
+                label: "Your name",
+                editor: editorWith("ada-lovelace"),
+                error: "a Telegram username has no hyphens",
+            }),
+            { columns: 80 },
+        )
+        expect(frame.text).toContain("Your name")
+        expect(frame.text).toContain("ada-lovelace")
+        expect(frame.text).toContain("no hyphens")
+    })
+
+    test("a secret field renders neither the value nor a hint of its length in clear", () => {
+        const frame = renderFrame(
+            h(TextField, {
+                label: "Bot token",
+                editor: editorWith("123:AAH-secret"),
+                secret: true,
+            }),
+            { columns: 80 },
+        )
+        expect(frame.text).not.toContain("AAH-secret")
+    })
+})
+
+describe("Prompt", () => {
+    test("renders the prompt glyph and the line", () => {
+        const frame = renderFrame(
+            h(Prompt, { editor: editorWith("what can you do"), busy: false }),
+            {
+                columns: 80,
+            },
+        )
+        expect(frame.text).toContain("what can you do")
+    })
+
+    test("is drawn while a turn is running rather than disappearing", () => {
+        // The box changes colour when busy; it must not vanish, or there is nothing on screen saying
+        // where typing would go.
+        const frame = renderFrame(h(Prompt, { editor: EMPTY_EDITOR, busy: true }), { columns: 80 })
+        expect(frame.lines.length).toBeGreaterThan(0)
+    })
+})
+
+describe("StatusBar", () => {
+    test("names the state in words, not only a colour", () => {
+        const frame = renderFrame(
+            h(StatusBar, {
+                status: "working",
+                model: "qwen3.5:9b",
+                sessionKey: "local:default",
+                elapsedMs: 4200,
+                last: undefined,
+                quiet: false,
+            }),
+            { columns: 100 },
+        )
+        // A dot alone is unreadable without colour, and colour is unavailable over some pipes and to
+        // some readers.
+        expect(frame.text).toContain("running a tool")
+        expect(frame.text).toContain("qwen3.5:9b")
+    })
+
+    test("shows the elapsed counter, which is what separates slow from hung", () => {
+        const frame = renderFrame(
+            h(StatusBar, {
+                status: "thinking",
+                model: "m",
+                sessionKey: "s",
+                elapsedMs: 12_300,
+                last: undefined,
+                quiet: false,
+            }),
+            { columns: 100 },
+        )
+        expect(frame.text).toContain("12.3s")
+    })
+})
+
+describe("Live", () => {
+    test("renders streaming text", () => {
+        const frame = renderFrame(
+            h(Live, {
+                live: { text: "the answer is", reasoning: "", last: "text" },
+                showReasoning: true,
+                columns: 80,
+            }),
+            { columns: 80 },
+        )
+        expect(frame.text).toContain("the answer is")
+    })
+
+    test("shows reasoning only until real text arrives", () => {
+        const thinking = renderFrame(
+            h(Live, {
+                live: { text: "", reasoning: "let me check", last: "reasoning" },
+                showReasoning: true,
+                columns: 80,
+            }),
+            { columns: 80 },
+        )
+        expect(thinking.text).toContain("let me check")
+        const answering = renderFrame(
+            h(Live, {
+                live: { text: "here", reasoning: "let me check", last: "text" },
+                showReasoning: true,
+                columns: 80,
+            }),
+            { columns: 80 },
+        )
+        expect(answering.text).not.toContain("let me check")
+    })
+
+    test("caps the pane in rows and says how many are hidden", () => {
+        // Ink redraws its whole dynamic tree every frame, so an unbounded live region means redrawing
+        // hundreds of lines per token.
+        const frame = renderFrame(
+            h(Live, {
+                live: {
+                    text: Array.from({ length: 40 }, (_, at) => `row ${at}`).join("\n"),
+                    reasoning: "",
+                    last: "text",
+                },
+                showReasoning: false,
+                columns: 80,
+            }),
+            { columns: 80 },
+        )
+        expect(frame.text).toContain("hidden while streaming")
+        expect(frame.lines.length).toBeLessThan(20)
+    })
+})
+
+describe("Transcript", () => {
+    test("prefixes each role distinctly", () => {
+        const frame = renderFrame(
+            h(Transcript, {
+                items: [
+                    { id: "1", role: "user", text: "hello" },
+                    { id: "2", role: "assistant", text: "hi" },
+                    { id: "3", role: "error", text: "it broke" },
+                ],
+                showReasoning: false,
+                quiet: false,
+            }),
+            { columns: 80 },
+        )
+        expect(frame.text).toContain("hello")
+        expect(frame.text).toContain("hi")
+        expect(frame.text).toContain("it broke")
+    })
+})
+
+describe("WizardFrame", () => {
+    // JSX rather than `createElement` here, and only here: `WizardFrame` requires `children`, which
+    // TypeScript will not accept from createElement's third argument and biome will not accept inside
+    // the props object. JSX passes children the way the component declares them, so neither rule has to
+    // be bent and the component's API does not change to suit a test.
+    test("shows the step counter, the answered rows and the hint", () => {
+        const frame = renderFrame(
+            <WizardFrame
+                step={3}
+                total={21}
+                answered={[{ label: "Your name", value: "Moeen" }]}
+                hint="enter accepts the default"
+            >
+                {null}
+            </WizardFrame>,
+            { columns: 80 },
+        )
+        expect(frame.text).toContain("3")
+        expect(frame.text).toContain("21")
+        expect(frame.text).toContain("Moeen")
+        expect(frame.text).toContain("enter accepts the default")
+    })
+
+    test("nothing wraps at a narrow terminal", () => {
+        const frame = renderFrame(
+            <WizardFrame
+                step={19}
+                total={21}
+                answered={[
+                    { label: "Purpose", value: "keeps an eye on the deploy pipeline and says so" },
+                ]}
+                hint="space ticks · enter continues · esc goes back one question"
+            >
+                {null}
+            </WizardFrame>,
+            { columns: 60 },
+        )
+        expect(overflowing(frame, 60)).toEqual([])
+    })
+})
+
+// ─── stage 2: the composer ───────────────────────────────────────────────────────────────
+
+const multiline = (text: string, cursor = [...text].length) => ({
+    ...EMPTY_EDITOR,
+    value: text,
+    cursor,
+})
+
+describe("LineCursor, with more than one line", () => {
+    test("each line of the message is its own row", () => {
+        const frame = renderFrame(h(LineCursor, { editor: multiline("first\nsecond\nthird") }), {
+            columns: 80,
+        })
+        expect(frame.lines).toHaveLength(3)
+        expect(frame.lines[0]).toContain("first")
+        expect(frame.lines[2]).toContain("third")
+    })
+
+    test("the gutter is on the first line and the rest stay in the same column", () => {
+        // A glyph drawn beside the whole block would leave the second line one column to its left,
+        // reading as a separate message.
+        const frame = renderFrame(
+            h(LineCursor, { editor: multiline("first\nsecond"), gutter: "› " }),
+            { columns: 80 },
+        )
+        expect(frame.lines[0]).toContain("› first")
+        expect(frame.lines[1]?.indexOf("second")).toBe(frame.lines[0]?.indexOf("first"))
+    })
+
+    test("exactly one line carries the cursor", () => {
+        // Asserted through the inverse video the harness strips, so instead: the cursor line renders
+        // its text whole and no line is duplicated or lost.
+        const frame = renderFrame(h(LineCursor, { editor: multiline("aaa\nbbb", 5) }), {
+            columns: 80,
+        })
+        expect(frame.lines).toHaveLength(2)
+        expect(frame.lines[1]).toContain("bbb")
+    })
+
+    test("the box caps and says how many lines are out of sight", () => {
+        // Ink erases and redraws the dynamic region every frame, so an unbounded box redraws a pasted
+        // document on every keystroke — and pushes the conversation off the screen.
+        const long = Array.from({ length: 30 }, (_, at) => `line ${at}`).join("\n")
+        const frame = renderFrame(
+            h(LineCursor, { editor: multiline(long, 0), maxRows: MAX_INPUT_ROWS }),
+            { columns: 80 },
+        )
+        expect(frame.lines.length).toBeLessThanOrEqual(MAX_INPUT_ROWS + 2)
+        expect(frame.text).toContain("below")
+    })
+
+    test("the view follows the cursor to the end of a long message", () => {
+        const long = Array.from({ length: 30 }, (_, at) => `line ${at}`).join("\n")
+        const frame = renderFrame(
+            h(LineCursor, { editor: multiline(long), maxRows: MAX_INPUT_ROWS }),
+            { columns: 80 },
+        )
+        expect(frame.text).toContain("line 29")
+        expect(frame.text).toContain("above")
+    })
+})
+
+describe("Prompt, composing", () => {
+    test("names the newline chord only once the message has a second line", () => {
+        // A row spent on every empty prompt for something most messages never need.
+        const one = renderFrame(h(Prompt, { editor: multiline("one line"), busy: false }), {
+            columns: 80,
+        })
+        expect(one.text).not.toContain("⌥⏎")
+        const two = renderFrame(h(Prompt, { editor: multiline("one\ntwo"), busy: false }), {
+            columns: 80,
+        })
+        expect(two.text).toContain("⌥⏎")
+    })
+
+    test("does not advertise shift+enter, which it cannot know works", () => {
+        // Naming a chord that silently sends the message instead is worse than naming only ⌥⏎.
+        const frame = renderFrame(h(Prompt, { editor: multiline("one\ntwo"), busy: false }), {
+            columns: 80,
+        })
+        expect(frame.text).not.toContain("⇧")
+        expect(frame.text).not.toContain("shift")
+    })
+
+    test("the box grows with the message and stays inside the terminal", () => {
+        const frame = renderFrame(
+            h(Prompt, { editor: multiline("first\nsecond\nthird"), busy: false }),
+            { columns: 60 },
+        )
+        expect(frame.text).toContain("third")
+        expect(overflowing(frame, 60)).toEqual([])
+    })
+})
+
+describe("HistorySearch", () => {
+    const WITH_HISTORY = {
+        ...EMPTY_EDITOR,
+        value: "half a draft",
+        cursor: 12,
+        history: [
+            "what tools do you have",
+            "why does the outbox double-send on a crash",
+            "fix the loader so it reads the manifest first",
+        ],
+    }
+    const opened = (query: string) =>
+        [...query].reduce(
+            (state, char) => applyIntent(state, { kind: "insert", text: char }),
+            applyIntent(WITH_HISTORY, { kind: "searchOpen" }),
+        )
+
+    test("renders nothing at all when the search is closed", () => {
+        const frame = renderFrame(
+            h(HistorySearch, { editor: WITH_HISTORY, width: 80, maxRows: 6 }),
+            { columns: 80 },
+        )
+        expect(frame.text.trim()).toBe("")
+    })
+
+    test("lists the matches and shows the query being typed", () => {
+        const frame = renderFrame(
+            h(HistorySearch, { editor: opened("outbox"), width: 80, maxRows: 6 }),
+            {
+                columns: 80,
+            },
+        )
+        expect(frame.text).toContain("outbox double-send")
+        expect(frame.text).toContain("search: outbox")
+    })
+
+    test("marks exactly one match", () => {
+        const frame = renderFrame(h(HistorySearch, { editor: opened(""), width: 80, maxRows: 6 }), {
+            columns: 80,
+        })
+        expect(frame.lines.filter((line) => line.includes(GLYPH.pointer.trim()))).toHaveLength(1)
+    })
+
+    test("says so when nothing matches, rather than showing an empty box", () => {
+        const frame = renderFrame(
+            h(HistorySearch, { editor: opened("zzzz"), width: 80, maxRows: 6 }),
+            {
+                columns: 80,
+            },
+        )
+        expect(frame.text).toContain("nothing you have sent matches")
+    })
+
+    test("counts the matches when there is more than one to walk", () => {
+        const frame = renderFrame(h(HistorySearch, { editor: opened(""), width: 80, maxRows: 6 }), {
+            columns: 80,
+        })
+        expect(frame.text).toContain("1 of 3")
+    })
+
+    test("a multi-line entry is one row", () => {
+        const editor = applyIntent(
+            { ...WITH_HISTORY, history: ["first line\nsecond line\nthird line"] },
+            { kind: "searchOpen" },
+        )
+        const frame = renderFrame(h(HistorySearch, { editor, width: 80, maxRows: 6 }), {
+            columns: 80,
+        })
+        expect(frame.text).toContain("first line second line third line")
+    })
+
+    test("a long entry is clipped rather than wrapped", () => {
+        const editor = applyIntent(
+            { ...WITH_HISTORY, history: ["x".repeat(300)] },
+            { kind: "searchOpen" },
+        )
+        const frame = renderFrame(h(HistorySearch, { editor, width: 60, maxRows: 6 }), {
+            columns: 60,
+        })
+        expect(overflowing(frame, 60)).toEqual([])
+    })
+})

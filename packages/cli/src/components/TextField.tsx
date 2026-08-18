@@ -26,14 +26,18 @@ export function TextField({ label, editor, placeholder, error, secret }: TextFie
     return (
         <Box flexDirection="column">
             <Text>{label}</Text>
-            <Text>
-                <Text color={THEME.accent}>{GLYPH.prompt}</Text>
-                <LineCursor
-                    editor={editor}
-                    {...(placeholder === undefined ? {} : { placeholder })}
-                    {...(secret === true ? { secret: true } : {})}
-                />
-            </Text>
+            {/*
+             * The prompt glyph is the cursor's `gutter` rather than a sibling `<Text>`. Two reasons, and
+             * the second is not optional: it keeps a wrapped or multi-line value in one column, and
+             * `LineCursor` renders a `<Box>`, which inside a `<Text>` produces an empty frame — no error,
+             * nothing on screen. A frame test caught that; nothing else would have.
+             */}
+            <LineCursor
+                editor={editor}
+                gutter={GLYPH.prompt}
+                {...(placeholder === undefined ? {} : { placeholder })}
+                {...(secret === true ? { secret: true } : {})}
+            />
             {error === undefined ? null : (
                 <Text color={THEME.error}>
                     {GLYPH.error}

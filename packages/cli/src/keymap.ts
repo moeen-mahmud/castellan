@@ -7,19 +7,54 @@
  * tested against both states — rather than in a component where it can only be tested by hand.
  */
 
-import type { Intent, KeyState } from "#lib/types"
+import { lineInfo } from "#editor"
+import type { EditorState, Intent, KeyState } from "#lib/types"
 
 export interface KeyContext {
     /** A turn is in flight. */
     readonly busy: boolean
-    /** The input line is empty. */
+    /** The input buffer is empty. */
     readonly empty: boolean
+    /**
+     * The cursor is on the first line, so ↑ means history rather than a line up.
+     *
+     * Position decides, because a multi-line buffer wants both and every editor resolves it this way:
+     * at the top of what you are composing there is nothing above to move to, so the arrow is free to
+     * mean the other thing. `^P`/`^N` stay unconditional history for anyone who would rather not think
+     * about where the cursor is.
+     */
+    readonly firstLine: boolean
+    readonly lastLine: boolean
+    /** `^R` is open, so enter accepts a match and escape closes it. */
+    readonly searching: boolean
+}
+
+/**
+ * The context for a given editor state.
+ *
+ * Exported and derived in one place so no renderer computes it by hand. `empty` was already this shape
+ * — editor state passed to the keymap as context — and the two line flags are the same idea; a caller
+ * that got `firstLine` wrong would make the arrows misbehave in a way no test of this module would see.
+ */
+export function keyContext(editor: EditorState, busy: boolean): KeyContext {
+    const { line, lines } = lineInfo(editor)
+    return {
+        busy,
+        empty: editor.value === "",
+        firstLine: line === 0,
+        lastLine: line === lines - 1,
+        searching: editor.search !== undefined,
+    }
 }
 
 /** Ctrl-key chords arrive as `key.ctrl` plus the letter in `input`. */
 function ctrlIntent(letter: string, context: KeyContext): Intent {
     switch (letter) {
         case "c":
+            // While a search is open, ^C dismisses it rather than the session: the search is the
+            // foreground thing, and quitting the whole session from it would lose a message somebody
+            // is part-way through composing.
+            if (context.searching) return { kind: "searchCancel" }
             // The whole point. Busy means a turn is generating; interrupting it must leave the
             // prompt behind, not the shell.
             return context.busy ? { kind: "cancel" } : { kind: "exit" }
@@ -45,6 +80,16 @@ function ctrlIntent(letter: string, context: KeyContext): Intent {
             return { kind: "historyPrev" }
         case "n":
             return { kind: "historyNext" }
+        case "r":
+            return { kind: "searchOpen" }
+        case "z":
+            // Undo, not SIGTSTP. Ink puts stdin in raw mode, so the terminal never generates the
+            // signal and the byte arrives here — which makes this a choice rather than an accident.
+            // Suspending a chat you can leave with ^D is worth little; undo is worth a lot, and the
+            // footer says so, which is what keeps the trade visible.
+            return { kind: "undo" }
+        case "y":
+            return { kind: "redo" }
         default:
             return { kind: "none" }
     }
@@ -53,17 +98,56 @@ function ctrlIntent(letter: string, context: KeyContext): Intent {
 export function keyToIntent(input: string, key: KeyState, context: KeyContext): Intent {
     if (key.ctrl) return ctrlIntent(input.toLowerCase(), context)
 
-    if (key.return) return { kind: "submit" }
+    // ─── option chords ───────────────────────────────────────────────────────────────────
+    //
+    // Every one of these is measured against Ink's parser rather than assumed, because a terminal has
+    // more than one way to send them and the parser reporting *a* key says nothing about which:
+    //
+    //   ⌥←  Apple Terminal `ESC b`      → input "b" + meta      iTerm2 `CSI 1;3D` → leftArrow + meta
+    //   ⌥→  Apple Terminal `ESC f`      → input "f" + meta      iTerm2 `CSI 1;3C` → rightArrow + meta
+    //   ⌥⌫  `ESC DEL`                   → backspace + meta
+    //   ⌥⏎  `ESC CR`                    → return + meta
+    //   ⇧⏎  kitty protocol `CSI 13;2u`  → return + shift        (only once the terminal is taught)
+    //
+    // Both spellings of each are honoured, so the same binding works in both families of terminal.
+    if (key.meta) {
+        if (key.return) return { kind: "newline" }
+        if (key.leftArrow || input === "b") return { kind: "wordLeft" }
+        if (key.rightArrow || input === "f") return { kind: "wordRight" }
+        if (key.backspace) return { kind: "killWord" }
+        if (input === "d") return { kind: "killWordForward" }
+        // An unclaimed option chord does nothing. Falling through would reach the insert branch and
+        // type the bare letter, so ⌥s would silently put an "s" in the message. Composed characters
+        // (é, ∆) are unaffected: macOS sends those as the character itself, with no meta flag.
+        return { kind: "none" }
+    }
+
+    // Shift+enter is a newline where the terminal can express it — `terminal-setup` is what teaches
+    // iTerm2, VS Code, Ghostty and Kitty to send the sequence Ink already understands. Where it
+    // cannot, this is never true and ⏎ submits, which is why ⌥⏎ is the documented chord.
+    if (key.return && key.shift) return { kind: "newline" }
+
+    if (key.return) return context.searching ? { kind: "searchAccept" } : { kind: "submit" }
     if (key.backspace) return { kind: "backspace" }
     if (key.delete) return { kind: "delete" }
     if (key.leftArrow) return { kind: "cursorLeft" }
     if (key.rightArrow) return { kind: "cursorRight" }
-    if (key.upArrow) return { kind: "historyPrev" }
-    if (key.downArrow) return { kind: "historyNext" }
+    // History at the edges of the buffer, line movement inside it. While searching both walk the match
+    // list, which the reducer routes — the arrows mean "previous" and "next" either way.
+    if (key.upArrow) {
+        return context.searching || context.firstLine ? { kind: "historyPrev" } : { kind: "lineUp" }
+    }
+    if (key.downArrow) {
+        return context.searching || context.lastLine
+            ? { kind: "historyNext" }
+            : { kind: "lineDown" }
+    }
 
-    // Escape and Tab are claimed deliberately and do nothing, rather than falling through to the
-    // insert branch where they would put a control character into the buffer and be sent to a model.
-    if (key.escape || key.tab) return { kind: "none" }
+    // Escape closes a search; otherwise it is claimed deliberately and does nothing, rather than
+    // falling through to the insert branch where it would put a control character into the buffer and
+    // be sent to a model. Tab is claimed for the same reason.
+    if (key.escape) return context.searching ? { kind: "searchCancel" } : { kind: "none" }
+    if (key.tab) return { kind: "none" }
 
     // A paste arrives as one large `input` with no key flags, so insert has to accept many
     // characters at once rather than assuming a single keypress.
@@ -211,7 +295,16 @@ export function keyToWizardIntent(
         return { kind: "list", intent: keyToListIntent(input, key) }
     }
 
-    const intent = keyToIntent(input, key, { busy: false, empty: context.empty })
+    // A wizard answer is one line — a pasted blob collapses to its first — so the cursor is always on
+    // both the first and the last line, and ↑/↓ mean history rather than line movement. There is no
+    // search here either.
+    const intent = keyToIntent(input, key, {
+        busy: false,
+        empty: context.empty,
+        firstLine: true,
+        lastLine: true,
+        searching: false,
+    })
     switch (intent.kind) {
         case "submit":
             return { kind: "commit" }

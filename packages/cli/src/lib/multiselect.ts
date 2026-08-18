@@ -34,24 +34,57 @@ export function startMultiSelect(count: number): MultiSelectState {
 }
 
 /**
- * Advance the cursor past unselectable rows in the direction it was moving.
+ * Walk from a landing point until a selectable row is found, in one direction.
+ *
+ * `undefined` when the walk reaches the end of the list without finding one. Detected by the index
+ * stopping rather than by counting: `moveSelect` clamps at both ends, so a walk that has run out of
+ * list returns the same index forever, and *that* is the honest end condition.
+ */
+function walk(
+    from: SelectState,
+    selectable: readonly boolean[],
+    forward: boolean,
+): SelectState | undefined {
+    let next = from
+    for (let step = 0; step <= selectable.length; step += 1) {
+        if (selectable[next.index] === true) return next
+        const after = moveSelect(next, { kind: forward ? "down" : "up" })
+        if (after.index === next.index) return undefined
+        next = after
+    }
+    return undefined
+}
+
+/**
+ * Put the cursor on a selectable row, given where it was and where the move would have put it.
  *
  * Without this the cursor lands on a group heading and enter does nothing, which reads as a broken
- * keyboard. Group headings are the reason this exists, and the first row of a grouped list is always one.
+ * keyboard. Group headings are the reason it exists, and the first row of a grouped list is always one.
+ *
+ * Three passes, in order, and the order is the whole correctness argument:
+ *
+ * 1. **Continue the way it was going.** Down past a heading keeps going down.
+ * 2. **Reverse.** The walk ran out of list — pressing up on the first skill of a grouped catalogue lands
+ *    on the source heading with nothing selectable above it, so the answer is the row below, which is
+ *    where the cursor already was. This pass is also what makes `g` (first) and `G` (last) work: `g`
+ *    lands on row 0, which in a grouped list is always a heading, and only a downward search finds
+ *    anything.
+ * 3. **Stay put.** Nothing anywhere is selectable.
+ *
+ * Returning `moved` on exhaustion — which is what the first version did, by falling through to its own
+ * parameter — put the cursor on the heading. That is the bug this function exists to prevent, wearing
+ * the fix's clothes, and a frame test caught it by noticing the pointer had vanished from the list
+ * entirely: a heading row draws no cursor, so parking there makes the cursor *invisible* as well as
+ * inert.
  */
-function skipUnselectable(
-    state: SelectState,
+function selectableCursor(
+    from: SelectState,
+    moved: SelectState,
     selectable: readonly boolean[],
     forward: boolean,
 ): SelectState {
-    if (selectable.length === 0) return state
-    let next = state
-    // Bounded by the row count: a list with nothing selectable stops rather than looping forever.
-    for (let step = 0; step < selectable.length; step += 1) {
-        if (selectable[next.index] === true) return next
-        next = moveSelect(next, { kind: forward ? "down" : "up" })
-    }
-    return state
+    if (selectable.length === 0) return from
+    return walk(moved, selectable, forward) ?? walk(moved, selectable, !forward) ?? from
 }
 
 export function reduceMultiSelect(
@@ -66,11 +99,12 @@ export function reduceMultiSelect(
             // doing it as a fallback would be the bug wearing the fix's clothes.
             if (!selectable.includes(true)) return state
             const moved = moveSelect(state.cursor, action.move)
-            const forward =
-                action.move.kind === "down" ||
-                action.move.kind === "last" ||
-                (action.move.kind === "jump" && moved.index >= state.cursor.index)
-            return { ...state, cursor: skipUnselectable(moved, selectable, forward) }
+            // Derived from where the cursor actually went rather than from the kind of move, because
+            // the two disagree for `first` and `last`: `g` travels *backwards* to row 0 and then has to
+            // search *forwards* to find anything selectable. Reading it off the indices makes every
+            // move kind — including a digit jump — fall out of one rule.
+            const forward = moved.index >= state.cursor.index
+            return { ...state, cursor: selectableCursor(state.cursor, moved, selectable, forward) }
         }
         case "toggle": {
             const index = state.cursor.index

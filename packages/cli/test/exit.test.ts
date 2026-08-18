@@ -1,5 +1,13 @@
 import { beforeEach, describe, expect, test } from "bun:test"
-import { finish, markTerminalDirty, onExit, resetForTests, restoreTerminal } from "#lib/exit"
+import { LEAVE_ALT_SCREEN, RESET_STYLE } from "#lib/const"
+import {
+    finish,
+    markAltScreen,
+    markTerminalDirty,
+    onExit,
+    resetForTests,
+    restoreTerminal,
+} from "#lib/exit"
 import type { TerminalHandles } from "#lib/schema"
 
 interface Fake extends TerminalHandles {
@@ -87,6 +95,44 @@ describe("restoreTerminal", () => {
         restoreTerminal(terminal)
         expect(terminal.written).toHaveLength(1)
         expect(terminal.rawModeCalls).toEqual([false])
+    })
+})
+
+describe("the alternate screen", () => {
+    test("is swapped back out when it was entered", () => {
+        resetForTests({ dirty: false })
+        markAltScreen()
+        const terminal = fakeTerminal({ outIsTTY: true, inIsTTY: true })
+        restoreTerminal(terminal)
+        expect(terminal.written.join("")).toContain(LEAVE_ALT_SCREEN)
+    })
+
+    test("is left alone when it was never entered", () => {
+        // A `1049l` sent to a terminal that never swapped in *clears the screen the output was just
+        // written to*. So a wizard or a chat session — dirty, but never full-screen — must not emit it.
+        const terminal = fakeTerminal({ outIsTTY: true, inIsTTY: true })
+        markTerminalDirty()
+        restoreTerminal(terminal)
+        expect(terminal.written.join("")).not.toContain(LEAVE_ALT_SCREEN)
+    })
+
+    test("the style reset lands before the swap, not after", () => {
+        // A reset applies to whichever buffer is current when it arrives. After the swap it would
+        // reset the buffer being discarded and leave the app's last colour on the shell's screen.
+        resetForTests({ dirty: false })
+        markAltScreen()
+        const terminal = fakeTerminal({ outIsTTY: true, inIsTTY: true })
+        restoreTerminal(terminal)
+        const output = terminal.written.join("")
+        expect(output.indexOf(RESET_STYLE)).toBeLessThan(output.indexOf(LEAVE_ALT_SCREEN))
+    })
+
+    test("a pipe gets neither — plain output stays byte-identical", () => {
+        resetForTests({ dirty: false })
+        markAltScreen()
+        const piped = fakeTerminal({ outIsTTY: false, inIsTTY: false })
+        restoreTerminal(piped)
+        expect(piped.written).toEqual([])
     })
 })
 

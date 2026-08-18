@@ -19,7 +19,7 @@
  */
 
 import { Box, Text } from "ink"
-import { columnsFor, headingRule, layoutRow } from "#lib/rows"
+import { columnsFor, headingRule, layoutRow, viewport } from "#lib/rows"
 import { GLYPH, THEME } from "#lib/theme"
 
 export interface CheckRow {
@@ -39,21 +39,6 @@ export interface CheckListProps {
     readonly window: number
     /** Terminal columns. Measured by the caller; this component never reads a stream. */
     readonly width: number
-}
-
-/**
- * Which slice to show. Keeps the cursor inside the window rather than paging, because a cursor that jumps a
- * whole viewport loses the reader's place.
- */
-export function viewport(
-    total: number,
-    index: number,
-    window: number,
-): { readonly from: number; readonly to: number } {
-    if (total <= window) return { from: 0, to: total }
-    const half = Math.floor(window / 2)
-    const from = Math.min(Math.max(0, index - half), total - window)
-    return { from, to: from + window }
 }
 
 export function CheckList({ rows, index, chosen, window, width }: CheckListProps) {

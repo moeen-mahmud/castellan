@@ -68,6 +68,20 @@ export interface KeyBindingSpec {
     readonly summary: string
 }
 
+/**
+ * How to put a line break in a message, as one line of hint text.
+ *
+ * ⌥⏎ leads because it is the chord that works everywhere: it arrives as ESC then carriage return, which
+ * is a sequence every terminal can send and Ink already parses. The backslash is the fallback for anyone
+ * whose Option key is bound to something else.
+ *
+ * Shift+⏎ is deliberately absent. It requires the terminal to send a distinguishable sequence — kitty's
+ * `CSI 13;2u`, which `terminal-setup` installs for the terminals that can be taught — and whether it
+ * reaches this process cannot be detected from inside it. A hint naming a chord that silently *sends*
+ * the message instead is worse than one naming only what always works.
+ */
+export const NEWLINE_HINT = "⌥⏎ or a trailing \\ for a new line · ⏎ sends"
+
 export const KEY_BINDINGS: readonly KeyBindingSpec[] = [
     { chord: "^C", summary: "cancel the turn in flight — at an idle prompt, leave" },
     { chord: "^D", summary: "leave when the line is empty; delete forward when it is not" },
@@ -76,7 +90,24 @@ export const KEY_BINDINGS: readonly KeyBindingSpec[] = [
     { chord: "^U / ^K", summary: "delete to the start of the line / to the end" },
     { chord: "^W", summary: "delete the word before the cursor" },
     { chord: "^P / ^N", summary: "previous / next of what you have already sent" },
-    { chord: "↑ / ↓", summary: "the same history, on the arrows" },
+    {
+        chord: "↑ / ↓",
+        summary:
+            "a line up or down inside the message — the same history at its first and last line",
+    },
+    { chord: "⌥⏎", summary: "a new line in the message; a trailing \\ does the same; ⏎ sends it" },
+    { chord: "⌥← / ⌥→", summary: "back one word / forward one" },
+    { chord: "⌥⌫ / ⌥d", summary: "delete the word before the cursor / after it" },
+    {
+        chord: "^R",
+        summary: "search what you have already sent — ↑↓ to pick, ⏎ to use it, esc to cancel",
+    },
+    {
+        // Not SIGTSTP: Ink puts stdin in raw mode, so the terminal never generates the signal. Suspend
+        // is genuinely gone here, which is why it is written down rather than left to be discovered.
+        chord: "^Z / ^Y",
+        summary: "undo / redo the last edit — suspend is not available inside a session",
+    },
 ]
 
 /**

@@ -259,7 +259,11 @@ Never claim a performance property without a number in `evals/` and a script to 
 - **Ink redraws its whole dynamic tree every frame.** Finished transcript items belong in
   `<Static>`, which writes once and never touches the node again — so they must be append-only
   and immutable, and mutating one is a change that silently never appears. The live pane is
-  capped in terminal *rows*, not lines.
+  capped in terminal *rows*, not lines. **Phase 5.5 retires this for chat**: `<Static>` and the
+  alternate screen are incompatible — Static appends to the scrollback, the alternate buffer is wiped
+  on leave and its scrollbar reaches nothing — so a full-screen `run` needs a windowed transcript over a
+  buffer we own. The row cap is what keeps that affordable, and it is now load-bearing rather than
+  merely prudent.
 - **Nothing on a shared CLI path may import Ink or React.** They cost ~170-210 ms under Node,
   more than the entire runtime of `validate --json`. A structural test enforces it.
 - **`--plain` at a terminal must produce exactly what a pipe produces.** That is why the
@@ -492,6 +496,43 @@ Never claim a performance property without a number in `evals/` and a script to 
   the transcript sits in Ink's dynamic region, which draws *below* Static output and redraws
   every frame. The plain path writes banner lines directly and never calls `seed`, which is what
   keeps plain output byte-identical.
+- **`ink-testing-library` is a declared devDependency and every component has a frame test.** It sat
+  unused from the commit that introduced Ink, which is why the paint was reported as unverifiable for
+  three phases — wrong on both halves. A reducer test and a frame test are different claims: `rows.ts`
+  was asserted as strings and correct while the rendered list wrapped at 40 columns, because nothing
+  read a finished line. Use `test/helpers/frame.tsx`, not the library's `render` — its fake stdout
+  hardcodes `columns` to 100, has no `rows` and emits no `resize`. Measure width in **code points**;
+  `awk` counts bytes and reported 69 overlong lines where there were none. A boundaries test fails when
+  a component arrives with no test, and it caught a real cursor bug within the hour.
+- **Mount before you wait.** `browse.ts` fetched the catalogue at line 197 and mounted Ink at 249, so
+  the twenty-second clone, its progress and the install report were all `process.stdout.write` — four
+  of five phases of the command in plain text, which is what "why do you keep dropping out of the TUI"
+  was about. termheat's `App.tsx` is the shape: mount, then `useEffect` → load, spinner inside the
+  frame. And progress reaches the screen through a **callback**, never stdout, because writing to
+  stdout while Ink owns the frame paints over it.
+- **A key chord is verified against a real terminal, never against the parser.** Ink reporting *a* key
+  says nothing about the bytes a terminal sent, and most chords have two spellings — ⌥← is `input "b" +
+  meta` in Apple Terminal and `leftArrow + meta` in iTerm2; honour both. Two measured facts that cost a
+  debugging round each: Ink holds a **lone ESC for 20 ms** before committing it
+  (`ink/build/components/App.js:45`), so a test reading the frame immediately sees escape silently
+  dropped and it looks like a component ignoring the key; and Ink already parses kitty's `CSI 13;2u`
+  into `return + shift`, which is the whole reason shift+⏎ works after `terminal-setup` with no runtime
+  change.
+- **A cursor that runs out of list stays put; it never lands on an unselectable row.** `skipUnselectable`
+  fell through to returning its own already-moved parameter, so ↑ on the first skill parked the cursor on
+  the source heading where space and enter did nothing — and a heading draws no cursor, so the pointer
+  disappeared from the list entirely. Walk in the direction of travel, then reverse, then stay; and read
+  the direction off the **indices**, not the kind of move, because `first` travels backwards to row 0 and
+  must then search forwards.
+- **A `<Box>` inside a `<Text>` renders nothing at all — no error, an empty frame.** `LineCursor` became
+  multi-line and therefore returns a `Box`; `TextField` still wrapped it in a `Text`, and the whole
+  wizard field went blank. Only a frame test sees this. The related rule: a prompt glyph belongs in
+  `LineCursor`'s `gutter`, not beside it, or the second line of a message starts one column left of the
+  first and reads as a separate message.
+- **The paste handler composes; it does not send.** Submitting every line in the chunk was right while
+  the buffer was single-line, and became the bug multi-line exists to remove: a twelve-line block
+  arrived as twelve messages, each conditioned on the last and none editable. When a data structure
+  gains a capability, re-read the handlers that existed to work around its absence.
 - **New CLI surfaces use the TUI kit and the pure-reducer grain.** Tokens/glyphs in
   `lib/theme.ts` (a literal colour name in a component is a review failure), components in
   `components/` are controlled and never call `useInput` — one `useInput` per screen root over a

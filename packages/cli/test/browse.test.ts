@@ -290,6 +290,81 @@ describe("the multi-select reducer", () => {
         )
         expect(state.cursor.index).toBe(0)
     })
+
+    test("up from the first item stays on it rather than parking on the heading above", () => {
+        // The bug a frame test found: the walk ran out of list going up, and the fallback returned the
+        // already-moved cursor — which was sitting on row 0, a heading. A heading draws no cursor, so
+        // the pointer disappeared from the list entirely and space and enter both did nothing.
+        const state = reduceMultiSelect(
+            { cursor: { index: 1, count: 5 }, chosen: [] },
+            { kind: "move", move: { kind: "up" } },
+            selectable,
+        )
+        expect(state.cursor.index).toBe(1)
+        expect(selectable[state.cursor.index]).toBe(true)
+    })
+
+    test("down from the last item stays on it", () => {
+        const state = reduceMultiSelect(
+            { cursor: { index: 4, count: 5 }, chosen: [] },
+            { kind: "move", move: { kind: "down" } },
+            selectable,
+        )
+        expect(state.cursor.index).toBe(4)
+    })
+
+    test("`g` reaches the first item, not row zero", () => {
+        // `first` travels backwards to row 0 and then has to search *forwards*, which is why the
+        // direction is read off the indices rather than the kind of move.
+        const state = reduceMultiSelect(
+            { cursor: { index: 4, count: 5 }, chosen: [] },
+            { kind: "move", move: { kind: "first" } },
+            selectable,
+        )
+        expect(state.cursor.index).toBe(1)
+    })
+
+    test("`G` reaches the last item even when a heading trails the list", () => {
+        const trailing = [false, true, true, false]
+        const state = reduceMultiSelect(
+            { cursor: { index: 1, count: 4 }, chosen: [] },
+            { kind: "move", move: { kind: "last" } },
+            trailing,
+        )
+        expect(state.cursor.index).toBe(2)
+    })
+
+    test("a digit jump onto a heading lands on a real row", () => {
+        const state = reduceMultiSelect(
+            { cursor: { index: 1, count: 5 }, chosen: [] },
+            { kind: "move", move: { kind: "jump", index: 3 } },
+            selectable,
+        )
+        expect(selectable[state.cursor.index]).toBe(true)
+    })
+
+    test("every move kind leaves the cursor on a selectable row", () => {
+        // The invariant, over the whole move vocabulary and every starting position — which is the
+        // claim the individual cases above are examples of.
+        const moves = [
+            { kind: "up" as const },
+            { kind: "down" as const },
+            { kind: "first" as const },
+            { kind: "last" as const },
+            { kind: "jump" as const, index: 0 },
+            { kind: "jump" as const, index: 3 },
+        ]
+        for (let start = 0; start < selectable.length; start += 1) {
+            for (const move of moves) {
+                const state = reduceMultiSelect(
+                    { cursor: { index: start, count: selectable.length }, chosen: [] },
+                    { kind: "move", move },
+                    selectable,
+                )
+                expect(selectable[state.cursor.index]).toBe(true)
+            }
+        }
+    })
 })
 
 describe("the curated list", () => {

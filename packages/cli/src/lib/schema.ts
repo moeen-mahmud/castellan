@@ -204,7 +204,16 @@ export interface AppProps {
      * A callback rather than a return value because Ink owns the exit: the screen has to come down
      * before a new runtime prints its banner, and only `useApp().exit` can bring it down.
      */
-    readonly onRestart?: () => void
+    readonly onRestart?: (draft: string) => void
+    /**
+     * A message that was being written when the last agent was torn down.
+     *
+     * The only state that has to survive a `/restart`, and the only one that cannot survive it on its
+     * own: everything else is either persisted in the store or rebuilt from the manifest, while an
+     * unsent draft lives in a component that the restart unmounts. History is not carried across —
+     * it is the store's, and a restart re-reads it.
+     */
+    readonly initialDraft?: string
 }
 
 export interface TranscriptProps {

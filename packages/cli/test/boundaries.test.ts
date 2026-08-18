@@ -114,6 +114,13 @@ describe("the pure modules stay pure", () => {
         "lib/launchd.ts",
         "lib/daemon-plan.ts",
         "lib/render.ts",
+        // The kit's half of a screen that is not a renderer: what the header says and whether the
+        // footer fits. Pure so both can be asserted as strings, which is the only way the *content* of
+        // a header was ever observable — before this it lived in JSX in three components.
+        "lib/screen.ts",
+        "lib/rows.ts",
+        "lib/multiselect.ts",
+        "lib/browse.ts",
     ]
 
     test("they import no renderer and no node built-ins", () => {
@@ -135,6 +142,70 @@ describe("the pure modules stay pure", () => {
             expect(text).not.toContain("process.env")
             expect(text).not.toContain("process.stdout")
         }
+    })
+})
+
+describe("every component is verified by a frame test", () => {
+    /**
+     * The rule that closes the hole this whole area was built in.
+     *
+     * `ink-testing-library` was a declared devDependency from the commit that introduced Ink, and no
+     * test ever imported it — so every `.tsx` in the tree was checked only through its pure reducers.
+     * That is a real check and a different claim: `lib/rows.ts` was asserted as strings and correct
+     * while the rendered list still wrapped at 40 columns, because nothing looked at a finished line.
+     *
+     * Enforced structurally rather than by intention, because the failure is silent in exactly the way
+     * a missing test always is: nothing goes red when a component arrives without one.
+     *
+     * A component may be covered by a file named after it, or by one of the grouped files — the small
+     * presentational pieces live together in `kit`, the input-owning screen roots in `roots`, and
+     * splitting them into sixteen files of four assertions would be sixteen copies of the same import.
+     */
+    const GROUPED = ["kit", "roots"]
+
+    function componentNames(): string[] {
+        return FILES.filter(
+            (file) => file.path.startsWith("components/") && file.path.endsWith(".tsx"),
+        ).map((file) => file.path.slice("components/".length, -".tsx".length))
+    }
+
+    function frameTests(): { readonly name: string; readonly text: string }[] {
+        const dir = resolve(import.meta.dirname, "components")
+        return readdirSync(dir)
+            .filter((entry) => entry.endsWith(".test.tsx"))
+            .map((entry) => ({
+                name: entry.slice(0, -".test.tsx".length),
+                text: readFileSync(join(dir, entry), "utf8"),
+            }))
+    }
+
+    test("there are components to check, and frame tests that check them", () => {
+        expect(componentNames().length).toBeGreaterThan(0)
+        expect(frameTests().length).toBeGreaterThan(0)
+    })
+
+    test("each component is imported by a frame test", () => {
+        const tests = frameTests()
+        const missing = componentNames().filter((name) => {
+            const own = tests.find((file) => file.name === name.toLowerCase())
+            if (own !== undefined) return false
+            // Otherwise a grouped file has to actually import it — asserted by the import, not by the
+            // file merely existing, or a component could be listed nowhere and still pass.
+            return !tests
+                .filter((file) => GROUPED.includes(file.name))
+                .some((file) => file.text.includes(`#components/${name}`))
+        })
+        expect(missing).toEqual([])
+    })
+
+    test("the frame harness is the only way a test measures a rendered width", () => {
+        // `awk` reported 69 overlong lines where there were none, because `length()` counts bytes and
+        // the theme's glyphs are multi-byte. Any width assertion has to go through `width()`, which
+        // counts code points.
+        const offenders = frameTests()
+            .filter((file) => file.text.includes(".length >") && !file.text.includes("width("))
+            .map((file) => file.name)
+        expect(offenders).toEqual([])
     })
 })
 

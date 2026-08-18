@@ -1633,6 +1633,79 @@ elsewhere.
 
 ---
 
+## Phase 5.5 — the TUI is the product
+
+Phase 5 shipped screens that are Ink and an *experience* that is not. Four of the five phases of
+`castellan skills` were plain text: the fetch printed to stdout before the mount, the result printed
+after the unmount, and the width was measured once and frozen. Three of ~15 commands mounted Ink at
+all. And `ink-testing-library` had been a declared devDependency since Ink arrived, unused — so every
+`.tsx` was verified through its reducers only, which is a different claim from "the row is one line".
+
+**Goal.** One `Screen` kit every surface renders through; views hosted either by a command or by a
+slash command inside a live chat; a palette generated from the CLI's own command table; an input that
+behaves like a text editor; and a frame test for every component.
+
+**Files** — `packages/cli/src/lib/{screen,palette,scroll,terminal,confirm}.ts` ·
+`packages/cli/src/components/{Screen,KeyHints,Palette,FlagForm,HistorySearch}.tsx` ·
+`packages/cli/src/components/views/*` · `packages/cli/src/terminal-setup.ts` ·
+`packages/cli/test/helpers/frame.tsx` · `packages/cli/test/components/*`
+
+### Decisions (2026-08-18, binding)
+
+Rich at a TTY, plain on a pipe — the byte-identical rule stands. String columns keep the layout pure;
+`<Box>` is for structure. The alternate screen for anything that waits for a keypress, inline for a
+one-shot report. Spinner and progress only, no decorative motion. `run` exits clean, leaving one
+pointer line naming the session key; failures always print. Mid-turn `^C` cancels the turn, unchanged;
+idle `^C` arms and a second press exits. One view, two hosts. Arguments accepted only after a token
+that is exactly a known command. Commands that do not belong in a session are **declared** hidden on
+the spec, never omitted by a second list.
+
+### Stages
+
+1. **The kit and the harness.** `lib/screen.ts` (pure), `components/Screen.tsx`, alt-screen sequences
+   and `markAltScreen`, the frame harness, a frame test per component, the boundaries rule. **Done.**
+2. **The input becomes an editor.** Multi-line buffer, ⌥ chords, `^R` search, `^Z`/`^Y` undo, draft
+   across a restart, `terminal-setup`. **Done.**
+3. **The view contract, and the original defect.** `browse.ts` mounts before it fetches; `SkillBrowser`
+   becomes a view; `installReport` is pure and shared with the text path; `sources` gets a screen.
+4. **The palette.** Generated from `COMMANDS`, with a flag form and `inSession` on every spec.
+5. **The remaining views.** `/channels` `/logs` `/sessions` `/agents` `/model` `/memory` `/soul`
+   `/policy` `/config`, plus a `daemon` screen. Each reachable as a command and as a slash command.
+6. **One-shot reports, inline.** `validate`, `workspace`, `soul`, `tools`, `stop` through the kit.
+7. **`run` on the alternate screen.** Windowed transcript, our own scrolling, the exit semantics above.
+
+### Acceptance criteria
+
+- [x] Every component has a frame test; no rendered line exceeds its width at 40/60/80/100/140
+      columns, measured in code points.
+- [x] A component added with no frame test fails the boundaries test by name.
+- [x] `restoreTerminal` writes the leave-alt sequence *before* the style reset, and only when
+      `markAltScreen` ran — a pipe still receives nothing.
+- [x] The multi-line buffer: ⌥⏎ and a trailing `\` break the line, ↑↓ move within it and recall
+      history at its edges, `^A`/`^E`/`^U`/`^K` act on the line, undo coalesces a run of typing.
+- [x] Word motion and deletion in both terminal spellings, across a line break, over an emoji.
+- [x] `^R` narrows, deduplicates, resets its index on a keystroke, and leaves the draft untouched
+      until accepted.
+- [x] A paste composes one message instead of submitting each line.
+- [x] An unsent draft survives `/restart`.
+- [x] `terminal-setup` writes a text config with a backup, refuses a file it cannot parse, explains a
+      binary-plist terminal, and reports a recognised terminal with no verified recipe as such.
+- [x] Verified in a real pty, not only in frames: ⌥⏎ makes a second line with the gutter aligned, and
+      ⌥← then ⌥⌫ deletes a word from it.
+- [ ] Bare `skills` mounts before it fetches; the spinner, the picker, the install and the result are
+      one mount.
+- [ ] `/` opens a palette generated from `COMMANDS`; every spec declares `inSession`.
+- [ ] Every non-hidden command is reachable as a slash command and as a shell command, through one view.
+- [ ] `q` from every alternate-screen surface leaves the terminal as found — `stty -a` unchanged.
+- [ ] `time node packages/cli/dist/index.js validate --json` stays ~90 ms: no Ink on a shared path.
+
+### Non-goals
+
+A dashboard home screen or panes in one long-lived app — per-command screens were chosen. Mouse
+support. A live `serve` dashboard: a process a supervisor runs must never take a terminal. User
+themes (11.14 stands). `/plugin` — plugins are Phase 9 and there is nothing to show. Any new
+*runtime* dependency; 11.10 is untouched.
+
 ## Phase 6 — Memory
 
 **Goal.** The agent remembers across sessions without an embedding model.

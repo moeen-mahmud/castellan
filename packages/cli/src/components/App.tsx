@@ -13,6 +13,7 @@
 
 import { Box, useApp, useInput } from "ink"
 import { useMemo, useState } from "react"
+import { HistorySearch } from "#components/HistorySearch"
 import { Live } from "#components/Live"
 import { Prompt } from "#components/Prompt"
 import { StatusBar } from "#components/StatusBar"
@@ -21,7 +22,8 @@ import { applyIntent, EMPTY_EDITOR, submit } from "#editor"
 import { useElapsed } from "#hooks/useElapsed"
 import { useTerminalSize } from "#hooks/useTerminalSize"
 import { useTurn } from "#hooks/useTurn"
-import { keyToIntent } from "#keymap"
+import { keyContext, keyToIntent } from "#keymap"
+import { SEARCH_ROWS } from "#lib/const"
 import type { AppProps } from "#lib/schema"
 import {
     resolveSessionCommand,
@@ -41,11 +43,19 @@ export function App({
     showReasoning,
     quiet,
     onRestart,
+    initialDraft,
 }: AppProps) {
     const { exit } = useApp()
     const { columns } = useTerminalSize()
     const { state, busy, send, cancel, note } = useTurn({ agent, bus, sessionKey, initial })
-    const [editor, setEditor] = useState(EMPTY_EDITOR)
+    // A draft handed in by a `/restart` opens the prompt with the cursor at its end, which is where the
+    // person left it. Only the initial value — a later prop change must not overwrite what is being
+    // typed now, which is exactly what `useState`'s initialiser semantics give for free.
+    const [editor, setEditor] = useState(() =>
+        initialDraft === undefined || initialDraft === ""
+            ? EMPTY_EDITOR
+            : { ...EMPTY_EDITOR, value: initialDraft, cursor: [...initialDraft].length },
+    )
     const elapsed = useElapsed(busy)
     const last = useMemo(() => lastStats(state.items), [state.items])
 
@@ -62,7 +72,10 @@ export function App({
                     // The settings an agent booted with are fixed for its lifetime, so a
                     // configuration change needs a new one. Nothing is lost: the conversation lives
                     // in the store and the new agent resumes the same session key.
-                    onRestart?.()
+                    // The unsent draft rides across the restart. `/restart` rebuilds the agent to
+                    // pick up a settings change; throwing away a half-written message on the way is a
+                    // second, unasked-for consequence of asking for the first.
+                    onRestart?.(editor.value)
                     exit()
                     return
                 case "help":
@@ -98,7 +111,7 @@ export function App({
     }
 
     useInput((input, key) => {
-        const intent = keyToIntent(input, key, { busy, empty: editor.value === "" })
+        const intent = keyToIntent(input, key, keyContext(editor, busy))
 
         if (intent.kind === "exit") {
             exit()
@@ -115,18 +128,16 @@ export function App({
             return
         }
         if (intent.kind === "paste") {
-            // Every finished line is sent in order; an unterminated tail stays on the input line so
-            // it can be edited. Threading one local state through the loop keeps history correct —
-            // each pasted line is recorded exactly as if it had been typed.
-            const finished = intent.complete ? intent.lines : intent.lines.slice(0, -1)
-            const tail = intent.complete ? "" : (intent.lines.at(-1) ?? "")
-            let next = editor
-            for (const line of finished) {
-                const committed = submit(applyIntent(next, { kind: "insert", text: line }))
-                next = committed.state
-                if (committed.text !== "") onSubmit(committed.text)
-            }
-            setEditor(tail === "" ? next : applyIntent(next, { kind: "insert", text: tail }))
+            // Inserted with its newlines intact, as one message.
+            //
+            // This used to submit every finished line in the chunk, and that was right when the buffer
+            // could not hold a newline: the alternative then was silently running the words together.
+            // Now that a message is composed rather than typed on one line, sending line-by-line is the
+            // bug multi-line composition exists to remove — pasting a twelve-line code block produced
+            // twelve messages, each conditioned on the last, and no way to edit any of them.
+            setEditor((current) =>
+                applyIntent(current, { kind: "insert", text: intent.lines.join("\n") }),
+            )
             return
         }
         setEditor((current) => applyIntent(current, intent))
@@ -138,6 +149,7 @@ export function App({
             {state.live === undefined ? null : (
                 <Live live={state.live} showReasoning={showReasoning} columns={columns} />
             )}
+            <HistorySearch editor={editor} width={columns} maxRows={SEARCH_ROWS} />
             <Prompt editor={editor} busy={busy} />
             {/* The status line is the footer, under the input — where every reference CLI puts
                 it, and where the eye rests between keystrokes. */}

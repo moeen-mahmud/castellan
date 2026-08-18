@@ -137,11 +137,69 @@ export type Intent =
     | { readonly kind: "killToStart" }
     | { readonly kind: "killToEnd" }
     | { readonly kind: "killWord" }
+    /** A line break inside the message — ⌥⏎, shift+⏎ where the terminal can send it, or `\` then ⏎. */
+    | { readonly kind: "newline" }
+    /**
+     * Word-wise motion and deletion — ⌥← ⌥→ ⌥⌫ ⌥d.
+     *
+     * `killWord` is the backward one and predates these; it keeps its name because `^W` is documented
+     * under it and renaming a chord's intent to make a set look tidy is churn a reader pays for.
+     */
+    | { readonly kind: "wordLeft" }
+    | { readonly kind: "wordRight" }
+    | { readonly kind: "killWordForward" }
+    /**
+     * Cursor up or down a line, column preserved.
+     *
+     * Distinct from `historyPrev`/`historyNext`: which one an arrow means depends on whether the cursor
+     * is on the first or last line, and that decision lives in `keyToIntent` with the rest of the
+     * keyboard rather than being re-derived per renderer.
+     */
+    | { readonly kind: "lineUp" }
+    | { readonly kind: "lineDown" }
+    | { readonly kind: "undo" }
+    | { readonly kind: "redo" }
+    /** `^R`. While it is open, `insert`, `backspace` and the history intents act on the query. */
+    | { readonly kind: "searchOpen" }
+    /** Put the highlighted match on the line and close. */
+    | { readonly kind: "searchAccept" }
+    /** Close and leave the line exactly as it was. */
+    | { readonly kind: "searchCancel" }
     | { readonly kind: "none" }
 
-export interface EditorState {
+/** A point the editor can be returned to. Value and cursor together, or undo puts the caret nowhere. */
+export interface EditorSnapshot {
     readonly value: string
-    /** Index into `value`, 0..value.length. */
+    readonly cursor: number
+}
+
+/**
+ * Reverse history search, while it is open.
+ *
+ * A *mode*: with this set, a printable key extends the query rather than the line, and the arrows walk
+ * matches rather than the buffer. Modes are worth avoiding in general and this one earns itself — the
+ * alternative is a second editor for the query, and that second editor then needs its own cursor,
+ * history and undo, none of which a search box wants.
+ *
+ * `index` counts from the newest match. The line itself is untouched until the search is accepted, so
+ * cancelling costs nothing.
+ */
+export interface EditorSearch {
+    readonly query: string
+    readonly index: number
+}
+
+export interface EditorState {
+    /**
+     * The buffer. May contain newlines: a message is composed, not typed on one line.
+     *
+     * A flat string rather than an array of lines. Every operation here already walks code points —
+     * `"👍".length` is 2, so a cursor counted in string indices lands inside a surrogate pair — and a
+     * line array would need that walk *plus* a two-part cursor, doubling the arithmetic that already
+     * had to be right. `\n` is one code point; the line helpers derive bounds when they need them.
+     */
+    readonly value: string
+    /** Index into `value` in code points, 0..length. */
     readonly cursor: number
     /** Newest last. Submitting appends; the arrows walk it. */
     readonly history: readonly string[]
@@ -149,4 +207,10 @@ export interface EditorState {
     readonly historyOffset: number
     /** The line being edited when history browsing started, restored on the way back down. */
     readonly draft: string
+    /** Undo stack, oldest first. Bounded — see `UNDO_LIMIT`. */
+    readonly past: readonly EditorSnapshot[]
+    /** What undo took away, newest first, so redo can put it back. Cleared by any fresh edit. */
+    readonly future: readonly EditorSnapshot[]
+    /** Set while `^R` is open. */
+    readonly search: EditorSearch | undefined
 }

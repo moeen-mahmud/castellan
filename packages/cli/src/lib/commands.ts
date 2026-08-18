@@ -420,6 +420,18 @@ export const COMMANDS: readonly CommandSpec[] = [
         ],
     },
     {
+        // The only command that edits a file outside the workspace, which is why it prints the change
+        // first and asks. ⌥⏎ needs none of it — this is for people who want shift+⏎ as well.
+        name: "terminal-setup",
+        summary: "teach this terminal to send shift+enter as a new line",
+        args: [],
+        flags: [
+            { name: "dry-run", kind: "boolean", help: "print the change and write nothing" },
+            { name: "yes", kind: "boolean", help: "write it without asking" },
+            JSON_FLAG,
+        ],
+    },
+    {
         // The switch that turns everything off. Separate from `daemon stop`, which needs you to
         // know the agent: this one finds the services *and* a `serve` left in a forgotten tab.
         name: "stop",

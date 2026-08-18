@@ -17,7 +17,7 @@
  */
 
 import { once } from "node:events"
-import { EXIT_FAILURE, EXIT_SIGTERM, RESET_STYLE, SHOW_CURSOR } from "#lib/const"
+import { EXIT_FAILURE, EXIT_SIGTERM, LEAVE_ALT_SCREEN, RESET_STYLE, SHOW_CURSOR } from "#lib/const"
 import type { TerminalHandles } from "#lib/schema"
 
 /**
@@ -35,6 +35,7 @@ const teardowns: Teardown[] = []
 let guardsInstalled = false
 let restored = false
 let dirty = false
+let altScreen = false
 let signalsClaimed = false
 
 /**
@@ -47,6 +48,23 @@ let signalsClaimed = false
  */
 export function markTerminalDirty(): void {
     dirty = true
+}
+
+/**
+ * Declare that the alternate screen buffer has been entered, so the restore swaps back out of it.
+ *
+ * Separate from `markTerminalDirty` rather than folded into it, because the two are not the same
+ * claim: every rich surface dirties the terminal, and only the ones that *take* it need swapping
+ * back. Folding them together would write the leave sequence after every wizard and every chat
+ * session, and a `1049l` sent to a terminal that never entered the buffer clears the screen the
+ * output was just written to — the plain path's parity rule, broken in the least debuggable way.
+ *
+ * Setting this and never entering is therefore worse than the reverse. The host that writes
+ * `ENTER_ALT_SCREEN` calls this in the same statement.
+ */
+export function markAltScreen(): void {
+    dirty = true
+    altScreen = true
 }
 
 /**
@@ -87,14 +105,22 @@ export function restoreTerminal(handles: TerminalHandles = processHandles()): vo
     if (handles.in.isTTY === true && handles.in.setRawMode !== undefined) {
         handles.in.setRawMode(false)
     }
-    if (handles.out.isTTY === true) handles.out.write(`${RESET_STYLE}${SHOW_CURSOR}`)
+    if (handles.out.isTTY !== true) return
+    // Style and cursor first, buffer swap second. A reset applies to the buffer that is current when
+    // it arrives, so resetting after the swap leaves the app's last colour on the shell's screen and
+    // dutifully resets the one being thrown away.
+    handles.out.write(`${RESET_STYLE}${SHOW_CURSOR}`)
+    if (altScreen) handles.out.write(LEAVE_ALT_SCREEN)
 }
 
 /** Test seam. Nothing in `src/` outside this module calls it. */
-export function resetForTests(options: { readonly dirty?: boolean } = {}): void {
+export function resetForTests(
+    options: { readonly dirty?: boolean; readonly altScreen?: boolean } = {},
+): void {
     teardowns.length = 0
     restored = false
     dirty = options.dirty ?? true
+    altScreen = options.altScreen ?? false
     signalsClaimed = false
 }
 

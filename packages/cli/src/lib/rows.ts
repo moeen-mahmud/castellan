@@ -113,3 +113,25 @@ export function headingRule(label: string, width: number): string {
     const filled = text.length + 3
     return `${text} ${"─".repeat(Math.max(0, Math.min(width, 80) - filled))}`
 }
+
+/**
+ * Which slice of a longer list to show.
+ *
+ * Shared by the catalogue list and the input box, which want the same rule for the same reason: both
+ * are taller than their allowance and both have a position that must stay visible. It lives here rather
+ * than in either component because the second caller is what proved it was layout arithmetic and not a
+ * detail of one screen.
+ *
+ * Originally: Keeps the cursor inside the window rather than paging, because a cursor that jumps a
+ * whole viewport loses the reader's place.
+ */
+export function viewport(
+    total: number,
+    index: number,
+    window: number,
+): { readonly from: number; readonly to: number } {
+    if (total <= window) return { from: 0, to: total }
+    const half = Math.floor(window / 2)
+    const from = Math.min(Math.max(0, index - half), total - window)
+    return { from, to: from + window }
+}

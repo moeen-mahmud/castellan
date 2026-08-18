@@ -24,6 +24,7 @@ import { browseCommand } from "#browse"
 import { daemonCommand } from "#daemon"
 import { initCommand } from "#init"
 import { parse } from "#lib/args"
+import { askYesNo } from "#lib/confirm"
 import { EXIT_FAILURE, EXIT_OK } from "#lib/const"
 import { readEnv } from "#lib/env"
 import { finish, installGuards } from "#lib/exit"
@@ -37,6 +38,7 @@ import { skillsCommand } from "#skills"
 import { soulCommand } from "#soul"
 import { sourcesCommand } from "#sources"
 import { stopCommand } from "#stop"
+import { terminalSetupCommand } from "#terminal-setup"
 import { toolsCommand } from "#tools"
 import { validateCommand } from "#validate"
 import { workspaceCommand } from "#workspace"
@@ -234,6 +236,14 @@ async function dispatch(argv: readonly string[]): Promise<number> {
                 json: flags.bool("json"),
             })
         }
+
+        case "terminal-setup":
+            return await terminalSetupCommand({
+                dryRun: flags.bool("dry-run"),
+                yes: flags.bool("yes"),
+                json: flags.bool("json"),
+                confirm: askYesNo,
+            })
 
         case "stop":
             return await stopCommand({

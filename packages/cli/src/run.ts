@@ -143,6 +143,9 @@ export async function runCommand(options: RunOptions): Promise<number> {
 
     // Outlives every runtime this call builds. See `Wired.reader`.
     const reader: { current: Interface | undefined } = { current: undefined }
+    // The unsent message, carried across a `/restart` for the same reason the reader is: both belong to
+    // the command rather than to one mount, and the restart tears the mount down.
+    const draft: { current: string } = { current: "" }
 
     const sessionKey = options.sessionKey ?? Agent.DEFAULT_SESSION
     const quiet = options.quiet === true
@@ -205,6 +208,7 @@ export async function runCommand(options: RunOptions): Promise<number> {
             banner,
             quiet,
             reader,
+            draft,
             showReasoning,
         }
         const outcome = mode === "rich" ? await runRich(wired) : await runPlain(wired)
@@ -342,6 +346,8 @@ interface Wired extends RunOptions {
      * betting on it.
      */
     readonly reader: { current: Interface | undefined }
+    /** The unsent message, surviving a restart. Empty on a fresh run. */
+    readonly draft: { current: string }
 }
 
 /**
@@ -367,8 +373,12 @@ async function runRich(wired: Wired): Promise<RunOutcome> {
     const instance = render(
         createElement(App, {
             agent: wired.agent,
-            onRestart: () => {
+            onRestart: (draft: string) => {
                 restart = true
+                // Written into the box the loop owns, the same way the readline instance is carried.
+                // A local would be lost the moment this function returns, which is exactly when the
+                // next mount needs it.
+                wired.draft.current = draft
             },
             bus: wired.runtime.bus,
             sessionKey: wired.sessionKey,
@@ -376,6 +386,7 @@ async function runRich(wired: Wired): Promise<RunOutcome> {
             initial: seed(wired.banner),
             showReasoning: wired.showReasoning,
             quiet: wired.quiet,
+            ...(wired.draft.current === "" ? {} : { initialDraft: wired.draft.current }),
         }),
         { exitOnCtrlC: false },
     )
