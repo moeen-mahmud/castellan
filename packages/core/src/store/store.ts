@@ -64,6 +64,18 @@ export interface StoredMessage {
      */
     readonly toolCalls?: readonly ToolCallRequest[]
     readonly toolCallId?: string
+    /**
+     * Who wrote this, when it was the harness rather than a person or the model.
+     *
+     * Declared here because `toMessage` has always *set* it and this interface never declared it — a
+     * conditional spread is not excess-property-checked, so the field arrived at runtime and was
+     * invisible to every reader's types. Anything filtering a page by origin silently compared
+     * `undefined`. Same shape as `ChatMessage.toolCalls` and `ToolContext.readArtifact` before it.
+     *
+     * `memory.includeHistory` is the caller that made it matter: indexing a message the runtime wrote
+     * would put fetched, untrusted text into a corpus that outlives the gate which fenced it.
+     */
+    readonly origin?: ChatMessage["origin"]
     readonly createdAt: string
 }
 

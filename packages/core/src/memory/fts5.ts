@@ -32,7 +32,13 @@ import { readdirSync, readFileSync, statSync } from "node:fs"
 import { join } from "node:path"
 import { estimateTokens } from "../context/tokens.ts"
 import { ceiling, counted, informative, score, TOKENISER_VERSION, terms } from "../rank/bm25.ts"
-import type { MemoryPassageRecord, MemoryStore } from "../store/store.ts"
+import type {
+    MemoryPassageRecord,
+    MemoryStore,
+    MessageStore,
+    SessionStore,
+} from "../store/store.ts"
+import { isSessionSource, renderConversation, sessionSource } from "./conversation.ts"
 import { document, type Passage, splitPassages } from "./passages.ts"
 import { boosted, type MemoryRetriever, type RetrievedPassage } from "./retriever.ts"
 
@@ -192,9 +198,65 @@ export async function syncFiles(input: {
     readonly files: readonly IndexableFile[]
     readonly now: Date
 }): Promise<IndexReport> {
-    const { store, agentId, files, now } = input
+    return await reconcile({ ...input, sources: input.files, owns: (s) => !isSessionSource(s) })
+}
+
+/** One conversation the indexer has been asked to consider, in the shape `reconcile` reads. */
+export interface IndexableSession extends IndexableSource {
+    readonly sessionKey: string
+}
+
+/**
+ * Bring the index in line with the conversations in the store.
+ *
+ * The twin of `syncFiles`, and separate from it for one reason that is worth the duplication: each
+ * reconciles **only its own namespace**. `syncFiles` drops any source it was not handed, which is the
+ * property that makes a deleted archive file disappear from retrieval — and it would delete every
+ * indexed conversation on the next turn if the two shared a domain. Recall syncs files per turn and
+ * conversations only at turn end, so the two lists genuinely arrive at different moments.
+ *
+ * An optional `sessions` argument on `syncFiles` was the alternative and was rejected: absent would have
+ * to mean "leave conversations alone" while `[]` meant "drop them all", and this repo has already lost a
+ * debugging round to a default parameter firing on an explicitly passed `undefined`.
+ */
+export async function syncSessions(input: {
+    readonly store: MemoryStore
+    readonly agentId: string
+    readonly sessions: readonly IndexableSession[]
+    readonly now: Date
+}): Promise<IndexReport> {
+    return await reconcile({ ...input, sources: input.sessions, owns: isSessionSource })
+}
+
+/**
+ * Anything the indexer can treat as a document: an identity, a staleness pair, and a lazy read.
+ *
+ * `read` may be async because a conversation is read from the store rather than from disk. It stays
+ * lazy for both, which is what keeps an unchanged source at the cost of one `stat` — or one already
+ * fetched summary — and no read at all.
+ */
+export interface IndexableSource {
+    readonly source: string
+    readonly read: () => string | Promise<string>
+    readonly mtimeMs: number
+    readonly size: number
+}
+
+async function reconcile(input: {
+    readonly store: MemoryStore
+    readonly agentId: string
+    readonly sources: readonly IndexableSource[]
+    readonly now: Date
+    /** Which existing sources this pass is responsible for, and may therefore drop. */
+    readonly owns: (source: string) => boolean
+}): Promise<IndexReport> {
+    const { store, agentId, sources: files, now, owns } = input
     const stamp = now.toISOString()
-    const known = new Map((await store.sources(agentId)).map((state) => [state.source, state]))
+    const known = new Map(
+        (await store.sources(agentId))
+            .filter((state) => owns(state.source))
+            .map((state) => [state.source, state]),
+    )
 
     const indexed: string[] = []
     const skipped: string[] = []
@@ -213,7 +275,7 @@ export async function syncFiles(input: {
         }
 
         const passages = splitPassages({
-            text: file.read(),
+            text: await file.read(),
             source: file.source,
             // The file's own mtime is the honest fallback for a passage nobody stamped: it is the last
             // moment the fact could have been written down.
@@ -279,6 +341,10 @@ export function enumerateFiles(input: {
     try {
         names = readdirSync(input.dir)
             .filter((name) => name.endsWith(".md"))
+            // A file called `session:notes.md` would be reconciled by whichever pass ran last and
+            // dropped by the other, alternating forever. Refused here rather than disambiguated,
+            // because the prefix is the discriminator both passes agree on.
+            .filter((name) => !isSessionSource(name))
             .sort()
     } catch {
         // No archive directory yet. Eviction creates it on first use, never speculatively.
@@ -311,4 +377,44 @@ function statOf(path: string): { mtimeMs: number; size: number } | undefined {
     } catch {
         return undefined
     }
+}
+
+/**
+ * How many of a conversation's newest messages are indexed.
+ *
+ * A cap rather than the whole thing, because the read is per stale session and a conversation has no
+ * natural end. Starting mid-turn is safe: `exchanges` drops an assistant message it has no question
+ * for, so a cut at the boundary loses one reply rather than mispairing every one after it.
+ */
+export const MAX_INDEXED_SESSION_MESSAGES = 400
+
+/**
+ * Every conversation in the store, as sources the indexer can reconcile.
+ *
+ * `lastActivityAt` and the message count stand in for a file's mtime and size, and they are already in
+ * the summary — so listing every session costs one query and re-reads only the ones that moved. That is
+ * what makes it correct to pass *all* sessions on every call: the whole-set invariant `reconcile`
+ * depends on is satisfied, and the steady-state cost is the one session that just changed.
+ */
+export async function enumerateSessions(input: {
+    readonly sessions: SessionStore
+    readonly messages: MessageStore
+    readonly agentId: string
+}): Promise<readonly IndexableSession[]> {
+    const summaries = await input.sessions.list(input.agentId)
+    return summaries.map((summary) => ({
+        sessionKey: summary.sessionKey,
+        source: sessionSource(summary.sessionKey),
+        mtimeMs: Number.isFinite(Date.parse(summary.lastActivityAt))
+            ? Date.parse(summary.lastActivityAt)
+            : 0,
+        size: summary.messages,
+        read: async () => {
+            const page = await input.messages.page(input.agentId, summary.sessionKey, {
+                limit: MAX_INDEXED_SESSION_MESSAGES,
+            })
+            // `page` is newest-first for a UI; exchanges have to be paired in the order they happened.
+            return renderConversation([...page.messages].reverse(), summary.lastActivityAt)
+        },
+    }))
 }

@@ -65,7 +65,7 @@ import { SESSION_KEY_LENGTH, sessionKeyFrom } from "#lib/session-key"
 import type { CatalogueEntry } from "#lib/source-cache"
 import type { RenderMode } from "#lib/types"
 import { type InstallOutcome, skillsCommand } from "#skills"
-import { seed } from "#transcript"
+import { type PriorMessage, seed, seedHistory } from "#transcript"
 
 /** Opening lines: what is loaded, what session, and whether the last turn finished. */
 async function bannerLines(
@@ -280,12 +280,27 @@ export async function runCommand(options: RunOptions): Promise<number> {
                       demotedKeys([options.manifestPath]),
                   )
 
+        // The conversation so far, for the rich path only. `history` is the same read `send` performs, so
+        // what is painted is exactly what the model is conditioned on — minus the runtime's own messages,
+        // which `origin` identifies and which are not part of the conversation a person is resuming.
+        const prior: readonly PriorMessage[] =
+            mode === "rich" && !quiet && !oneShot
+                ? (await agent.history(sessionKey))
+                      .filter(
+                          (message): message is typeof message & { role: "user" | "assistant" } =>
+                              message.origin === undefined &&
+                              (message.role === "user" || message.role === "assistant"),
+                      )
+                      .map((message) => ({ role: message.role, text: message.content }))
+                : []
+
         const wired = {
             ...options,
             agent,
             runtime,
             sessionKey,
             banner,
+            prior,
             quiet,
             reader,
             draft,
@@ -582,6 +597,14 @@ interface Wired extends RunOptions {
     readonly quiet: boolean
     /** The session key was generated for this run, so the splash stands in for an empty transcript. */
     readonly freshSession: boolean
+    /**
+     * The conversation as it already stands, for the rich path to paint.
+     *
+     * Read here rather than inside the component because the host owns the store. Empty on a fresh
+     * session, and empty on the plain path deliberately: `--plain` has to match a pipe byte for byte,
+     * and a piped REPL replaying its own history would change what every existing script reads.
+     */
+    readonly prior: readonly PriorMessage[]
     /** Where the in-session picker asked to move to. Read by the loop, not by the renderer. */
     readonly switchTo: { current: string | undefined }
     /**
@@ -675,7 +698,7 @@ async function runRich(wired: Wired): Promise<RunOutcome> {
             // agent and the model, and printing both put one sentence on screen twice — measured at 100
             // columns, rows 6 and 8 of a fresh session. The plain path keeps it, because there is no
             // header there and it is the only place the version appears.
-            initial: seed(wired.banner.slice(1)),
+            initial: seedHistory(seed(wired.banner.slice(1)), wired.prior),
             showReasoning: wired.showReasoning,
             quiet: wired.quiet,
             // So a slash command runs against *this* agent: without it a child would resolve whichever

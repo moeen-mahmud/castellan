@@ -583,10 +583,39 @@ carried, and one from June is found by searching. Nothing is deleted at either s
 | --- | --- | --- |
 | `retriever` | `fts5` | The seam. `fts5` is the only implementation; an unknown name is refused at load rather than retrieving nothing. |
 | `dir` | `./memory` | Where eviction files older notes, relative to the manifest. Monthly `YYYY-MM.md`. Indexed, never carried. |
-| `maxActive` | 3 | Passages injected in one turn, into slot 7. `0` switches injection off while leaving `memory search` working. |
+| `maxActive` | 5 | Passages injected in one turn, into slot 7. `0` switches injection off while leaving `memory search` working. |
 | `threshold` | 0.20 | Normalised score floor, on the same scale as `skills.threshold`. |
-| `budget` | 600 | Total tokens across injected passages. Outside the workspace cap — this tier is retrieved, not carried. |
-| `includeHistory` | true | Index the person's messages and the agent's replies as well as the notes. **Never tool observations, at any setting.** |
+| `budget` | 2000 | Total tokens across injected passages. Outside the workspace cap — this tier is retrieved, not carried. |
+| `includeHistory` | true | Index the person's messages and the agent's replies as well as the notes, under the source `session:<key>`. **Never tool observations, and never anything else the runtime authored, at any setting.** |
+
+**`maxActive` and `budget` were raised from 3 and 600 when `includeHistory` was implemented**, and the
+change was required rather than generous. Those numbers were sized for note bullets, which are one
+line. A conversation exchange is a question plus a reply, each capped at 600 characters, so a full one
+estimates near 320 tokens and bills nearer 370 — `estimateTokens` runs 16–20% low on exactly this kind
+of mixed text. Two exchanges would have exhausted the old budget. The interaction with `selectPassages`
+is what makes an undersized budget worse than it looks: it stops at the first passage that does not fit
+and never skips past it, so one oversized exchange does not merely go uninjected — it sits at the top
+of the ranking and blocks everything behind it.
+
+**What `includeHistory` indexes is an allowlist of prose, not a blocklist of tool output.** Only a
+message with no `origin` is indexed; the runtime sets that field on everything it authored itself
+(`observation`, `call`, `repair`, `digest`), so a fifth kind added in a later phase is excluded by
+default. The direction matters because of what `observation` holds — text a stranger wrote, fetched
+from a page or returned by a provider. Indexing it would make prompt injection **durable**: retrieved
+into slot 7 in a later session, long after the write gate that fenced it stopped applying. A blocklist
+that forgot one origin would open that hole with nothing failing.
+
+Conversations are indexed **at turn end**, not during retrieval — the exchange being asked about does
+not exist yet when recall runs — and they are reconciled in their own namespace, separately from the
+files. That separation is load-bearing: reconciliation drops any source it was not handed, which is
+what makes a deleted archive file stop being retrieved, and one shared pass would delete every indexed
+conversation on the next turn's file sync. `memory rebuild` restores **both**, unconditionally, because
+clearing the index clears both — which also makes it the backfill for an agent whose sessions predate
+this being wired up.
+
+The conversation being had is excluded from its own prompt, for the reason the carried file is: it is
+already there, as history. Excluded at *retrieval* rather than left out of the index, so `memory search`
+can still find what was said a minute ago.
 
 Omitting the section switches memory off entirely: no slot 7, no index, and `memory search` reports
 that the agent has none configured rather than that it remembers nothing. `memory: {}` is enough to

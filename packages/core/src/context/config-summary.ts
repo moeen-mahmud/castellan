@@ -110,6 +110,7 @@ export function renderConfigSummary(input: ConfigSummaryInput): string {
         ],
         ["tools", describeTools(input)],
         ["skills", describeSkills(manifest, input.skillNames)],
+        ["memory", describeMemory(manifest)],
         ["channels", describeChannels(manifest, input.channelsStarted)],
         ["http api", describeServer(manifest, input.serverListening)],
         ["permissions", describePermissions(manifest)],
@@ -193,6 +194,40 @@ function describeSkills(manifest: AgentManifest, names: readonly string[] | unde
         "applies is already in my context under its own heading, so I can say what I have without " +
         "looking for it."
     )
+}
+
+/**
+ * Memory, and specifically whether anything survives the end of a conversation.
+ *
+ * The row exists because its absence was measured. An agent with memory configured, three excerpts of
+ * its own earlier sessions in slot 7, and correct reasoning about them — *"all from conversations on
+ * 2026-08-19"* — still finished its reply with **"the transcripts themselves don't carry over"**. It had
+ * no row telling it otherwise, so it fell back on what a stateless assistant is right to assume, and
+ * asserted it over the evidence in its own context.
+ *
+ * That is decision 5.17's rule applied to the one capability that had been left out of it: anything the
+ * runtime can be configured to do gets a row, an absent capability says `none` rather than being omitted,
+ * because a missing row reads as "no such concept" while a `none` row reads as a switch that is off.
+ *
+ * `includeHistory` is named separately from the notes on purpose. They are different promises — one says
+ * "what I chose to write down survives", the other says "what was said survives" — and an agent that
+ * conflates them either over-claims about a session nobody saved a note in, or under-claims exactly the
+ * way this one did.
+ */
+function describeMemory(manifest: AgentManifest): string {
+    const configured = manifest.memory
+    if (configured === undefined || configured.maxActive === 0) {
+        return "none — nothing carries past this conversation"
+    }
+    // Terse on purpose. Slot 2 is billed on every turn of every session, and a `context.test.ts` guard
+    // caps the whole block — the first version of this row cost 25 tokens over it on its own. What
+    // survives is only what changes the model's behaviour: that memory exists, what is in it, and that
+    // it arrives without being fetched. The security property (tool output is never indexed) is real and
+    // is *not* here: the model takes no action on it, and the manifest is where it belongs.
+    const scope = configured.includeHistory
+        ? "my notes and earlier conversations are both searched"
+        : "my notes are searched; earlier conversations are not, so what I do not write down is lost"
+    return `${scope} — up to ${configured.maxActive} a turn, already in my context when I answer`
 }
 
 /*

@@ -10,6 +10,9 @@
  *                          │
  *                          ▼
  *                     FTS5 index          migration 6, per agent, no session link
+ *                          ▲
+ *                          │ at turn end, prose only, when includeHistory
+ *                     messages            source `session:<key>`
  *
  * A fact said a minute ago is still *carried*, so the model does not need to retrieve it to know it —
  * which is the failure a retrieval-only design has, and it is a bad one for a small model that will not
@@ -20,6 +23,7 @@
  * The pieces:
  *
  * - `passages.ts` — markdown into retrievable units. Pure, no I/O.
+ * - `conversation.ts` — a past conversation as a markdown document. Pure, and refuses tool output.
  * - `writer.ts` — append, then evict, then report. What `memory_write` calls.
  * - `fts5.ts` — the retriever, and the indexer that reconciles it with the files.
  * - `retriever.ts` — the seam, the recency boost, and the three limits.
@@ -29,12 +33,26 @@
  */
 
 export {
+    type Exchange,
+    exchanges,
+    isSessionSource,
+    MAX_INDEXED_MESSAGE_CHARS,
+    renderConversation,
+    SESSION_SOURCE_PREFIX,
+    sessionSource,
+} from "./conversation.ts"
+export {
     enumerateFiles,
+    enumerateSessions,
     type Fts5Options,
     fts5Retriever,
     type IndexableFile,
+    type IndexableSession,
+    type IndexableSource,
     type IndexReport,
+    MAX_INDEXED_SESSION_MESSAGES,
     syncFiles,
+    syncSessions,
 } from "./fts5.ts"
 export { document, impliedDate, type Passage, splitPassages } from "./passages.ts"
 export {

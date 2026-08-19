@@ -197,9 +197,12 @@ export function App({
      * "press y" prompt was invisible, because both live in the layout that was not on screen. One frame
      * removes that class of bug rather than fixing instances of it.
      *
-     * `freshSession` is the host's answer to "is there history", because the chat does not render stored
-     * messages — a resumed conversation's history reaches the model, not the screen — so an empty transcript
-     * is equally true of a resumed session. The second half is what the owner chose: slash commands, notes
+     * `freshSession` is the host's answer to "is this conversation new". It used to be load-bearing for a
+     * second reason — the chat did not render stored messages, so an empty transcript was equally true of a
+     * resumed session — and that is no longer the case: `seedHistory` paints the conversation, so the `user`
+     * clause below is now true on its own for anything resumed. Both are kept because they answer different
+     * questions, and the remaining job of `freshSession` is the genuinely new session, where there is no
+     * history for the second clause to find. The second half is what the owner chose: slash commands, notes
      * and the banner all keep the brand mark, because they are setup rather than conversation. It goes when
      * you actually start talking, and does not come back.
      */

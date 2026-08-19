@@ -267,10 +267,19 @@ describe("planFiles", () => {
         // a `skills.dir` naming a path that does not exist is a load failure, so the two ship together
         // or neither does.
         expect(yaml).toContain("\nskills:\n  dir: ./skills")
+        // Memory is live too, and the assertion is the positive one on purpose: it shipped commented
+        // under a "Phase 6" heading for a phase that had already landed, so every generated agent
+        // remembered nothing and said "I don't have notes from our earlier session" — which reads as
+        // nothing having been saved rather than as a switch being off. The commented block also said
+        // `k: 6`, a field that does not exist, so uncommenting it would have failed the load: nothing
+        // checks a comment, which is the whole argument for not shipping capabilities inside one.
+        expect(yaml).toContain("\nmemory:\n  retriever: fts5")
+        expect(yaml).toContain("includeHistory: true")
+        expect(yaml.includes("# memory:")).toBe(false)
+        expect(yaml.includes("k: 6")).toBe(false)
         // Commented, with phases: uncommenting early must be a load refusal, not decoration.
         for (const line of [
             "# phases:",
-            "# memory:",
             "# channels:",
             "# schedules:",
             "# plugins:",

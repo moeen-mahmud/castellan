@@ -11,6 +11,7 @@
  * something that summarizes before it forgets.
  */
 
+import { isSessionSource, SESSION_SOURCE_PREFIX } from "../memory/conversation.ts"
 import type { ChatMessage } from "../model/provider.ts"
 import { type ContextBlock, SLOT, skillHeader, VOLATILE_HEADER } from "./blocks.ts"
 import { estimateMessageTokens, estimateTokens } from "./tokens.ts"
@@ -196,13 +197,29 @@ export function assembleContext(input: AssembleInput): AssembledContext {
     // Slot 7, retrieved: unpinned for the same reason knowledge is, and framed so the model can tell a
     // remembered fact from an instruction. One block per passage, so compaction can drop the weakest
     // rather than all of them.
+    //
+    // A note and a conversation excerpt get **different** sentences, and the reason is measured. With one
+    // frame for both, an agent handed three excerpts of its own earlier sessions answered the question
+    // correctly and then added *"that's what the saved notes say; the actual transcripts don't carry
+    // over"* — a wrong statement about its own state, made while holding the transcripts. `From
+    // session:local:3c2dc5, learned …` requires the model to decode a source string to work out what it
+    // is looking at, and it decoded it wrongly. Naming it is the `VOLATILE_HEADER` lesson: a fact with no
+    // frame is a fact a small model will not connect to the question. Structure only — the passage's own
+    // words are untouched, which is the line decision 4.19 draws.
+    //
+    // `isSessionSource` is imported rather than a `kind` field being threaded down from `#recall`,
+    // deliberately: five separate debugging rounds here have gone to a field declared in one place and
+    // dropped by a conditional spread in another, and the source string already carries the answer.
     for (const passage of input.memory ?? []) {
         if (passage.text.trim() === "") continue
+        const provenance = isSessionSource(passage.source)
+            ? `From an earlier conversation in this session's store (${passage.source.slice(SESSION_SOURCE_PREFIX.length)}), on ${passage.at}:`
+            : `From ${passage.source}, learned ${passage.at}:`
         pinned.push(
             block(
                 SLOT.memory,
                 "system",
-                `# Remembered\n\nFrom ${passage.source}, learned ${passage.at}:\n\n${passage.text}`,
+                `# Remembered\n\n${provenance}\n\n${passage.text}`,
                 false,
                 `memory:${passage.source}`,
             ),

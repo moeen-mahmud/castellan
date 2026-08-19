@@ -343,8 +343,14 @@ export const MemorySchema = z
          * budget the oldest notes move here, where only retrieval reaches them.
          */
         dir: z.string().min(1).default("./memory"),
-        /** Passages injected in one turn. Slot 7 is retrieved, never pinned; compaction may drop it. */
-        maxActive: z.number().int().nonnegative().default(3),
+        /**
+         * Passages injected in one turn. Slot 7 is retrieved, never pinned; compaction may drop it.
+         *
+         * Five rather than three since `includeHistory` began indexing conversations: a corpus that
+         * holds both notes and exchanges answers "where did we get to" from several passages, and three
+         * is one exchange plus the two notes that happen to share its vocabulary.
+         */
+        maxActive: z.number().int().nonnegative().default(5),
         /**
          * Normalised score floor, on exactly the scale `skills.threshold` uses — both go through
          * `rank/bm25.ts`, so the numbers are comparable and one formula change invalidates both.
@@ -361,8 +367,21 @@ export const MemorySchema = z
          * so 0.20 admits a two-of-three match and still refuses a one-term coincidence.
          */
         threshold: z.number().default(0.2),
-        /** Total tokens across injected passages. Outside the workspace cap — this tier is retrieved. */
-        budget: z.number().int().positive().default(600),
+        /**
+         * Total tokens across injected passages. Outside the workspace cap — this tier is retrieved.
+         *
+         * **Raised from 600 when `includeHistory` was implemented, and the change was required rather
+         * than generous.** 600 was sized for note bullets, which are one line; a conversation exchange
+         * is a question and a reply, capped at 600 characters a side by `MAX_INDEXED_MESSAGE_CHARS`, so
+         * a full one estimates near 320 tokens and bills nearer 370 — `estimateTokens` runs 16–20% low
+         * on exactly this kind of mixed text. Two exchanges would have exhausted the old budget.
+         *
+         * The interaction with `selectPassages` is why an undersized budget is worse than it looks: it
+         * stops at the first passage that does not fit and never skips past it, so one exchange too
+         * large for the budget does not merely go uninjected — it sits at the top of the ranking and
+         * blocks everything behind it. A ceiling, not a target: nothing is injected to fill it.
+         */
+        budget: z.number().int().positive().default(2000),
         /**
          * Index the person's messages and the agent's replies as well as the notes.
          *

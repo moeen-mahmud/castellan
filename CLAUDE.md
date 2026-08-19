@@ -332,10 +332,14 @@ Never claim a performance property without a number in `evals/` and a script to 
   compact tier read as type, because one cell per pixel renders a 5×5 glyph tall and thin (a cell is
   roughly 1:2); and the odd fifth row pairs with a blank at the **top**, since padding the bottom leaves
   every baseline a thin `▀` while padding the top makes it a full `█`, and caps want to be bottom-heavy.
-- **The chat never renders stored history, so "the transcript is empty" does not mean "new".** A resumed
-  conversation's messages reach the *model*, not the screen. Deriving the splash from an empty transcript
-  therefore puts a welcome screen in front of a conversation somebody is continuing — `freshSession` is
-  passed by `run`, which is the only layer that knows whether the key it resolved was generated.
+- **A resumed conversation is painted now, and the banner's message count is what made the old behaviour
+  indefensible.** The chat used to render no stored history at all — the messages reached the *model*, not
+  the screen — so `session local:3c2dc5 · 17 message(s)` sat above a **blank screen** and the only honest
+  reading was that something had been lost. `seedHistory` seeds the transcript from `agent.history()`;
+  prose only, no turn statistics (they were true of a process that has exited), rich path only, because
+  `--plain` must match a pipe byte for byte. `freshSession` is still passed by `run` — it is the only
+  layer that knows whether the key it resolved was generated — but it is no longer the only signal, since
+  `landing` also tests for a `user` item and that is now true of anything resumed.
 - **A value flag's bare form is declared per flag, because its safety is a fact about the field.** The
   parser consumes the next token unconditionally, dash or not, since `--input -5` is the text "-5".
   `FlagSpec.bare` inverts that for one flag — a session key cannot start with a dash — and a global
@@ -1378,3 +1382,51 @@ Never claim a performance property without a number in `evals/` and a script to 
   rows apart: the rich path drops it and anything genuinely absent from the header (`window`) moves down a
   line. The plain path keeps the row, because it has no header and that is the only place the version
   appears — so the fix belongs at the `seed()` call, not in the line builder both paths share.
+- **`includeHistory` indexes messages with *no* `origin` — an allowlist of prose, never a blocklist of tool
+  output.** The runtime stamps everything it authored (`observation`, `call`, `repair`, `digest`), so the
+  allowlist excludes a fifth kind added later by default. Inverting it is not a style choice: `observation`
+  holds text a stranger wrote, and indexing that makes prompt injection **durable** — retrieved into slot 7
+  in a later session, long after the write gate that fenced it stopped applying. Related trap: under NLT an
+  assistant message that called a tool carries its prose *and* the `ACTION` block in one `origin: "call"`
+  row, so that prose is excluded from both the index and the resumed screen. The final answer still pairs
+  correctly, because `exchanges` keeps the last prose reply and an intervening observation does not close
+  the pair; what is lost is the narration, which `exchanges` drops on purpose anyway.
+- **Memory has two reconciliation namespaces and `reconcile` drops whatever it was not handed.** That drop
+  is a feature — it is how a deleted archive file stops being retrieved — and it is why `syncFiles` and
+  `syncSessions` are separate functions over `session:<key>` and everything else. Recall syncs files every
+  turn; conversations are indexed at turn end. One shared pass would delete every indexed conversation on
+  the next turn, and the symptom is memory that works right after a rebuild and stops a turn later, with
+  nothing throwing. For the same reason `rebuildMemory` restores **both** unconditionally rather than
+  behind a `--history` flag: `clear` wipes both, so an opt-in would make a plain rebuild delete every
+  conversation and report success. `enumerateFiles` refuses a memory file named `session:*.md`, which
+  would otherwise be dropped by whichever pass ran second and re-added by the other, forever.
+- **A retrieved conversation excerpt needs a different sentence from a retrieved note, and slot 2 needs a
+  memory row.** Both were measured on the same live agent, and both are the "a fact with no frame is a fact
+  a small model will not connect to a question" lesson again. With one frame for both, an agent holding
+  three excerpts of its own earlier sessions answered correctly and then added *"that's what the saved
+  notes say; the actual transcripts don't carry over"* — wrong about its own state, while holding the
+  evidence. Fixing the frame moved the *reasoning* ("all from conversations on 2026-08-19") and left the
+  reply's claim intact, because slot 2 had no `memory` row: with nothing telling it otherwise the model
+  fell back on what a stateless assistant is right to assume. Both together, and the claim went away. The
+  row is trimmed hard — slot 2 is billed every turn of every session, `context.test.ts` caps the block, and
+  a new capability is a legitimate reason to grow it while a wordier sentence is not.
+- **`memory.budget` and `maxActive` are sized for the *largest* passage kind, because `selectPassages`
+  stops at the first that does not fit.** It never skips past — deliberately, so a short worse-ranked entry
+  cannot displace a long better-ranked one — which means an oversized passage does not merely go
+  uninjected, it sits at the top of the ranking and blocks everything behind it. So indexing conversations
+  *required* 600 → 2000 rather than merely benefiting from it: an exchange bills near 370 tokens against a
+  note bullet's handful. Each side of an exchange is capped for the same reason, and truncating there is
+  legitimate where truncating a workspace file is not — `messages` is canonical and the indexed document is
+  a projection, so a capped passage still carries the stamp and source needed to find the whole thing.
+- **A message rendered into markdown must be collapsed to one line first.** The indexed document is fed to
+  `splitPassages`, which reads a line beginning `- ` as a new passage and `#` as a heading — so a person's
+  message containing either *becomes structure*, splitting one exchange into several or hanging a heading
+  over unrelated notes. Collapsing whitespace per message removes the class rather than escaping cases, and
+  the test writes the hostile message rather than trusting the argument.
+- **`StoredMessage` never declared `origin` while `toMessage` had always set it.** A conditional spread is
+  not excess-property-checked, so the field arrived at runtime and was invisible to every reader's types —
+  anything filtering a page by origin silently compared `undefined`. That is the **sixth** time this exact
+  shape has cost a round here (`apiKeyEnv`, `ChatMessage.toolCalls`, `TurnInput.skills`,
+  `ToolContext.readArtifact`, `ToolContext.memoryDir`). Corollary learned writing the tests for it: an `as
+  never` cast on a test fixture defeats the check that would have caught the field name being wrong, which
+  is the one place that check is cheapest.

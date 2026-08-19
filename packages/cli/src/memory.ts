@@ -57,6 +57,16 @@ export async function memoryCommand(options: MemoryOptions): Promise<number> {
                 keyValue([
                     { label: "passages", value: String(report.passages) },
                     { label: "files read", value: String(report.indexed.length) },
+                    // Named separately from the files because they answer a different question. A
+                    // rebuild re-indexes conversations whether or not anyone asked, since `clear` wipes
+                    // both namespaces — so the count is how the person finds out it happened.
+                    {
+                        label: "conversations",
+                        value:
+                            report.sessions.length === 0
+                                ? "none indexed — memory.includeHistory is off, or there are no sessions yet"
+                                : String(report.sessions.length),
+                    },
                     {
                         label: "dropped",
                         value: report.dropped.length === 0 ? "" : report.dropped.join(", "),
@@ -66,9 +76,9 @@ export async function memoryCommand(options: MemoryOptions): Promise<number> {
             // Named rather than counted: after a rebuild every file was read, so a list of them is the
             // information — and an empty one means the memory directory has nothing in it yet.
             process.stdout.write(
-                report.indexed.length === 0
-                    ? "\nNothing to index. Memory files are written by `memory_write` and by hand.\n"
-                    : `\nRead: ${report.indexed.join(", ")}\n`,
+                report.indexed.length === 0 && report.sessions.length === 0
+                    ? "\nNothing to index. Memory files are written by `memory_write` and by hand, and conversations are indexed at the end of each turn.\n"
+                    : `\nRead: ${[...report.indexed, ...report.sessions].join(", ")}\n`,
             )
             return EXIT_OK
         }

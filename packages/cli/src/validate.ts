@@ -143,6 +143,15 @@ export function validateCommand(options: ValidateOptions): number {
                 (knowledge === undefined
                     ? ""
                     : `  knowledge    ${knowledge.entries.length} entries, maxActive=${knowledge.maxActive}, budget=${knowledge.budget}\n`) +
+                // Printed whether or not it is configured, unlike `knowledge` above it. Memory is the one
+                // tier whose absence is indistinguishable from "remembers nothing yet" — the reported
+                // failure this row exists for was an agent with the block commented out, which read as
+                // memory being broken rather than off. `none` is the informative answer here.
+                `  memory       ${
+                    manifest.memory === undefined
+                        ? "none — nothing is retrieved across sessions"
+                        : `${manifest.memory.retriever} at ${manifest.memory.dir}, maxActive=${manifest.memory.maxActive}, threshold=${manifest.memory.threshold}, budget=${manifest.memory.budget}, history=${manifest.memory.includeHistory}`
+                }\n` +
                 `  limits       maxSteps=${manifest.limits.maxSteps} turnTimeoutMs=${manifest.limits.turnTimeoutMs}\n` +
                 [
                     ...workspaceWarnings,

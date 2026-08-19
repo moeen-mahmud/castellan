@@ -395,8 +395,15 @@ describe("the configuration block", () => {
     test("it stays small — this is paid on every turn of every session, forever", () => {
         const text = renderConfigSummary({ ...base, manifest: manifestFor() })
         // A guard against drift, not a precise budget: the whole manifest cost 2,766 tokens and
-        // was middle-cut on every read, and this is under a tenth of that. `estimateTokens` is
-        // biased about 10% high, so the real figure sits near 190.
-        expect(estimateTokens(text)).toBeLessThan(240)
+        // was middle-cut on every read, and this is under a tenth of that — which is the anchor the
+        // number is checked against rather than the number itself.
+        //
+        // Raised from 240 when the `memory` row was added, and the row was trimmed twice first: a new
+        // *capability* is a legitimate reason for this to grow, a wordier sentence about an existing
+        // one is not. The row costs about twelve tokens and it is here because its absence was
+        // measured — an agent holding three excerpts of its own earlier sessions still asserted that
+        // "the transcripts themselves don't carry over", having no row to tell it otherwise.
+        // `estimateTokens` is biased about 10% high, so the real figure sits near 200.
+        expect(estimateTokens(text)).toBeLessThan(260)
     })
 })

@@ -2027,8 +2027,8 @@ it, which is the "the model must choose to look" assumption decision 6.2 rejects
 - [x] Incremental index: mtime + size + tokeniser version, reconciled per turn, `stat` without reading
 - [x] Context slot **7** (the plan said 4; 4 is the carried volatile tier, which is the other half)
 - [x] `dispach memory search|rebuild` — table entry plus a plain writer, `--json` included
-- [ ] `includeHistory` — indexing the person's and the agent's messages. Schema, spec and the refusal of
-  tool observations are in; the incremental hook at turn end is not
+- [x] `includeHistory` — indexing the person's and the agent's messages, at turn end, in their own
+  `session:<key>` namespace. **Completed in Phase 6.1**, which is where the surprises are recorded
 
 **Files.** `packages/core/src/memory/`, `packages/core/src/rank/`, `packages/core/src/ids.ts`,
 migration **006** (005 is the artifact store)
@@ -2238,3 +2238,81 @@ approval middleware from Phase 9.
 5. **Errors get hints.** A new error type without a `hint` fails review.
 6. **No brand strings outside `brand.ts` and `package.json`.**
 7. **Core imports nothing from siblings.** CI enforces it.
+
+---
+
+## Phase 6.1 — memory that actually carries
+
+**Why this exists.** Reported from a live agent: *"the memory fails entirely — it couldn't retrieve any
+useful information from previous sessions, and when I resume any session I don't see any previous
+messages."* Both halves were true, and they had **three** independent causes that compounded into one
+symptom. Diagnosed against the real store rather than by reading:
+
+1. `init` generated the `memory:` block **commented out**, under a `# Phase 6 — memory` heading for a
+   phase that had already shipped — so `manifest.memory` was `undefined`, `#recall` returned `[]`, and no
+   agent `init` has ever created had memory at all. The commented line also read `k: 6`, a field that does
+   not exist, so uncommenting it would have failed the load. Third occurrence of this defect after the
+   `system` and `web` providers.
+2. `includeHistory` was declared in the schema, defaulted to `true`, and **consumed nowhere** — so even
+   switched on, memory held only `MEMORY.md` and `USER.md`. The literal transcript of the reported failure:
+   *"what we were at?"* → *"I don't have anything in progress… no notes about where we left off."*
+3. Nothing in the CLI called `Agent.history()`, so a resumed session painted an empty screen under a
+   banner reading `17 message(s)`.
+
+**Deliverables**
+
+- [x] `memory/conversation.ts` — a conversation as a markdown document. Pure. Indexes messages with **no
+  `origin`** (an allowlist of prose, not a blocklist of tool output), one passage per exchange, each side
+  capped, whitespace collapsed so a message cannot become markdown structure
+- [x] `syncSessions` / `enumerateSessions` beside `syncFiles` / `enumerateFiles`, reconciling the
+  `session:<key>` namespace **separately**, over a shared `reconcile`
+- [x] Turn-end hook in `Agent.send`, after the append and after `turns.finish`; failure warns and is
+  swallowed, like recall's
+- [x] The live conversation excluded from its own slot 7, the way the carried file is
+- [x] `rebuildMemory` restores both namespaces — the backfill for sessions predating all of this
+- [x] `maxActive` 3 → 5 and `budget` 600 → 2000, required by the passage size rather than generous
+- [x] A `memory` row in slot 2, and a distinct frame for a conversation excerpt in slot 7
+- [x] `seedHistory` — the resumed conversation on the screen, prose only, rich path only
+- [x] `StoredMessage.origin` declared, having been set-but-undeclared since migration 5
+
+**Files.** `packages/core/src/memory/{conversation,fts5,index}.ts`,
+`packages/core/src/runtime/agent.ts`, `packages/core/src/context/{assemble,config-summary}.ts`,
+`packages/core/src/{manifest/schema,store/store}.ts`, `packages/cli/src/{run,memory,transcript}.ts`,
+`packages/cli/src/lib/init-flow.ts`, `examples/reference/agent.yaml`, `docs/02-SPEC-MANIFEST.md`
+
+**Non-goals**
+
+- Embeddings. Decision 5.x stands: prove lexical insufficient first, and `evals/memory/` is where that
+  argument would have to be made.
+- Recovering the prose from an NLT `origin: "call"` message. Under that dialect the model's narration and
+  its `ACTION` block are one row, so splitting them means running a dialect parser over stored text at
+  read time — with the dialect possibly changed since it was written. The final answer still pairs
+  correctly; what is lost is narration `exchanges` drops deliberately anyway. Recorded rather than hidden.
+- History on the plain path. `--plain` must match a pipe byte for byte, and a piped REPL replaying its own
+  history changes what every existing script reads.
+- A transcript row cap. There is no such constant today and the transcript already grows unbounded within
+  a session; seeding history does not change the shape of that, and inventing a cap here would be a
+  separate decision made in passing.
+- `knowledge:` is **still generated commented out**, and by the standing directive of decision 4.53 it
+  should not be. It differs from memory in needing a directory that must exist first, so it is a real
+  question rather than a one-line fix — flagged, not silently bundled.
+
+**Acceptance**
+
+- [x] A fresh `init` agent has memory on, with `includeHistory` — asserted positively in
+  `init-flow.test.ts`, and `# memory:` / `k: 6` asserted absent
+- [x] Something said in session A reaches the prompt of session B with no note written by hand — asserted
+  on the **request body** in `memory-turn.test.ts`
+- [x] An observation is never indexed — asserted on the request body, not on an intermediate value
+- [x] The live conversation is not retrieved into its own prompt
+- [x] Each reconciliation pass leaves the other's sources intact, in both directions
+- [x] An unchanged conversation is not read at all — the steady-state cost at every turn end
+- [x] A memory file cannot squat the `session:` namespace
+- [x] A hostile message (`- `, `#`, `---`) survives as **one** passage
+- [x] Live, against `deepseek-v4-flash` on a real agent with 18 prior sessions: `memory rebuild` indexed
+  18 conversations / 22 passages; `memory search "openclaw research"` returned 3 above threshold at
+  0.884 / 0.694 / 0.571; a **new** session answered "what were we researching in our earlier sessions?"
+  correctly, and the false *"the transcripts don't carry over"* rider disappeared once slot 2 had its row
+- [x] `dispach run milo --session <key>` paints the conversation — verified over a real pty at 100×30
+- [x] `bun test` 2328/0 · `test:node` 1128/0 · `bench:boot` 79 ms (ceiling 1000) · lint at the 6
+  pre-existing warnings

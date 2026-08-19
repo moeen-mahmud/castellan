@@ -1,7 +1,14 @@
 import { describe, expect, test } from "bun:test"
 import type { AnyEvent } from "@dispach/core"
 import type { TranscriptState } from "#lib/types"
-import { EMPTY_TRANSCRIPT, reduce, type TranscriptAction, transcriptRows } from "#transcript"
+import {
+    EMPTY_TRANSCRIPT,
+    reduce,
+    seed,
+    seedHistory,
+    type TranscriptAction,
+    transcriptRows,
+} from "#transcript"
 
 /**
  * Envelope fields the reducer never reads. The cast is needed only because TypeScript cannot check
@@ -872,5 +879,65 @@ describe("reasoning becomes a header and an indented body", () => {
             columns: 60,
         })
         expect(rows.some((row) => row.text.includes("reasoning"))).toBe(false)
+    })
+})
+
+describe("a resumed conversation", () => {
+    test("the messages that already happened are on the screen", () => {
+        // The defect this replaced: a resumed session painted an empty transcript over a full history.
+        // The messages reached the model and never the person, so the banner said `17 message(s)` above
+        // a blank screen and the only honest reading was that something had been lost.
+        const state = seedHistory(seed(["session local:abc123 · 4 message(s)"]), [
+            { role: "user", text: "what were we at?" },
+            { role: "assistant", text: "Researching OpenClaw." },
+        ])
+
+        expect(state.items.map((item) => item.role)).toEqual(["banner", "user", "assistant"])
+        expect(state.items[1]?.text).toBe("what were we at?")
+        expect(state.items[2]?.text).toBe("Researching OpenClaw.")
+    })
+
+    test("no statistics ride along, because they were true of a process that has exited", () => {
+        const state = seedHistory(EMPTY_TRANSCRIPT, [
+            { role: "assistant", text: "an earlier reply" },
+        ])
+        expect(state.items[0]?.stats).toBe(undefined)
+    })
+
+    test("ids stay unique across the banner and the history, or React drops a line", () => {
+        const state = seedHistory(seed(["a banner"]), [
+            { role: "user", text: "one" },
+            { role: "assistant", text: "two" },
+            { role: "user", text: "three" },
+        ])
+        expect(new Set(state.items.map((item) => item.id)).size).toBe(state.items.length)
+        expect(state.nextId).toBe(state.items.length)
+    })
+
+    test("an empty message is skipped rather than drawn as a blank row", () => {
+        // A native-dialect assistant message that only carried tool calls has no content at all.
+        const state = seedHistory(EMPTY_TRANSCRIPT, [
+            { role: "assistant", text: "   " },
+            { role: "user", text: "a real question" },
+        ])
+        expect(state.items.length).toBe(1)
+        expect(state.items[0]?.role).toBe("user")
+    })
+
+    test("nothing to resume leaves the state exactly as it was", () => {
+        const banner = seed(["a banner"])
+        expect(seedHistory(banner, [])).toEqual(banner)
+    })
+
+    test("the seeded conversation still reduces normally on top", () => {
+        // The rebuild path: `/sessions` and `/restart` both tear the mount down and reopen, so a seeded
+        // state has to be a legitimate starting point for the reducer rather than a display-only shape.
+        let state = seedHistory(seed(["a banner"]), [
+            { role: "user", text: "earlier" },
+            { role: "assistant", text: "earlier reply" },
+        ])
+        state = reduce(state, { kind: "user", text: "a new question" })
+        expect(state.items.at(-1)?.text).toBe("a new question")
+        expect(state.items.length).toBe(4)
     })
 })

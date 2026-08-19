@@ -330,6 +330,41 @@ export function seed(notes: readonly string[]): TranscriptState {
     return append(EMPTY_TRANSCRIPT, "banner", notes.join("\n"))
 }
 
+/** One earlier message, as much of it as a transcript row needs. */
+export interface PriorMessage {
+    readonly role: "user" | "assistant"
+    readonly text: string
+}
+
+/**
+ * Put the conversation that already happened on the screen.
+ *
+ * Resuming used to paint an empty transcript over a full history: the messages reached the *model* and
+ * never the person, so the banner said `17 message(s)` above a blank screen and the only honest reading
+ * was that something had been lost. Rendering them is what makes that count verifiable.
+ *
+ * A separate function rather than a second argument to `seed`, because an optional parameter here would
+ * have to distinguish "no history" from "not asked for" — and under `exactOptionalPropertyTypes` a
+ * default parameter fires on an explicitly passed `undefined`, which has already cost this repo a
+ * debugging round. `seedHistory(seed(banner), prior)` composes with nothing to remember.
+ *
+ * **Prose only.** Tool calls and observations are left out for the same reason they are left out of the
+ * memory index: an observation is a wall of text a stranger wrote, and replaying forty of them above the
+ * composer buries the conversation the person came back for. The turn statistics are left off too — they
+ * were true of a process that has exited, and a cost line under a resumed reply reads as this session's.
+ */
+export function seedHistory(
+    state: TranscriptState,
+    messages: readonly PriorMessage[],
+): TranscriptState {
+    let next = state
+    for (const message of messages) {
+        if (message.text.trim() === "") continue
+        next = append(next, message.role, message.text)
+    }
+    return next
+}
+
 /** The most recent completed turn's cost, for the status bar. */
 export function lastStats(items: readonly TranscriptItem[]): TurnStats | undefined {
     for (let i = items.length - 1; i >= 0; i -= 1) {

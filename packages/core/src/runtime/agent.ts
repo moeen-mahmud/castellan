@@ -36,12 +36,15 @@ import { resolveProviders } from "../manifest/providers.ts"
 import type { AgentManifest } from "../manifest/schema.ts"
 import {
     enumerateFiles,
+    enumerateSessions,
     fts5Retriever,
     type IndexReport,
     type MemoryRetriever,
     type RetrievedPassage,
     selectPassages,
+    sessionSource,
     syncFiles,
+    syncSessions,
 } from "../memory/index.ts"
 import type { PromptStyle } from "../model/prompt-style.ts"
 import type { ChatMessage } from "../model/provider.ts"
@@ -186,6 +189,8 @@ export class Agent {
               readonly maxActive: number
               readonly threshold: number
               readonly budget: number
+              /** Index past conversations as well as the notes. See `memory/conversation.ts`. */
+              readonly includeHistory: boolean
           }
         | undefined
     /** Resolved once, at load. Never searched, never extended at runtime. */
@@ -292,6 +297,7 @@ export class Agent {
                 maxActive: memory.maxActive,
                 threshold: memory.threshold,
                 budget: memory.budget,
+                includeHistory: memory.includeHistory,
             }
         }
 
@@ -488,7 +494,7 @@ export class Agent {
 
         const active = this.knowledge === undefined ? [] : activateKnowledge(input, this.knowledge)
         const skills = this.#activateSkills(input, history)
-        const remembered = await this.#recall(input)
+        const remembered = await this.#recall(input, sessionKey)
 
         const result = await runTurn({
             agentId: this.id,
@@ -588,9 +594,51 @@ export class Agent {
         if (result.appended.length > 0) {
             await this.store.messages.append(this.id, sessionKey, result.appended, turnId)
         }
+        // After the append, so this turn is in the corpus before the next one asks about it — and after
+        // `turns.finish`, so a failure to index cannot lose the audit record.
+        await this.#indexHistory()
 
         this.#reportManifestChange()
         return result
+    }
+
+    /**
+     * Index the conversations, so the next session can be asked what this one was about.
+     *
+     * At turn end rather than during recall, and that is the whole of `includeHistory`. Recall runs
+     * before the model is called, when this turn's exchange does not exist yet; indexing there would
+     * make every conversation exactly one turn stale, which is the turn somebody is most likely to ask
+     * about.
+     *
+     * **Every** session is passed, not just this one. `reconcile` drops any source in its namespace that
+     * it was not handed, so a single-session call would delete every other conversation from the index —
+     * and it is cheap to be correct here, because `enumerateSessions` reads staleness out of a summary
+     * it already has and only re-reads the session that moved.
+     *
+     * Failure is reported and swallowed, like recall's. The reply has been produced and persisted; a
+     * broken index must not turn a delivered answer into an error, and the next turn will try again.
+     */
+    async #indexHistory(): Promise<void> {
+        const memory = this.#memory
+        if (memory === undefined || !memory.includeHistory) return
+        try {
+            await syncSessions({
+                store: this.store.memory,
+                agentId: this.id,
+                sessions: await enumerateSessions({
+                    sessions: this.store.sessions,
+                    messages: this.store.messages,
+                    agentId: this.id,
+                }),
+                now: new Date(),
+            })
+        } catch (error) {
+            this.#bus.emit("agent.warning", {
+                code: "memory_history_index_failed",
+                message: `Indexing the conversation for memory failed: ${error instanceof Error ? error.message : String(error)}`,
+                hint: "The reply was delivered and is in the store; only its retrievability is affected. `memory rebuild --history` re-indexes every conversation.",
+            })
+        }
     }
 
     /**
@@ -671,7 +719,7 @@ export class Agent {
                 ? []
                 : activateKnowledge(input, this.knowledge)
         const skills = input === "" ? [] : this.#activateSkills(input, history)
-        const remembered = await this.#recall(input)
+        const remembered = await this.#recall(input, sessionKey)
         const tools = this.#toolRuntime
 
         const assembled = assembleContext({
@@ -756,7 +804,10 @@ export class Agent {
      * cost the agent its memory for that turn, not the reply: the person asked a question, and answering
      * without slot 7 is strictly better than an error. Reported on the bus rather than swallowed.
      */
-    async #recall(input: string): Promise<readonly { source: string; at: string; text: string }[]> {
+    async #recall(
+        input: string,
+        sessionKey: string,
+    ): Promise<readonly { source: string; at: string; text: string }[]> {
         const memory = this.#memory
         if (memory === undefined || memory.maxActive === 0 || input === "") return []
 
@@ -769,7 +820,15 @@ export class Agent {
                 // Over-fetch relative to `maxActive`: the retriever re-ranks by recency and drops
                 // excluded sources, so asking for exactly the cap would lose both effects.
                 limit: Math.max(memory.maxActive * 4, 12),
-                ...(memory.carried === undefined ? {} : { exclude: [memory.carried] }),
+                // The conversation being had is excluded for exactly the reason the carried file is:
+                // it is already in the prompt, as history. Retrieving it would spend slot 7 telling
+                // the model something it can read two slots down — and would do it worst on a long
+                // session, where the budget matters most. Excluded at retrieval, not in the index, so
+                // `memory search` can still find what was said a minute ago.
+                exclude: [
+                    sessionSource(sessionKey),
+                    ...(memory.carried === undefined ? [] : [memory.carried]),
+                ],
             })
 
             return selectPassages(ranked, {
@@ -849,18 +908,38 @@ export class Agent {
     }
 
     /**
-     * Forget the index and re-read every file.
+     * Forget the index and re-read every file — and every conversation, when `includeHistory` is on.
      *
      * Exists because staleness is detected from mtime **and** size, and an edit that preserves both is a
      * real blind spot rather than a hypothetical one — a one-character correction, or a restore from a
      * copy that kept timestamps. The files are canonical, so this is always safe: nothing is lost by
      * discarding an index that can be rebuilt from them.
+     *
+     * **Conversations are re-indexed unconditionally, not behind a flag, because `clear` wipes both
+     * namespaces.** A `--history` opt-in was the plan and it was a foot-gun: a plain rebuild would have
+     * deleted every indexed conversation and reported success, and the person most likely to run one is
+     * the person whose retrieval has just stopped working. Restoring exactly what was discarded is the
+     * only shape with no silent loss in it — and it makes a rebuild the backfill for an agent whose
+     * sessions predate this being wired up at all.
      */
-    async rebuildMemory(): Promise<IndexReport> {
+    async rebuildMemory(): Promise<IndexReport & { readonly sessions: readonly string[] }> {
         const memory = this.#memory
         if (memory === undefined) throw memoryNotConfigured()
         await this.store.memory.clear(this.id)
-        return await this.#syncMemory(memory.dir)
+        const files = await this.#syncMemory(memory.dir)
+        if (!memory.includeHistory) return { ...files, sessions: [] }
+        const sessions = await syncSessions({
+            store: this.store.memory,
+            agentId: this.id,
+            sessions: await enumerateSessions({
+                sessions: this.store.sessions,
+                messages: this.store.messages,
+                agentId: this.id,
+            }),
+            now: new Date(),
+        })
+        // The session pass ran second, so its count is the corpus total rather than the files' subtotal.
+        return { ...files, passages: sessions.passages, sessions: sessions.indexed }
     }
 
     #activateSkills(

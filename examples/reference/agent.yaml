@@ -399,16 +399,28 @@ memory:
   # Relative to this file. Monthly `YYYY-MM.md`, written by eviction, read by retrieval.
   dir: ./memory
   # Passages injected into slot 7 in one turn. 0 keeps `memory search` working with no injection.
-  maxActive: 3
+  # Five since conversations are indexed as well as notes: a corpus holding both answers "where did
+  # we get to" from several passages, and three is one exchange plus two notes that share its words.
+  maxActive: 5
   # LOWER than skills' 0.35 on purpose: a wrong skill displaces the right one, an extra remembered
   # note costs ~20 tokens. Measured — a note matching two of a query's three informative terms
   # scores 0.284, which 0.35 would withhold and which is a good answer.
   threshold: 0.2
   # Total across injected passages. Outside the workspace cap: this tier is retrieved, not carried.
-  budget: 600
-  # Index the person's messages and the agent's replies too. Tool observations are NEVER indexed at
-  # any setting — that is where untrusted text lives, and indexing it would make an injection
-  # durable across sessions, long after the write gate that fenced it stopped applying.
+  # Raised from 600 when includeHistory was implemented, and required rather than generous: 600 was
+  # sized for one-line notes, and an exchange is a question plus a reply — capped at 600 characters a
+  # side, so a full one bills near 370 tokens. Two would have exhausted the old budget. A ceiling,
+  # not a target; and selectPassages STOPS at the first passage that does not fit rather than
+  # skipping it, so an undersized budget lets one big exchange block everything ranked below it.
+  budget: 2000
+  # Index the person's messages and the agent's replies too, so a session nobody wrote a note in is
+  # still answerable later. Only messages the *runtime* did not author are indexed — `origin` marks
+  # observations, calls, repairs and digests, and the filter is an allowlist of prose rather than a
+  # blocklist of those four, so a fifth kind added later is excluded by default. Tool observations
+  # are therefore NEVER indexed at any setting: that is where untrusted text lives, and indexing it
+  # would make an injection durable across sessions, long after the write gate that fenced it
+  # stopped applying. Conversations are indexed at turn end and reconciled separately from the
+  # files — `memory rebuild` restores both, because clearing the index clears both.
   includeHistory: true
 
 # ── Phase 4: channels, delivery, and the HTTP server ──────────────────────────────────────
