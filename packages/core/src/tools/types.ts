@@ -138,6 +138,34 @@ export interface ToolContext {
      * `WorkspaceWriteTarget.reason`.
      */
     readonly writeTarget?: WorkspaceWriteTarget
+    /**
+     * Reads back what compaction displaced. Resolved by the runtime, scoped to this session.
+     *
+     * A narrow function rather than the store itself, for the same reason `writeTarget` is a resolved
+     * path rather than a filesystem: a tool handed the store could read another session's history, and
+     * the seam is the only place that can be true or false.
+     *
+     * Absent when the runtime has no store behind it — `previewContext`, a bare `toolContext()` in a
+     * test — and `artifact_read` says so rather than reporting an empty artifact.
+     */
+    readonly readArtifact?: (id: string) => Promise<DisplacedArtifact | undefined>
+    /**
+     * Moves the session to another phase. Resolved by the turn, which owns the current one.
+     *
+     * A seam rather than state on the context, because the change has to reach three places the tool
+     * cannot see: the visible catalogue for the rest of this turn, the store, and the `phase.changed`
+     * event. Absent means nothing runs turns here — `previewContext`, a bare `toolContext()` — and
+     * `phase_set` refuses rather than reporting a move that did not happen.
+     */
+    readonly setPhase?: (to: string) => Promise<void>
+}
+
+/** What `artifact_read` needs to know about a displaced observation. Structural on purpose. */
+export interface DisplacedArtifact {
+    readonly content: string
+    /** Estimated cost of the original, so the reader can be told the size before paging through it. */
+    readonly tokens: number
+    readonly slug?: string
 }
 
 /**

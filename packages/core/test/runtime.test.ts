@@ -295,6 +295,10 @@ describe("a turn", () => {
         const types = seen.map((e) => e.type)
         expect(types).toEqual([
             "turn.start",
+            // Between the ladder and the assembly, and both now describe the *same* prompt — the one
+            // about to be sent. Reporting the pre-compaction figure here put `ctx 128%` on a status
+            // line for a session compaction had handled; `peak` carries that figure instead.
+            "context.pressure",
             "context.assembled",
             "model.call",
             "model.result",

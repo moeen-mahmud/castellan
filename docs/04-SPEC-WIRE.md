@@ -214,6 +214,10 @@ interface Event {
 | `agent.channel.rejected` | inbound not turned into a turn | `channelId`, `reason` (`duplicate` \| `denied`), `sender`, `detail` |
 | `turn.start` | inbound accepted | `source`, `inputTokens` |
 | `context.assembled` | per turn | `slots: [{slot, label, tokens, pinned}]`, `total` |
+| `context.pressure` | per step, after compaction | `fraction` (of the prompt actually sent), `tokens`, `budget`, `source: reported \| corrected \| estimated`, `peak?` (what the ladder faced) |
+| `compaction.stage` | per stage that ran | `stage`, `before`, `after`, `changed`, `digest?: model \| mechanical` |
+| `context.reset` | per S5 firing | `count`, `warning?` |
+| `phase.changed` | per `phase_set` that moved | `to`, `tools` (count now visible) |
 | `context.pressure` | per step | `used`, `window`, `fraction` |
 | `compaction.stage` | ladder fires | `stage`, `before`, `after`, `dropped` |
 | `context.reset` | S5 fires | `sessionKey` — warn level |

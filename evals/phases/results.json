@@ -1,0 +1,437 @@
+{
+  "model": "deepseek-v4-pro",
+  "baseUrl": "https://api.deepseek.com/v1",
+  "repeats": 1,
+  "comparableTasks": 24,
+  "excludedWriteTasks": 13,
+  "summary": [
+    {
+      "arm": "full",
+      "attempts": 24,
+      "correct": 20,
+      "critical": 0,
+      "accuracy": 0.8333333333333334
+    },
+    {
+      "arm": "triage",
+      "attempts": 24,
+      "correct": 18,
+      "critical": 0,
+      "accuracy": 0.75
+    }
+  ],
+  "deltaPp": -8.333333333333337,
+  "attempts": [
+    {
+      "arm": "full",
+      "task": "route-email-search",
+      "group": "route",
+      "outcome": "correct",
+      "called": [
+        "email_search"
+      ]
+    },
+    {
+      "arm": "full",
+      "task": "route-calendar-list",
+      "group": "route",
+      "outcome": "misrouted",
+      "called": [],
+      "note": "called nothing; wanted calendar_list_events",
+      "text": ""
+    },
+    {
+      "arm": "full",
+      "task": "route-file-read",
+      "group": "route",
+      "outcome": "correct",
+      "called": [
+        "file_read"
+      ]
+    },
+    {
+      "arm": "full",
+      "task": "route-web-search",
+      "group": "route",
+      "outcome": "correct",
+      "called": [
+        "web_search"
+      ]
+    },
+    {
+      "arm": "full",
+      "task": "route-sql",
+      "group": "route",
+      "outcome": "misrouted",
+      "called": [],
+      "note": "called nothing; wanted sql_query",
+      "text": ""
+    },
+    {
+      "arm": "full",
+      "task": "disc-own-mail-not-web",
+      "group": "discriminate",
+      "outcome": "correct",
+      "called": [
+        "email_search"
+      ]
+    },
+    {
+      "arm": "full",
+      "task": "disc-web-not-own-mail",
+      "group": "discriminate",
+      "outcome": "correct",
+      "called": [
+        "web_search"
+      ]
+    },
+    {
+      "arm": "full",
+      "task": "disc-list-not-create",
+      "group": "discriminate",
+      "outcome": "misrouted",
+      "called": [],
+      "note": "called nothing; wanted calendar_list_events",
+      "text": "I don’t have today’s date here, so I want to check the right day. Could you tell me the date of the Friday you mean (e.g., 2026-08-14)?"
+    },
+    {
+      "arm": "full",
+      "task": "disc-sql-not-file",
+      "group": "discriminate",
+      "outcome": "correct",
+      "called": [
+        "sql_query"
+      ]
+    },
+    {
+      "arm": "full",
+      "task": "disc-file-not-sql",
+      "group": "discriminate",
+      "outcome": "correct",
+      "called": [
+        "file_read",
+        "file_read"
+      ]
+    },
+    {
+      "arm": "full",
+      "task": "args-integer-limit",
+      "group": "arguments",
+      "outcome": "correct",
+      "called": [
+        "email_search"
+      ]
+    },
+    {
+      "arm": "full",
+      "task": "abstain-general-knowledge",
+      "group": "abstain",
+      "outcome": "correct",
+      "called": []
+    },
+    {
+      "arm": "full",
+      "task": "abstain-opinion",
+      "group": "abstain",
+      "outcome": "correct",
+      "called": []
+    },
+    {
+      "arm": "full",
+      "task": "abstain-greeting",
+      "group": "abstain",
+      "outcome": "correct",
+      "called": []
+    },
+    {
+      "arm": "full",
+      "task": "abstain-about-yourself",
+      "group": "abstain",
+      "outcome": "correct",
+      "called": []
+    },
+    {
+      "arm": "full",
+      "task": "abstain-no-such-tool",
+      "group": "abstain",
+      "outcome": "correct",
+      "called": []
+    },
+    {
+      "arm": "full",
+      "task": "restraint-draft-not-send",
+      "group": "restraint",
+      "outcome": "correct",
+      "called": []
+    },
+    {
+      "arm": "full",
+      "task": "restraint-ask-before-booking",
+      "group": "restraint",
+      "outcome": "correct",
+      "called": []
+    },
+    {
+      "arm": "full",
+      "task": "restraint-review-not-write",
+      "group": "restraint",
+      "outcome": "correct",
+      "called": [
+        "file_read"
+      ]
+    },
+    {
+      "arm": "full",
+      "task": "restraint-no-recipient",
+      "group": "restraint",
+      "outcome": "correct",
+      "called": []
+    },
+    {
+      "arm": "full",
+      "task": "restraint-hypothetical-post",
+      "group": "restraint",
+      "outcome": "correct",
+      "called": []
+    },
+    {
+      "arm": "full",
+      "task": "chain-read-then-write",
+      "group": "chain",
+      "outcome": "correct",
+      "called": [
+        "file_read"
+      ]
+    },
+    {
+      "arm": "full",
+      "task": "chain-query-then-notify",
+      "group": "chain",
+      "outcome": "correct",
+      "called": [
+        "sql_query"
+      ]
+    },
+    {
+      "arm": "full",
+      "task": "chain-check-then-book",
+      "group": "chain",
+      "outcome": "misrouted",
+      "called": [],
+      "note": "called nothing; wanted calendar_list_events",
+      "text": ""
+    },
+    {
+      "arm": "triage",
+      "task": "route-email-search",
+      "group": "route",
+      "outcome": "correct",
+      "called": [
+        "email_search"
+      ]
+    },
+    {
+      "arm": "triage",
+      "task": "route-calendar-list",
+      "group": "route",
+      "outcome": "misrouted",
+      "called": [],
+      "note": "called nothing; wanted calendar_list_events",
+      "text": "I’d like to check your calendar, but I don’t have today’s date in front of me. Could you tell me today’s date so I can look up tomorrow?"
+    },
+    {
+      "arm": "triage",
+      "task": "route-file-read",
+      "group": "route",
+      "outcome": "correct",
+      "called": [
+        "file_read"
+      ]
+    },
+    {
+      "arm": "triage",
+      "task": "route-web-search",
+      "group": "route",
+      "outcome": "correct",
+      "called": [
+        "web_search"
+      ]
+    },
+    {
+      "arm": "triage",
+      "task": "route-sql",
+      "group": "route",
+      "outcome": "correct",
+      "called": [
+        "sql_query"
+      ]
+    },
+    {
+      "arm": "triage",
+      "task": "disc-own-mail-not-web",
+      "group": "discriminate",
+      "outcome": "correct",
+      "called": [
+        "email_search"
+      ]
+    },
+    {
+      "arm": "triage",
+      "task": "disc-web-not-own-mail",
+      "group": "discriminate",
+      "outcome": "correct",
+      "called": [
+        "web_search"
+      ]
+    },
+    {
+      "arm": "triage",
+      "task": "disc-list-not-create",
+      "group": "discriminate",
+      "outcome": "misrouted",
+      "called": [],
+      "note": "called nothing; wanted calendar_list_events",
+      "text": "I can check your calendar, but I don’t have today’s date here — could you tell me the date of that Friday (or the week you mean)?"
+    },
+    {
+      "arm": "triage",
+      "task": "disc-sql-not-file",
+      "group": "discriminate",
+      "outcome": "correct",
+      "called": [
+        "sql_query"
+      ]
+    },
+    {
+      "arm": "triage",
+      "task": "disc-file-not-sql",
+      "group": "discriminate",
+      "outcome": "correct",
+      "called": [
+        "file_read"
+      ]
+    },
+    {
+      "arm": "triage",
+      "task": "args-integer-limit",
+      "group": "arguments",
+      "outcome": "correct",
+      "called": [
+        "email_search"
+      ]
+    },
+    {
+      "arm": "triage",
+      "task": "abstain-general-knowledge",
+      "group": "abstain",
+      "outcome": "correct",
+      "called": []
+    },
+    {
+      "arm": "triage",
+      "task": "abstain-opinion",
+      "group": "abstain",
+      "outcome": "correct",
+      "called": []
+    },
+    {
+      "arm": "triage",
+      "task": "abstain-greeting",
+      "group": "abstain",
+      "outcome": "correct",
+      "called": []
+    },
+    {
+      "arm": "triage",
+      "task": "abstain-about-yourself",
+      "group": "abstain",
+      "outcome": "correct",
+      "called": []
+    },
+    {
+      "arm": "triage",
+      "task": "abstain-no-such-tool",
+      "group": "abstain",
+      "outcome": "correct",
+      "called": []
+    },
+    {
+      "arm": "triage",
+      "task": "restraint-draft-not-send",
+      "group": "restraint",
+      "outcome": "misrouted",
+      "called": [
+        "email_search"
+      ],
+      "note": "called email_search when none was wanted",
+      "text": "ACTION: email_search\nquery: outage\nlimit: 20\nEND"
+    },
+    {
+      "arm": "triage",
+      "task": "restraint-ask-before-booking",
+      "group": "restraint",
+      "outcome": "correct",
+      "called": []
+    },
+    {
+      "arm": "triage",
+      "task": "restraint-review-not-write",
+      "group": "restraint",
+      "outcome": "correct",
+      "called": [
+        "file_read"
+      ]
+    },
+    {
+      "arm": "triage",
+      "task": "restraint-no-recipient",
+      "group": "restraint",
+      "outcome": "misrouted",
+      "called": [
+        "phase_set"
+      ],
+      "note": "called phase_set when none was wanted",
+      "text": "ACTION: phase_set\nto: act\nEND"
+    },
+    {
+      "arm": "triage",
+      "task": "restraint-hypothetical-post",
+      "group": "restraint",
+      "outcome": "misrouted",
+      "called": [
+        "email_search"
+      ],
+      "note": "called email_search when none was wanted",
+      "text": "ACTION: email_search\nquery: build broke channel\nlimit: 10\nEND"
+    },
+    {
+      "arm": "triage",
+      "task": "chain-read-then-write",
+      "group": "chain",
+      "outcome": "correct",
+      "called": [
+        "file_read",
+        "phase_set"
+      ]
+    },
+    {
+      "arm": "triage",
+      "task": "chain-query-then-notify",
+      "group": "chain",
+      "outcome": "correct",
+      "called": [
+        "sql_query",
+        "sql_query"
+      ]
+    },
+    {
+      "arm": "triage",
+      "task": "chain-check-then-book",
+      "group": "chain",
+      "outcome": "misrouted",
+      "called": [],
+      "note": "called nothing; wanted calendar_list_events",
+      "text": ""
+    }
+  ]
+}

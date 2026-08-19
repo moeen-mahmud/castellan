@@ -684,6 +684,8 @@ export function App({
                 last={last}
                 quiet={quiet}
                 armed={armed}
+                {...(state.pressure === undefined ? {} : { pressure: state.pressure })}
+                {...(state.phase === undefined ? {} : { phase: state.phase })}
             />
         </Box>
     )

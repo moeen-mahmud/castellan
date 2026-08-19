@@ -28,6 +28,16 @@ export const INIT_LOCAL_TOOLS: readonly { readonly slug: string; readonly note: 
         slug: "memory_write",
         note: "mutating: serialises, holds a reserved write slot, never retried",
     },
+    {
+        slug: "artifact_read",
+        // Pinned by default rather than offered as a choice, and that is not the usual bias here.
+        // Compaction is always on — the thresholds are manifest values with defaults — so a generated
+        // agent will eventually replace a large tool result with a pointer whether or not anyone
+        // decided anything. Without this tool that pointer names an id nothing can resolve: the
+        // model is told detail was removed and given no way to get it back, which is worse than
+        // either having the tool or never seeing the marker.
+        note: "read-only: follows the pointer compaction leaves behind",
+    },
 ]
 
 /** Exported so the drift test can compare against core without re-deriving the mapping. */

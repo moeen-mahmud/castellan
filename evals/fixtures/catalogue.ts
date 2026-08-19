@@ -18,6 +18,13 @@
 
 import type { Tool, ToolProvider, ToolSpec } from "../../packages/core/src/tools/types.ts"
 
+/**
+ * The fixture catalogue.
+ *
+ * Exported as `EVAL_TOOLS` as well as through `evalToolProvider`, because `eval-phases` needs the specs
+ * *without* a registry: it renders two catalogues from the same list and compares them, which a provider
+ * that only resolves by slug cannot express.
+ */
 const SPECS: readonly ToolSpec[] = [
     {
         slug: "email_send",
@@ -194,6 +201,8 @@ const SPECS: readonly ToolSpec[] = [
         },
     },
 ]
+
+export const EVAL_TOOLS: readonly ToolSpec[] = SPECS
 
 export const EVAL_TOOL_SLUGS: readonly string[] = SPECS.map((spec) => spec.slug)
 

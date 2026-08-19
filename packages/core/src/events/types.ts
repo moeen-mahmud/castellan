@@ -75,6 +75,57 @@ export interface EventDataMap {
     "agent.warning": ErrorDetail
     "turn.start": { source: string; inputTokens: number }
     "context.assembled": { slots: ContextSlotReport[]; total: number }
+    /**
+     * How full the prompt that was sent is. Emitted once per step, after any compaction.
+     *
+     * `fraction` describes the prompt that went to the endpoint, not the one the ladder was handed —
+     * and that distinction was a real defect, caught in a pty capture. Reporting the pre-compaction
+     * figure put **`ctx 128%`** on the status line of a session that compaction had handled correctly:
+     * true of a prompt nobody sent, and indistinguishable from a runtime that had just overflowed its
+     * window. `peak` carries the figure the ladder actually ran on, and is present only when it differs.
+     *
+     * `source` is here because a fraction alone cannot be acted on: `estimated` means no endpoint has
+     * reported `prompt_tokens` yet and the figure carries the estimator's raw bias, which is measured
+     * at 16–20% *low* on observation-heavy prompts. Reading a bare number without knowing which of the
+     * three it is invites tuning thresholds against the wrong quantity.
+     */
+    "context.pressure": {
+        fraction: number
+        tokens: number
+        budget: number
+        source: "reported" | "corrected" | "estimated"
+        /** What the ladder faced, when compaction changed it. Absent on an ordinary turn. */
+        peak?: number
+    }
+    /**
+     * One compaction stage that ran. Emitted per stage, in the order they ran.
+     *
+     * `changed: false` is not noise — it is why the next stage ran, and a ladder that only reported its
+     * successes would look like it skipped rungs. `digest` names where the text came from, because "the
+     * digest is thin" and "the compactor is unreachable" need different fixes.
+     */
+    "compaction.stage": {
+        stage: "trim" | "snip" | "micro" | "collapse" | "reset"
+        before: number
+        after: number
+        changed: boolean
+        digest?: "model" | "mechanical"
+    }
+    /**
+     * The last rung fired: history was replaced by a digest.
+     *
+     * `count` is per session, and a second firing is a misconfiguration rather than a busy day —
+     * `warning` carries the sentence saying so.
+     */
+    "context.reset": { count: number; warning?: string }
+    /**
+     * The session moved to another phase, and the visible catalogue changed with it.
+     *
+     * `tools` is the count now visible, because that is the fact a reader wants: the phase name alone
+     * does not say whether the move did anything. Emitted from inside the step that called `phase_set`,
+     * so the ordering shows which reply the change applies to.
+     */
+    "phase.changed": { to: string; tools: number }
     "model.call": {
         role: "main" | "selector" | "compactor"
         model: string

@@ -576,6 +576,52 @@ export function workspaceNotEditable(name: string, editable: string): ToolError 
     })
 }
 
+export function artifactUnavailable(): ToolError {
+    return new ToolError({
+        code: "artifact_unavailable",
+        message:
+            "This runtime has no artifact store, so a compacted observation cannot be read back.",
+        hint: "artifact_read only works inside a session backed by a store. If you are seeing a compaction pointer without one, the pointer was written by a different process — report the text of the pointer rather than guessing at what it replaced.",
+    })
+}
+
+export function artifactNotFound(id: string): ToolError {
+    return new ToolError({
+        code: "artifact_not_found",
+        message: `No compacted observation is stored under ${JSON.stringify(id)} in this conversation.`,
+        hint: "Copy the id exactly from the pointer in the conversation — it is not guessable and it is scoped to this conversation. If the pointer came from a session you have since switched away from, the observation is not reachable from here.",
+    })
+}
+
+export function phaseUnknown(to: string, phases: readonly string[]): ToolError {
+    return new ToolError({
+        code: "phase_unknown",
+        message: `${JSON.stringify(to)} is not a phase this agent declares.`,
+        hint: `Declared phases are ${phases.join(", ")}. Phases come from the manifest and cannot be created at run time — if the tools you need are in none of them, say so rather than guessing at a name.`,
+    })
+}
+
+export function phaseAllowUnmatched(
+    unmatched: readonly { readonly phase: string; readonly entry: string }[],
+    available: readonly string[],
+): ConfigError {
+    const listed = unmatched.map((one) => `phases.${one.phase}.allow: ${one.entry}`).join(", ")
+    return new ConfigError({
+        code: "phase_allow_unmatched",
+        message: `${unmatched.length} phase allow ${unmatched.length === 1 ? "entry names" : "entries name"} nothing in this catalogue: ${listed}.`,
+        hint: `An allow entry is a tool slug, a tag: annotation, or *. Available slugs: ${available.join(", ") || "none"}. Refused rather than ignored, because a phase that silently exposes fewer tools than its author wrote shows up turns later as the agent declining work it should be able to do. Tags come from the tool's own spec, so tag:write matches nothing if no pinned tool carries it.`,
+        field: `phases.${unmatched[0]?.phase ?? ""}.allow`,
+    })
+}
+
+export function phaseNotAvailable(): ToolError {
+    return new ToolError({
+        code: "phase_not_available",
+        message: "This runtime cannot change phase.",
+        hint: "phase_set only works inside a session that owns a phase. If you are seeing this tool without one, the catalogue was built by something that does not run turns — report it rather than retrying.",
+    })
+}
+
 // ─── Soul ────────────────────────────────────────────────────────────────────────────────
 
 export function soulRequirementInvalid(expr: string): ConfigError {

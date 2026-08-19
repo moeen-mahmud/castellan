@@ -101,6 +101,23 @@ export interface TranscriptState {
     readonly status: TurnStatus
     /** Monotonic id source. Kept in state so the reducer needs no clock and no randomness. */
     readonly nextId: number
+    /**
+     * How full the prompt was on the most recent step, as a fraction of the budget.
+     *
+     * On the status line rather than in the transcript because it is a gauge, not an event: it changes
+     * every step and a reader wants the current value, never the history of it. The stages that
+     * *destroy* detail — collapse and reset — do get transcript notes, because those are events and a
+     * person who was not watching the gauge still needs to know their conversation was summarised.
+     */
+    readonly pressure?: number
+    /**
+     * The phase the session is in, once something has moved it.
+     *
+     * Absent until the first `phase.changed`, deliberately: the entry phase is not an event and putting
+     * it here would mean the reducer inventing a fact it was never told. What a reader needs is *that it
+     * changed* and what to now — which is exactly what the event carries.
+     */
+    readonly phase?: string
 }
 
 // ─── input ───────────────────────────────────────────────────────────────────────────────

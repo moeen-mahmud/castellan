@@ -205,6 +205,46 @@ function reduceEvent(state: TranscriptState, event: AnyEvent): TranscriptState {
             return append(state, "note", `${code}: ${message}`)
         }
 
+        case "context.pressure":
+            // A gauge, so it replaces rather than accumulates. `source` is deliberately not shown: it
+            // is diagnostic and the status line has no room for a word that changes nothing a person
+            // would do — it is on the event for whoever is reading events.
+            return { ...state, pressure: event.data.fraction }
+
+        case "compaction.stage": {
+            const { stage, changed, before, after } = event.data
+            // Only the stages that destroy detail get a line. trim, snip and micro are recoverable —
+            // the conversation is still in the store and a snipped observation keeps a pointer — while
+            // collapse and reset replace a span of the conversation with a summary, and a person who
+            // was not watching the gauge still needs to know that happened.
+            if (!changed || (stage !== "collapse" && stage !== "reset")) return state
+            const what =
+                stage === "reset"
+                    ? "the conversation so far was replaced by a summary"
+                    : "earlier turns were replaced by a summary"
+            return append(state, "note", `context: ${what} (${before} → ${after} tokens)`)
+        }
+
+        case "phase.changed": {
+            const { to, tools } = event.data
+            // A line *and* the gauge. The line because a phase change is the reason the agent's
+            // abilities changed mid-conversation, and a person scrolling back needs it where it
+            // happened; the gauge because "which phase am I in" is a current-state question.
+            const next = append(
+                state,
+                "note",
+                `phase: now in ${to} · ${tools} tool${tools === 1 ? "" : "s"} available`,
+            )
+            return { ...next, phase: to }
+        }
+
+        case "context.reset": {
+            const { warning } = event.data
+            // The count itself is not shown — the note above already said what happened. A *second*
+            // reset is a configuration problem rather than a busy session, and that is worth a line.
+            return warning === undefined ? state : append(state, "note", `context: ${warning}`)
+        }
+
         default:
             // Boot and bookkeeping events — `runtime.ready`, `store.ready`, `model.call`,
             // `model.result`, `context.assembled`. They belong to the banner and the status bar,

@@ -36,6 +36,19 @@ export interface StepResult {
     readonly reasoning: string
     readonly finishReason: string
     readonly promptTokens: number
+    /**
+     * Whether `promptTokens` came from the endpoint or from our own estimator.
+     *
+     * It has to be said explicitly, because the field is *seeded* with the estimate and overwritten
+     * only if a `usage` chunk arrives — so the two are indistinguishable by value, and a caller
+     * calibrating the estimator against this number would be calibrating it against itself. That
+     * failure is silent and self-congratulatory: the correction converges instantly on 1.0 and every
+     * accuracy check passes by construction.
+     *
+     * A `usage` object with no `prompt_tokens` field decodes to 0 (`chat-completions.ts:248`), which
+     * is why this is keyed on a positive count rather than on the chunk's arrival.
+     */
+    readonly promptTokensReported: boolean
     readonly outputTokens: number
     readonly latencyMs: number
     /**
@@ -68,6 +81,7 @@ export async function runStep(input: StepInput): Promise<StepResult> {
     let reasoning = ""
     let finishReason = ""
     let promptTokens = input.promptTokens
+    let promptTokensReported = false
     let reportedOutputTokens: number | undefined
     const calls: ToolCallRequest[] = []
 
@@ -109,6 +123,7 @@ export async function runStep(input: StepInput): Promise<StepResult> {
                 case "usage":
                     // The API-reported number is authoritative; the local estimate was a stand-in.
                     promptTokens = chunk.promptTokens
+                    promptTokensReported = chunk.promptTokens > 0
                     reportedOutputTokens = chunk.completionTokens
                     break
                 case "finish":
@@ -140,5 +155,15 @@ export async function runStep(input: StepInput): Promise<StepResult> {
         input.context,
     )
 
-    return { text, reasoning, finishReason, promptTokens, outputTokens, latencyMs, calls, aborted }
+    return {
+        text,
+        reasoning,
+        finishReason,
+        promptTokens,
+        promptTokensReported,
+        outputTokens,
+        latencyMs,
+        calls,
+        aborted,
+    }
 }

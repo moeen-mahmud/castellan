@@ -230,7 +230,11 @@ describe("initCommand", () => {
         }
     })
 
-    test("the commented blocks are real config: uncommenting phases is refused naming Phase 7", async () => {
+    test("the commented blocks are real config: uncommenting phases now loads", async () => {
+        // This test asserted the opposite until Phase 7B — that uncommenting the block was *refused*
+        // naming Phase 7 — and it is kept rather than deleted because the property it guards did not
+        // change: the generated comments are real configuration, and the only way to know that is to
+        // uncomment them and load. What changed is which answer is correct.
         const dir = scratch()
         await initCommand({ ...FLAGS, dir })
         const path = join(dir, "agent.yaml")
@@ -244,17 +248,9 @@ describe("initCommand", () => {
         const { writeFileSync } = await import("node:fs")
         writeFileSync(path, yaml, "utf8")
 
-        let error: HarnessError | undefined
-        try {
-            loadManifest(path, { env: STUB_ENV, knownProviders: PROVIDER_IDS })
-        } catch (thrown) {
-            if (thrown instanceof HarnessError) error = thrown
-        }
-        // Refused, not ignored — the generated comments promise exactly this behaviour. (The
-        // schema-less blocks like tools.web refuse as unknown keys instead, which is equally
-        // loud; this one carries the phase name.)
-        expect(error).toBeDefined()
-        expect(JSON.stringify(error?.details ?? []) + error?.message).toContain("Phase 7")
+        const loaded = loadManifest(path, { env: STUB_ENV, knownProviders: PROVIDER_IDS })
+        expect(Object.keys(loaded.manifest.phases ?? {})).toEqual(["triage", "act"])
+        expect(loaded.manifest.phases?.triage?.entry).toBe(true)
     })
 
     test("--composio connected writes a manifest the real loader accepts", async () => {

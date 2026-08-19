@@ -351,6 +351,10 @@ export interface StatusBarProps {
      * been absorbed is a footer that lied about the keystroke somebody just made.
      */
     readonly armed?: boolean
+    /** Prompt fullness as a fraction of the budget, when a step has reported one. */
+    readonly pressure?: number
+    /** The phase, once one has been entered. Absent on an agent that declares none. */
+    readonly phase?: string
 }
 
 export interface PromptProps {

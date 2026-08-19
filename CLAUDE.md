@@ -1165,3 +1165,85 @@ Never claim a performance property without a number in `evals/` and a script to 
   new buffer and re-opened the palette over the fresh banner, so the screen looked untouched. Anything that
   survives a submit — a restart, a session switch — takes the **residual** buffer as an argument
   (`onSubmit(committed.text, committed.state.value)`), never the captured one.
+- **`estimateTokens` runs 16–20% *low* on the prompts that matter, and its own file said the opposite for
+  five phases.** Measured against a real endpoint over a session that fills with tool results
+  (`evals/budget/`, deepseek-v4-pro, 31 turns): 14,057 estimated against 16,835 charged, because JSON and
+  shell output split into more tokens per character than the 3.8 divisor assumes — and a session under
+  compaction pressure is mostly tool results by definition. The error is in the **overflow** direction
+  exactly when the window is tight. The divisor is deliberately not retuned: one constant cannot serve
+  prose and JSON. `context/budget.ts` corrects it from the endpoint's own `prompt_tokens`, and the
+  correction only works on a figure the endpoint actually *reported* — `StepResult.promptTokens` is seeded
+  with the estimate, so feeding an unreported one back converges the ratio on exactly 1.0 and every
+  accuracy check passes by construction. `promptTokensReported` is the guard.
+- **`model.<role>.streamUsage` is off by default, so the anchor is dark unless a manifest turns it on.**
+  Its own comment promised Phase 7 would need it, and turning it on for the first time found a bug that had
+  shipped behind the unused flag: an OpenAI-compatible endpoint sends `"usage": null` on every chunk but
+  the last, and the guard tested only for `undefined`. Verified live — a real deepseek session reports no
+  usage, so `context.pressure` says `source: "estimated"` and carries the raw bias. Read the `source` field
+  before trusting a pressure figure.
+- **A compaction stage aims one rung *down*, and only the stages whose threshold is crossed may run.**
+  Both obvious targets are wrong: getting just under the trigger lands on it and re-fires next turn, and a
+  fixed comfortable level makes a 96% prompt destroy its way to 55%. Using the manifest's next-lower
+  threshold gives hysteresis with no new constant. The consequence surprises tests: at high pressure the
+  ladder often stops after `trim`, because `trim` reached the target — four tests failed asserting a digest
+  had been written when the correct behaviour was not to write one. Forcing escalation needs a squeezed
+  *history* budget (a large fixed part), not merely high pressure.
+- **Compaction rewrites the prompt, never the store.** A resumed session re-reads the whole conversation
+  and re-compacts it, so a turn whose pressure has fallen below `trim` shows a previously-snipped
+  observation in full again. Verified live. That is the right direction — the store is the audit trail —
+  but it means a pointer is not durable in the transcript and a test asserting "the marker is still there
+  next turn" is asserting something false.
+- **Every marker the runtime writes must carry what it takes to act on it, and a placeholder in a prompt is
+  an instruction.** `snip`'s marker said an observation "is still readable with artifact_read" and named no
+  id; a live model correctly reported there was no id to pass and answered from the visible fragment.
+  Separately, `artifact_read`'s `whenToUse` showed `artifact_read("…")` — the same shape that made
+  qwen3.5:9b write `value: <the value>` and score NLT at 27% against native's 92% — and the model kept
+  insisting the id "cannot be guessed". Describe the field; never show a fake literal.
+- **`toolContext()` is an object literal, so a new `ToolContext` field is silently dropped.** `readArtifact`
+  was, and it is the fourth time: `apiKeyEnv`, `ChatMessage.toolCalls`, `TurnInput.skills`. A hand-built
+  object is not excess-property-checked, so there is no type error — the guard is a test at the **far end**
+  of the pipeline that reads the value out, which is how this one was caught within a minute of being written.
+- **A gauge reports the state that resulted, not the state that triggered the response.** `context.pressure`
+  first carried the pre-compaction figure and put `ctx 128%` on a status line for a session compaction had
+  handled — true of a prompt nobody sent, and indistinguishable from an overflow. And the status line is
+  truncated rather than wrapped, so *position* is load-bearing: a 100-column capture cut it mid-figure at
+  `2564…`, which is why the gauge sits ahead of the turn stats.
+- **The `stream_options` downgrade must not spend a retry attempt.** `streamUsage` is on by default since
+  Phase 7A, and an endpoint refusing it is retried once without the field — but counting that against the
+  retry budget made a single-attempt policy fall out of the loop with **no response at all**, returning an
+  empty stream and reporting nothing. The match is on the field name in the response body, never on the
+  status: a 400 is also what a malformed prompt returns, and retrying that hides a real error behind an
+  extra request. Verified live on deepseek: turn one reports `source: "estimated"`, turn two onward
+  `corrected` — and on a *prose* session the correction runs slightly **high**, the opposite direction from
+  the observation-heavy eval, which is the whole reason the 3.8 divisor cannot be retuned to one constant.
+- **A phase is per session; slot 2 is per agent and frozen. Never put the phase in slot 2.** It is the
+  natural home for runtime state and the wrong one here: `#configSummary` is memoised per agent and
+  frozen at first use because it sits in the cache-stable prefix (5.17), while a phase changes mid-turn —
+  so two sessions in one process would render each other's phase, a wrong statement in the one block that
+  exists to stop the runtime lying about its own state. The current phase lives in `phase_set`'s
+  description, which is slot 1, already rebuilt per phase, and therefore cannot go stale or leak.
+- **`let` where a closure reassigns it means TypeScript stops narrowing across an `await`, correctly.**
+  `tools` became reassignable when `setPhase` landed, and every post-`await` use of it stopped being
+  narrowed — which is the compiler pointing out that `phase_set` may have swapped the view in between.
+  Optional-chain at the use site rather than re-narrowing: the registry wanted after an execution is
+  whichever one resolved the call.
+- **Ask what a *second* session would see.** That question caught the slot-2 phase bug before it shipped,
+  and it generalises: anything memoised per agent — the config summary, the catalogue, the rendered
+  workspace — is shared by every conversation that agent is having, so a per-session fact placed there is
+  a leak rather than a staleness bug.
+- **An NLT call block is `ACTION: <slug>`, not `ACTION` with a `tool:` field.** A test helper written the
+  second way produced a turn with exactly one request and no tool call, because the block parsed as
+  prose — and the failure looks identical to a model that declined to call anything. `PREAMBLE` in
+  `nlt.ts` is the authority; a fixture that builds a block should be checked against it.
+- **Phase scoping has a measured *cost*, and it lands on abstention.** `bun run eval:phases`, deepseek:
+  87.5% full catalogue against 75.0% in a read-only `triage` phase, and every extra failure was in the
+  `restraint` group — tasks whose right answer is to call nothing. One was a literal `phase_set` call on
+  such a task, which names the cause: a narrow phase advertising more tools elsewhere reads as an
+  instruction to move. Re-wording the refusal guidance did not recover it. This does not overturn
+  decision 4.8 — that claim is about *small* models and a frontier arm can only show the cost side — but
+  do not describe phases as free, and do not tune them against a frontier endpoint.
+- **A hosted MoE at `temperature: 0` is not deterministic; a local endpoint was.** The identical `full`
+  arm scored 21/24 then 20/24 on deepseek — 4.2pp between two runs of the same prompts. This repo records
+  that two qwen runs were byte-identical and `--repeats` therefore measured nothing; remembering only
+  that half turns "repeats cannot help" into a rule, and it is a fact about one endpoint. With n=24 and
+  4pp of noise an 8pp delta is a signal to investigate, never a result.

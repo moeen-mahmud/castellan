@@ -1,0 +1,429 @@
+{
+  "model": "deepseek-v4-pro",
+  "rescored": true,
+  "window": 131072,
+  "reserveOutput": 4096,
+  "turns": 31,
+  "ratioFirst": 2.36734693877551,
+  "ratioLast": 1.1976239595930853,
+  "drift": -1.1697229791824248,
+  "shippedAlpha": 0.6,
+  "scoreFloorTokens": 1000,
+  "flatBand": 0.01,
+  "bestMean": "last",
+  "flat": [
+    "last",
+    "ema-0.9",
+    "ema-0.8",
+    "ema-0.7",
+    "ema-0.6",
+    "ema-0.5",
+    "ema-0.05",
+    "ema-0.4",
+    "ema-0.1"
+  ],
+  "bestWorstInFlat": "ema-0.6",
+  "scores": [
+    {
+      "name": "last",
+      "meanError": 0.02288353106767398,
+      "maxError": 0.1359416445623342,
+      "withinTenPercent": 0.9565217391304348,
+      "meanErrorAllSizes": 0.045593001772842125,
+      "scored": 23
+    },
+    {
+      "name": "ema-0.9",
+      "meanError": 0.02459426316018297,
+      "maxError": 0.13494694960212203,
+      "withinTenPercent": 0.9565217391304348,
+      "meanErrorAllSizes": 0.047530492748924284,
+      "scored": 23
+    },
+    {
+      "name": "ema-0.8",
+      "meanError": 0.026292027315179843,
+      "maxError": 0.13262599469496023,
+      "withinTenPercent": 0.9565217391304348,
+      "meanErrorAllSizes": 0.04993426200081564,
+      "scored": 23
+    },
+    {
+      "name": "ema-0.7",
+      "meanError": 0.027628393988303995,
+      "maxError": 0.12798408488063662,
+      "withinTenPercent": 0.9565217391304348,
+      "meanErrorAllSizes": 0.05550570177442046,
+      "scored": 23
+    },
+    {
+      "name": "ema-0.6",
+      "meanError": 0.02876344124695338,
+      "maxError": 0.12002652519893899,
+      "withinTenPercent": 0.9130434782608695,
+      "meanErrorAllSizes": 0.061220069280918825,
+      "scored": 23
+    },
+    {
+      "name": "ema-0.5",
+      "meanError": 0.029976892987686972,
+      "maxError": 0.13592814371257486,
+      "withinTenPercent": 0.9130434782608695,
+      "meanErrorAllSizes": 0.06579496975912008,
+      "scored": 23
+    },
+    {
+      "name": "ema-0.05",
+      "meanError": 0.02998921381062035,
+      "maxError": 0.12395209580838323,
+      "withinTenPercent": 0.9130434782608695,
+      "meanErrorAllSizes": 0.06269677176155519,
+      "scored": 23
+    },
+    {
+      "name": "ema-0.4",
+      "meanError": 0.03142828463783254,
+      "maxError": 0.1724550898203593,
+      "withinTenPercent": 0.9130434782608695,
+      "meanErrorAllSizes": 0.06896342668571712,
+      "scored": 23
+    },
+    {
+      "name": "ema-0.1",
+      "meanError": 0.032374365725006966,
+      "maxError": 0.20658682634730538,
+      "withinTenPercent": 0.9130434782608695,
+      "meanErrorAllSizes": 0.0611132291603722,
+      "scored": 23
+    },
+    {
+      "name": "ema-0.3",
+      "meanError": 0.033008163417154596,
+      "maxError": 0.21616766467065868,
+      "withinTenPercent": 0.9130434782608695,
+      "meanErrorAllSizes": 0.06879889744207808,
+      "scored": 23
+    },
+    {
+      "name": "ema-0.25",
+      "meanError": 0.0335941251713103,
+      "maxError": 0.23592814371257484,
+      "withinTenPercent": 0.9130434782608695,
+      "meanErrorAllSizes": 0.06591049710796175,
+      "scored": 23
+    },
+    {
+      "name": "ema-0.2",
+      "meanError": 0.034180759829043,
+      "maxError": 0.2473053892215569,
+      "withinTenPercent": 0.9130434782608695,
+      "meanErrorAllSizes": 0.06523348433689179,
+      "scored": 23
+    },
+    {
+      "name": "ema-0.15",
+      "meanError": 0.03571564257919802,
+      "maxError": 0.24191616766467067,
+      "withinTenPercent": 0.9130434782608695,
+      "meanErrorAllSizes": 0.06612424694935365,
+      "scored": 23
+    },
+    {
+      "name": "none",
+      "meanError": 0.14206719314979496,
+      "maxError": 0.16600284495021336,
+      "withinTenPercent": 0.08695652173913043,
+      "meanErrorAllSizes": 0.16910589706130452,
+      "scored": 23
+    },
+    {
+      "name": "mean",
+      "meanError": 0.14383447990513074,
+      "maxError": 0.47604790419161674,
+      "withinTenPercent": 0.4782608695652174,
+      "meanErrorAllSizes": 0.20157869473785814,
+      "scored": 23
+    }
+  ],
+  "samples": [
+    {
+      "turn": 1,
+      "messages": 2,
+      "estimated": 49,
+      "reported": 116,
+      "ratio": 2.36734693877551,
+      "offset": 67,
+      "observationShare": 0
+    },
+    {
+      "turn": 2,
+      "messages": 3,
+      "estimated": 56,
+      "reported": 117,
+      "ratio": 2.0892857142857144,
+      "offset": 61,
+      "observationShare": 0
+    },
+    {
+      "turn": 3,
+      "messages": 4,
+      "estimated": 116,
+      "reported": 178,
+      "ratio": 1.5344827586206897,
+      "offset": 62,
+      "observationShare": 0
+    },
+    {
+      "turn": 4,
+      "messages": 5,
+      "estimated": 123,
+      "reported": 179,
+      "ratio": 1.4552845528455285,
+      "offset": 56,
+      "observationShare": 0
+    },
+    {
+      "turn": 5,
+      "messages": 6,
+      "estimated": 172,
+      "reported": 219,
+      "ratio": 1.2732558139534884,
+      "offset": 47,
+      "observationShare": 0
+    },
+    {
+      "turn": 6,
+      "messages": 7,
+      "estimated": 179,
+      "reported": 220,
+      "ratio": 1.229050279329609,
+      "offset": 41,
+      "observationShare": 0
+    },
+    {
+      "turn": 7,
+      "messages": 8,
+      "estimated": 225,
+      "reported": 255,
+      "ratio": 1.1333333333333333,
+      "offset": 30,
+      "observationShare": 0
+    },
+    {
+      "turn": 8,
+      "messages": 9,
+      "estimated": 240,
+      "reported": 268,
+      "ratio": 1.1166666666666667,
+      "offset": 28,
+      "observationShare": 0.8711764705882353
+    },
+    {
+      "turn": 9,
+      "messages": 10,
+      "estimated": 1616,
+      "reported": 1670,
+      "ratio": 1.0334158415841583,
+      "offset": 54,
+      "observationShare": 0.8635568513119534
+    },
+    {
+      "turn": 10,
+      "messages": 11,
+      "estimated": 1632,
+      "reported": 1684,
+      "ratio": 1.0318627450980393,
+      "offset": 52,
+      "observationShare": 0.9160989602007888
+    },
+    {
+      "turn": 11,
+      "messages": 12,
+      "estimated": 2525,
+      "reported": 3016,
+      "ratio": 1.1944554455445544,
+      "offset": 491,
+      "observationShare": 0.9116317792578497
+    },
+    {
+      "turn": 12,
+      "messages": 13,
+      "estimated": 2540,
+      "reported": 3029,
+      "ratio": 1.19251968503937,
+      "offset": 489,
+      "observationShare": 0.9421834876663294
+    },
+    {
+      "turn": 13,
+      "messages": 14,
+      "estimated": 3916,
+      "reported": 4431,
+      "ratio": 1.131511746680286,
+      "offset": 515,
+      "observationShare": 0.9388957816377171
+    },
+    {
+      "turn": 14,
+      "messages": 15,
+      "estimated": 3932,
+      "reported": 4445,
+      "ratio": 1.1304679552390642,
+      "offset": 513,
+      "observationShare": 0.951110559622782
+    },
+    {
+      "turn": 15,
+      "messages": 16,
+      "estimated": 4825,
+      "reported": 5777,
+      "ratio": 1.1973056994818654,
+      "offset": 952,
+      "observationShare": 0.9486973203787363
+    },
+    {
+      "turn": 16,
+      "messages": 17,
+      "estimated": 4840,
+      "reported": 5790,
+      "ratio": 1.1962809917355373,
+      "offset": 950,
+      "observationShare": 0.959761188234152
+    },
+    {
+      "turn": 17,
+      "messages": 18,
+      "estimated": 6216,
+      "reported": 7192,
+      "ratio": 1.157014157014157,
+      "offset": 976,
+      "observationShare": 0.9576693950695017
+    },
+    {
+      "turn": 18,
+      "messages": 19,
+      "estimated": 6232,
+      "reported": 7206,
+      "ratio": 1.1562901155327343,
+      "offset": 974,
+      "observationShare": 0.9633834680966945
+    },
+    {
+      "turn": 19,
+      "messages": 20,
+      "estimated": 7125,
+      "reported": 8538,
+      "ratio": 1.1983157894736842,
+      "offset": 1413,
+      "observationShare": 0.9617314930991218
+    },
+    {
+      "turn": 20,
+      "messages": 21,
+      "estimated": 7140,
+      "reported": 8551,
+      "ratio": 1.1976190476190476,
+      "offset": 1411,
+      "observationShare": 0.9677282827214051
+    },
+    {
+      "turn": 21,
+      "messages": 22,
+      "estimated": 8516,
+      "reported": 9953,
+      "ratio": 1.1687411930483795,
+      "offset": 1437,
+      "observationShare": 0.9661948024508769
+    },
+    {
+      "turn": 22,
+      "messages": 23,
+      "estimated": 8532,
+      "reported": 9967,
+      "ratio": 1.1681903422409752,
+      "offset": 1435,
+      "observationShare": 0.969639468690702
+    },
+    {
+      "turn": 23,
+      "messages": 24,
+      "estimated": 9425,
+      "reported": 11299,
+      "ratio": 1.1988328912466844,
+      "offset": 1874,
+      "observationShare": 0.9683838160512934
+    },
+    {
+      "turn": 24,
+      "messages": 25,
+      "estimated": 9440,
+      "reported": 11312,
+      "ratio": 1.1983050847457628,
+      "offset": 1872,
+      "observationShare": 0.9722745402171504
+    },
+    {
+      "turn": 25,
+      "messages": 26,
+      "estimated": 10816,
+      "reported": 12714,
+      "ratio": 1.1754807692307692,
+      "offset": 1898,
+      "observationShare": 0.9710373443983402
+    },
+    {
+      "turn": 26,
+      "messages": 27,
+      "estimated": 10833,
+      "reported": 12728,
+      "ratio": 1.1749284593372105,
+      "offset": 1895,
+      "observationShare": 0.9734074977141115
+    },
+    {
+      "turn": 27,
+      "messages": 28,
+      "estimated": 11726,
+      "reported": 14060,
+      "ratio": 1.199044857581443,
+      "offset": 2334,
+      "observationShare": 0.9723702237783529
+    },
+    {
+      "turn": 28,
+      "messages": 29,
+      "estimated": 11742,
+      "reported": 14073,
+      "ratio": 1.1985181400102198,
+      "offset": 2331,
+      "observationShare": 0.9751862738396336
+    },
+    {
+      "turn": 29,
+      "messages": 30,
+      "estimated": 13126,
+      "reported": 15479,
+      "ratio": 1.1792625323784856,
+      "offset": 2353,
+      "observationShare": 0.9741652061093028
+    },
+    {
+      "turn": 30,
+      "messages": 31,
+      "estimated": 13143,
+      "reported": 15493,
+      "ratio": 1.1788024043216923,
+      "offset": 2350,
+      "observationShare": 0.9759508422502384
+    },
+    {
+      "turn": 31,
+      "messages": 32,
+      "estimated": 14057,
+      "reported": 16835,
+      "ratio": 1.1976239595930853,
+      "offset": 2778,
+      "observationShare": 0.9749386165438998
+    }
+  ]
+}

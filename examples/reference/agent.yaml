@@ -48,7 +48,7 @@ model:
     # endpoint that does not know it may reject the whole request. Measured: Ollama reports no usage
     # without it, so local token counts come from the estimator until this is set. Turn it on when a
     # token figure is being compared rather than displayed.
-    # streamUsage: true
+    # streamUsage: true      # on by default now; set false to stop asking for stream_options
 
     # Override the shipped capability registry only when it is wrong for your endpoint. These affect
     # thinking-block replay and cache-breakpoint placement, and never the tool dialect.
@@ -119,7 +119,17 @@ context:
   # rules, re-asserted because adherence decays and attention is weakest in the middle.
   # reminder: REMINDER.md
 
-  # Compaction ladder trigger fractions. Must be strictly ascending; validated at load.
+  # ── Phase 7A: the compaction ladder ──
+  # Trigger fractions, strictly ascending, validated at load — and fractions of the PROMPT BUDGET
+  # (window minus reserveOutput), not of the whole window. Measured against the window, a large
+  # reserveOutput lets assembleContext's blunt oldest-first trim run while the ladder still reports
+  # mild pressure, which is the common case on a reasoning model.
+  # trim drops whole turns · snip cuts oversized tool results to head and tail · micro replaces one
+  # with a pointer artifact_read follows · collapse digests all but the newest turns · reset digests
+  # everything. Mechanical up to micro: no model call happens below the collapse threshold, and a
+  # compactor that is absent, throws, or returns nothing falls back to a factual digest.
+  # Each stage aims at the threshold one rung BELOW the deepest that fired. That is where the
+  # hysteresis comes from — aiming just under the trigger lands on it and fires again next turn.
   thresholds:
     trim: 0.60
     snip: 0.70
@@ -149,7 +159,11 @@ context:
     requires: { contextWindow: ">=200000", class: frontier }
     onUnmet: distill             # distill | omit | fail
     distilled: SOUL.compact.md   # required by distill; its absence is a load failure
-  # compactionNotice: true       # Phase 7 — stops the model wrapping up early on budget grounds
+  # ── Phase 7A ──
+  # Generated, never authored: the thresholds are manifest values and an authored sentence about
+  # them goes stale silently. It exists to stop the model wrapping up early — a model that senses
+  # the window filling shortens its work and does not say why.
+  compactionNotice: true
 
 # ── tools ─────────────────────────────────────────────────────────────────────────────────
 tools:
@@ -161,6 +175,7 @@ tools:
   local:
     - now             # read-only: runs in parallel with other reads
     - memory_write    # mutating: serialises, holds a reserved write slot, never retried
+    - artifact_read   # follows the pointer compaction leaves behind; without it the detail is gone
 
   budget:
     max: 24
@@ -309,16 +324,33 @@ limits:
   # Read-only tools only. Mutating tools always serialise, whatever this says.
   maxParallelTools: 4
 
-# ── Phase 7: phase-scoped tool visibility ─────────────────────────────────────────────────
+# ── Phase 7B: phase-scoped tool visibility ────────────────────────────────────────────────
 # The strongest published small-model lever: constraining the tool space per phase took local
-# models from 2/10 to 10/10 on a benchmark subset with no model change.
+# models from 2/10 to 10/10 on a benchmark subset with no model change. Measure it for your own
+# endpoint with `bun run eval:phases` — see evals/phases/README.md for what the number does and
+# does not say.
 #
-# phases:
-#   triage:
-#     entry: true
-#     allow: ["now", "tag:read"]     # slugs, `tag:<name>`, or `*`
-#   act:
-#     allow: ["*"]
+# An `allow` entry is a slug, a `tag:<name>` from the tool's own spec, or `*`. Nothing else: a
+# pattern language here would be a second matcher beside tools.policy's, and the two disagreeing
+# about what `exec*` means is worse than not supporting it. An entry matching no resolved tool
+# FAILS THE LOAD, because a phase that silently exposes less than its author wrote shows up turns
+# later as the agent declining work it should be able to do.
+#
+# `phase_set` is added to every phase automatically — a phase without it would be a phase with no
+# way out, and leaving that to authors to remember is a trap in the file format. The current phase
+# is named in that tool's description rather than in slot 2: a phase is per session and changes
+# mid-turn, while slot 2 is frozen per agent because it sits in the cache-stable prefix.
+#
+# The cost, stated: changing phase re-renders slot 1, so the cached prefix is invalidated from
+# slot 1 onward for that one request. Accepted deliberately — triage → phase_set → write inside
+# ONE turn is the whole feature, and deferring it to the next turn recreates the two-hop shape
+# decision 4.7 refuses, in the feature that exists for the models which fail it.
+phases:
+  triage:
+    entry: true                    # defaults to the first declared phase
+    allow: ["now", "tag:read"]     # slugs, `tag:<name>`, or `*`
+  act:
+    allow: ["*"]
 
 # ── Phase 5: skills ───────────────────────────────────────────────────────────────────────
 # A skill is a directory holding SKILL.md, selected by the harness on the turn that needs it and
@@ -331,7 +363,11 @@ skills:
   dir: ./skills
   maxActive: 1
   threshold: 0.35        # normalised BM25 floor; the shipped fixtures score 0.369–0.600
-  budget: 5000           # tokens across every active skill; a bigger body fails the load
+  # No `budget` field, and it was removed rather than never added. A token cap refused at install,
+  # at load *and* mid-turn, and its first real use turned eleven ticked skills into nine installed —
+  # `maxActive` already bounds a turn to one body, so the second limit only ever converted the right
+  # procedure into no procedure. The replacement is showing the size where the choice is made:
+  # every catalogue row prints its token count.
   # No `sources` field. Where skills come from is the person's, machine-level, and the CLI's:
   #   sources list | add <url> | search <words>   →  ~/.<stateDir>/sources.json
   #   skills install <agent> anthropic/pdf        →  provenance in ./skills/.origins.json

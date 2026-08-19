@@ -229,6 +229,60 @@ CREATE TABLE runtime_leases (
 );
 `,
     },
+    {
+        version: 5,
+        name: "artifacts_and_message_origin",
+        /**
+         * What compaction displaced, and who wrote each message.
+         *
+         * **`artifacts`.** The compaction ladder replaces an oversized tool observation with a pointer
+         * and puts the whole thing here, so nothing a compaction removed is unreachable — `artifact_read`
+         * follows the pointer. The id is *derived from the content* (FNV-1a plus its length, see
+         * `compaction/stages.ts`), never generated, for the same reason the outbox derives its dedupe
+         * key: the duplicate that actually happens is the same work running twice, and only a derived
+         * identity collides. That is what makes `INSERT OR IGNORE` correct here, and it is why a
+         * message snipped on one turn and pointer-replaced on a later one resolves to one row rather
+         * than two.
+         *
+         * `id` is printable ASCII by construction. Row seven of the table in `sqlite/driver.ts` is why
+         * that matters: `node:sqlite` truncates a bound string at a NUL byte while `bun:sqlite` stores
+         * it whole, so a key containing one would resolve on one runtime and silently miss on the other.
+         *
+         * Scoped by session and cascading with it. An artifact is a fragment of one conversation's
+         * history and outliving it would leave rows nothing can ever name again — the opposite call
+         * from `outbox`, which deliberately survives its session because an unsent reply still has to
+         * go out.
+         *
+         * **`messages.origin`.** Compaction has to know which messages are tool output, and under a
+         * text dialect the *role does not say*: NLT sends an observation back as a `user` message. The
+         * alternative is matching the `OBSERVATION <slug> —` header with a regex, which would let a
+         * person who types the word have their own message truncated, and would silently stop
+         * compacting anything the day a dialect changed its framing. Nullable, because a session
+         * written before this migration has no origins to read — the honest degradation is that its
+         * old messages are treated as prose, so the stages that need this decline and the ladder
+         * reaches for the ones that do not.
+         */
+        sql: `
+ALTER TABLE messages ADD COLUMN origin TEXT;
+
+CREATE TABLE artifacts (
+    -- Derived from the content, printable ASCII. Unique per session, not globally: the same
+    -- observation in two conversations is two facts about two histories.
+    id          TEXT NOT NULL,
+    agent_id    TEXT NOT NULL,
+    session_key TEXT NOT NULL,
+    -- The tool that produced it, where the observation named one. Shown in the pointer.
+    slug        TEXT,
+    content     TEXT NOT NULL,
+    -- Estimated cost of the original, so a reader can be told the size before spending a step on it.
+    tokens      INTEGER NOT NULL,
+    created_at  TEXT NOT NULL,
+    PRIMARY KEY (agent_id, session_key, id),
+    FOREIGN KEY (agent_id, session_key)
+        REFERENCES sessions (agent_id, session_key) ON DELETE CASCADE
+);
+`,
+    },
 ]
 
 export interface MigrationReport {

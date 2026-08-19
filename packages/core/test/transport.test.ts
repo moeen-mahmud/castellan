@@ -100,7 +100,10 @@ describe("request shape", () => {
         )
     })
 
-    test("stream_options is omitted by default, because compat endpoints 400 on unknown fields", async () => {
+    test("stream_options is asked for by default — the compaction ladder needs prompt_tokens", async () => {
+        // It was omitted by default until Phase 7A, on portability grounds. Portability is kept by the
+        // downgrade below instead: defaulting off meant the correction never left 1.0, so every pressure
+        // figure carried the estimator's measured 16-20% low bias.
         let body: Record<string, unknown> = {}
         const provider = createChatCompletionsProvider({
             baseUrl: "https://x/v1",
@@ -111,7 +114,77 @@ describe("request shape", () => {
         })
         await drain(provider.chat(REQUEST, new AbortController().signal))
         expect(body.stream).toBe(true)
+        expect(body.stream_options).toEqual({ include_usage: true })
+    })
+
+    test("streamUsage: false opts out entirely", async () => {
+        let body: Record<string, unknown> = {}
+        const provider = createChatCompletionsProvider({
+            baseUrl: "https://x/v1",
+            streamUsage: false,
+            fetch: async (_url, init) => {
+                body = JSON.parse(String(init?.body)) as Record<string, unknown>
+                return sseResponse(["data: [DONE]\n\n"])
+            },
+        })
+        await drain(provider.chat(REQUEST, new AbortController().signal))
         expect(body.stream_options).toBeUndefined()
+    })
+
+    test("an endpoint that refuses stream_options is retried once without it, and reported", async () => {
+        const bodies: Record<string, unknown>[] = []
+        const refusals: number[] = []
+        const provider = createChatCompletionsProvider({
+            baseUrl: "https://x/v1",
+            // One attempt, deliberately: the downgrade must not spend a retry. With the budget counted
+            // against it this fell out of the loop with no response and returned an empty stream —
+            // silent success, which is the shape rule 8 exists to prevent.
+            retry: { attempts: 1, baseDelayMs: 0, maxDelayMs: 0 },
+            onUsageUnsupported: (info) => refusals.push(info.status),
+            fetch: async (_url, init) => {
+                const body = JSON.parse(String(init?.body)) as Record<string, unknown>
+                bodies.push(body)
+                if (body.stream_options !== undefined) {
+                    return new Response('{"error":{"message":"unknown field stream_options"}}', {
+                        status: 400,
+                    })
+                }
+                return sseResponse([delta("ok"), "data: [DONE]\n\n"])
+            },
+        })
+        const chunks = await drain(provider.chat(REQUEST, new AbortController().signal))
+        expect(bodies.length).toBe(2)
+        expect(bodies[0]?.stream_options).toEqual({ include_usage: true })
+        expect(bodies[1]?.stream_options).toBeUndefined()
+        expect(textOf(chunks)).toBe("ok")
+        expect(refusals).toEqual([400])
+
+        // Remembered for the life of the provider: support is a property of the endpoint, so paying the
+        // extra round trip once is right and paying it every call is not.
+        await drain(provider.chat(REQUEST, new AbortController().signal))
+        expect(bodies.length).toBe(3)
+        expect(bodies[2]?.stream_options).toBeUndefined()
+        expect(refusals).toEqual([400])
+    })
+
+    test("a 400 that is not about stream_options is not retried", async () => {
+        // A 400 is also what a malformed prompt returns. Retrying that would hide a real error behind
+        // an extra request and report the wrong cause.
+        let calls = 0
+        const provider = createChatCompletionsProvider({
+            baseUrl: "https://x/v1",
+            retry: { attempts: 1, baseDelayMs: 0, maxDelayMs: 0 },
+            fetch: async () => {
+                calls += 1
+                return new Response('{"error":{"message":"messages[0] is not valid"}}', {
+                    status: 400,
+                })
+            },
+        })
+        await expect(drain(provider.chat(REQUEST, new AbortController().signal))).rejects.toThrow(
+            "400",
+        )
+        expect(calls).toBe(1)
     })
 
     test("optional sampling parameters are omitted rather than sent as null", async () => {
@@ -213,6 +286,33 @@ describe("streaming", () => {
         const chunks = await drain(provider.chat(REQUEST, new AbortController().signal))
         expect(chunks).toContainEqual({ type: "usage", promptTokens: 12, completionTokens: 3 })
         expect(chunks).toContainEqual({ type: "finish", reason: "stop" })
+    })
+
+    test("a null usage on every chunk but the last is not a usage chunk", async () => {
+        // What `stream_options: {include_usage: true}` actually looks like on the wire: every
+        // intermediate chunk carries `"usage": null`, and only the final one carries the counts. The
+        // guard tested `!== undefined`, which `null` passes, so the first real call ever made with
+        // `streamUsage` threw on `usage.prompt_tokens`. The flag was written for Phase 7 and had
+        // never been exercised, so the bug shipped behind an unused option.
+        const provider = createChatCompletionsProvider({
+            baseUrl: "https://x/v1",
+            streamUsage: true,
+            fetch: async () =>
+                sseResponse([
+                    `data: ${JSON.stringify({ choices: [{ delta: { content: "a" } }], usage: null })}\n\n`,
+                    `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: "stop" }], usage: null })}\n\n`,
+                    `data: ${JSON.stringify({
+                        choices: [],
+                        usage: { prompt_tokens: 4096, completion_tokens: 1 },
+                    })}\n\n`,
+                    "data: [DONE]\n\n",
+                ]),
+        })
+        const chunks = await drain(provider.chat(REQUEST, new AbortController().signal))
+        const usage = chunks.filter((chunk) => chunk.type === "usage")
+        // Exactly one, from the chunk that had a real object — not three, and not a throw.
+        expect(usage).toEqual([{ type: "usage", promptTokens: 4096, completionTokens: 1 }])
+        expect(textOf(chunks)).toBe("a")
     })
 
     test("reasoning content is kept separate from the reply", async () => {

@@ -46,6 +46,22 @@ export interface ChatMessage {
     readonly toolCalls?: readonly ToolCallRequest[]
     /** Set on a `tool` message: which call it answers. Native only, and required there. */
     readonly toolCallId?: string
+    /**
+     * Who wrote this message, when it was the harness rather than a person or the model.
+     *
+     * Harness metadata, never sent: `wireMessage` builds the request body field by field, so this
+     * cannot reach an endpoint. It exists because compaction has to know which messages are tool
+     * output and, under a text dialect, **role does not say**. NLT sends an observation back as a
+     * `user` message (`nlt.ts:738`) whose content opens `OBSERVATION <slug> — ok`, so the only
+     * alternative is matching that string — and classifying a message by regex would let a person who
+     * happens to type the word have their own message truncated, while a dialect that changes its
+     * framing would silently stop compacting anything at all.
+     *
+     * Optional because a message loaded from a store written before the column existed has no origin,
+     * and the honest degradation is to treat it as prose: the stages that need this leave it alone and
+     * the ladder reaches for the ones that do not.
+     */
+    readonly origin?: "observation" | "call" | "repair" | "digest"
 }
 
 export interface ChatRequest {

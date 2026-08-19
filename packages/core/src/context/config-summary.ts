@@ -60,6 +60,14 @@ export interface ConfigSummaryInput {
      */
     readonly channelsStarted: boolean
     /**
+     * The generated compaction notice, when `context.compactionNotice` is on.
+     *
+     * Passed in rather than rendered here: whether `artifact_read` is in the catalogue is the notice's
+     * one variable, and `tools` above already carries that — but the *decision* belongs to whoever
+     * read the manifest flag, and duplicating it here would put the switch in two places.
+     */
+    readonly compactionNotice?: string
+    /**
      * The catalogue's skill **names**, or `undefined` when no skills block is configured.
      *
      * Zero and absent are different rows on purpose. A configured directory that happens to be empty is a
@@ -118,6 +126,11 @@ export function renderConfigSummary(input: ConfigSummaryInput): string {
         table,
         "",
         closing(input.tools.includes(CONFIG_SET)),
+        // Appended to slot 2 rather than given a slot of its own, because it is the same kind of fact
+        // as every row above it: something the runtime does to this agent that the agent cannot see.
+        // A separate slot would also have to be placed relative to the cache breakpoint, and there is
+        // no reading under which this varies per turn.
+        ...(input.compactionNotice === undefined ? [] : ["", input.compactionNotice]),
     ].join("\n")
 }
 
@@ -181,6 +194,16 @@ function describeSkills(manifest: AgentManifest, names: readonly string[] | unde
         "looking for it."
     )
 }
+
+/*
+ * There is deliberately no phase row here, and the reason is worth keeping.
+ *
+ * A phase is **per session** and changes mid-turn; slot 2 is memoised **per agent** and frozen at first
+ * use, because it sits in the cache-stable prefix (5.17). Putting the phase in it would have made two
+ * sessions in one process render each other's phase — a wrong statement in the one block that exists to
+ * stop the runtime lying about its own state. The current phase lives in `phase_set`'s description
+ * instead, which is slot 1, already rebuilt per phase, and therefore cannot go stale.
+ */
 
 function describeChannels(manifest: AgentManifest, started: boolean): string {
     const enabled = manifest.channels.filter((channel) => channel.enabled)

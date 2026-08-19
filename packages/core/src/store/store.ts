@@ -419,6 +419,38 @@ export interface OutboxStore {
     prune(before: string): Promise<number>
 }
 
+export interface ArtifactRecord {
+    /** Derived from the content by `compaction/stages.ts`. Printable ASCII: it is a bound key. */
+    readonly id: string
+    readonly sessionKey: string
+    /** The tool that produced the observation, where it named one. */
+    readonly slug?: string
+    readonly content: string
+    /** Estimated cost of the original, so a reader knows the size before spending a step on it. */
+    readonly tokens: number
+    readonly createdAt: string
+}
+
+/**
+ * What compaction displaced, so nothing it removed is unreachable.
+ *
+ * `put` is idempotent by construction rather than by convention: the id is derived from the content,
+ * so the same observation written twice is the same row. That is what lets the ladder escalate over a
+ * message across turns — snipped on one, pointer-replaced on a later one — without accumulating a row
+ * per stage.
+ */
+export interface ArtifactStore {
+    put(
+        agentId: string,
+        sessionKey: string,
+        artifacts: readonly Omit<ArtifactRecord, "sessionKey" | "createdAt">[],
+        now: string,
+    ): Promise<void>
+    get(agentId: string, sessionKey: string, id: string): Promise<ArtifactRecord | undefined>
+    /** Newest first. For a listing; the agent reads one at a time by id. */
+    list(agentId: string, sessionKey: string): Promise<readonly ArtifactRecord[]>
+}
+
 export interface Store {
     readonly sessions: SessionStore
     readonly messages: MessageStore
@@ -426,6 +458,7 @@ export interface Store {
     readonly outbox: OutboxStore
     readonly leases: LeaseStore
     readonly kv: KVStore
+    readonly artifacts: ArtifactStore
     /** Human-readable location, for `store.ready` and the `sessions` command. */
     readonly location: string
     close(): Promise<void>

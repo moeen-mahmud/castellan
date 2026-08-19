@@ -14,6 +14,8 @@
 import type { ChatMessage, ToolCallRequest } from "../../model/provider.ts"
 import { parseSessionKey } from "../session-key.ts"
 import type {
+    ArtifactRecord,
+    ArtifactStore,
     DeliveryRecord,
     DeliveryStatus,
     KVStore,
@@ -65,6 +67,8 @@ interface MessageRow {
     /** JSON array of `ToolCallRequest`, or null. Native only — under NLT the call is the content. */
     tool_calls: string | null
     tool_call_id: string | null
+    /** Who wrote it, when the harness did. Null for anything written before migration 005. */
+    origin: string | null
     created_at: string
 }
 
@@ -77,7 +81,17 @@ interface MessageRow {
  * nothing failing.
  */
 const MESSAGE_COLUMNS =
-    "id, session_key, turn_id, role, content, tool_calls, tool_call_id, created_at"
+    "id, session_key, turn_id, role, content, tool_calls, tool_call_id, origin, created_at"
+
+/**
+ * The origin union without `undefined`.
+ *
+ * `ChatMessage["origin"]` includes it, and under `exactOptionalPropertyTypes` spreading a possibly-
+ * undefined value into an optional property is an error rather than a no-op — which is the compiler
+ * doing its job: the whole point of the conditional spread is that the key is absent, not present
+ * and undefined.
+ */
+type MessageOrigin = NonNullable<ChatMessage["origin"]>
 
 /** Parsed defensively: a row written by a future version must not crash a history read. */
 function toolCallsFrom(raw: string | null): readonly ToolCallRequest[] | undefined {
@@ -90,6 +104,15 @@ function toolCallsFrom(raw: string | null): readonly ToolCallRequest[] | undefin
     } catch {
         return undefined
     }
+}
+
+interface ArtifactRow {
+    id: string
+    session_key: string
+    slug: string | null
+    content: string
+    tokens: number
+    created_at: string
 }
 
 interface TurnRow {
@@ -176,6 +199,7 @@ function toMessage(row: MessageRow): StoredMessage {
         content: row.content,
         ...(calls === undefined ? {} : { toolCalls: calls }),
         ...(row.tool_call_id === null ? {} : { toolCallId: row.tool_call_id }),
+        ...(row.origin === null ? {} : { origin: row.origin as MessageOrigin }),
         createdAt: row.created_at,
     }
 }
@@ -194,6 +218,20 @@ function toChatMessage(row: MessageRow): ChatMessage {
         content: row.content,
         ...(calls === undefined ? {} : { toolCalls: calls }),
         ...(row.tool_call_id === null ? {} : { toolCallId: row.tool_call_id }),
+        // Compaction reads this to tell a tool observation from a human message, so a history that
+        // came back without it would be silently uncompactable in two of five stages.
+        ...(row.origin === null ? {} : { origin: row.origin as MessageOrigin }),
+    }
+}
+
+function toArtifact(row: ArtifactRow): ArtifactRecord {
+    return {
+        id: row.id,
+        sessionKey: row.session_key,
+        ...(row.slug === null ? {} : { slug: row.slug }),
+        content: row.content,
+        tokens: row.tokens,
+        createdAt: row.created_at,
     }
 }
 
@@ -274,6 +312,7 @@ export class SqliteStore implements Store {
     readonly outbox: OutboxStore
     readonly leases: LeaseStore
     readonly kv: KVStore
+    readonly artifacts: ArtifactStore
     readonly location: string
     /** What `migrate` did at open. Reported by boot rather than logged and forgotten. */
     readonly migrations: MigrationReport
@@ -324,10 +363,26 @@ export class SqliteStore implements Store {
 
             messageInsert: db.prepare(
                 `INSERT INTO messages
-                     (agent_id, session_key, turn_id, role, content, tool_calls, tool_call_id, created_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                     (agent_id, session_key, turn_id, role, content, tool_calls, tool_call_id,
+                      origin, created_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             ),
             messageById: db.prepare(`SELECT ${MESSAGE_COLUMNS} FROM messages WHERE id = ?`),
+            artifactPut: db.prepare(
+                // `OR IGNORE`, and it is correct rather than lazy: the id is derived from the
+                // content, so a colliding insert is the identical observation arriving again.
+                `INSERT OR IGNORE INTO artifacts
+                     (id, agent_id, session_key, slug, content, tokens, created_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            ),
+            artifactGet: db.prepare(
+                `SELECT id, session_key, slug, content, tokens, created_at FROM artifacts
+                  WHERE agent_id = ? AND session_key = ? AND id = ?`,
+            ),
+            artifactList: db.prepare(
+                `SELECT id, session_key, slug, content, tokens, created_at FROM artifacts
+                  WHERE agent_id = ? AND session_key = ? ORDER BY created_at DESC, id DESC`,
+            ),
             historyAll: db.prepare(
                 `SELECT ${MESSAGE_COLUMNS} FROM messages
                   WHERE agent_id = ? AND session_key = ? ORDER BY id ASC`,
@@ -591,6 +646,7 @@ export class SqliteStore implements Store {
                                 ? null
                                 : JSON.stringify(message.toolCalls),
                             message.toolCallId ?? null,
+                            message.origin ?? null,
                             ts,
                         )
                         const row = q.messageById.get<MessageRow>(result.lastInsertRowid)
@@ -902,6 +958,33 @@ export class SqliteStore implements Store {
                 }
                 return out
             },
+        }
+
+        this.artifacts = {
+            put: async (agentId, sessionKey, artifacts, now) => {
+                if (artifacts.length === 0) return
+                // One transaction: a compaction displaced these together, and a crash that persisted
+                // half of them would leave pointers in the surviving history resolving to nothing.
+                this.#db.transaction(() => {
+                    for (const artifact of artifacts) {
+                        q.artifactPut.run(
+                            artifact.id,
+                            agentId,
+                            sessionKey,
+                            artifact.slug ?? null,
+                            artifact.content,
+                            artifact.tokens,
+                            now,
+                        )
+                    }
+                })
+            },
+            get: async (agentId, sessionKey, id) => {
+                const row = q.artifactGet.get<ArtifactRow>(agentId, sessionKey, id)
+                return row === undefined ? undefined : toArtifact(row)
+            },
+            list: async (agentId, sessionKey) =>
+                q.artifactList.all<ArtifactRow>(agentId, sessionKey).map(toArtifact),
         }
     }
 

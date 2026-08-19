@@ -28,6 +28,7 @@ import {
     unknownTool,
     unknownToolAtRuntime,
 } from "../errors.ts"
+import { visibleIn } from "../loop/phases.ts"
 import { localProvider } from "./local.ts"
 import type { Tool, ToolAvailability, ToolProvider, ToolSpec } from "./types.ts"
 
@@ -284,6 +285,28 @@ export class ToolRegistry {
             .filter((tool): tool is Tool => tool !== undefined)
         return new ToolRegistry({
             tools: [...base, ...extra],
+            dropped: this.dropped,
+            warnings: this.warnings,
+            notEnabled: this.notEnabled,
+        })
+    }
+
+    /**
+     * The same registry with only the tools a phase allows.
+     *
+     * `dropped`, `warnings` and `notEnabled` are carried unchanged, and that is deliberate: they describe
+     * what happened at *load*, which no phase changes. A phase-filtered `notEnabled` would also read as
+     * "these could be enabled", when the truth is that they are enabled and not in this phase — a
+     * different sentence, and `phase_set`'s own description is where it belongs.
+     */
+    inPhase(allow: readonly string[]): ToolRegistry {
+        const kept = visibleIn(this.#order, allow)
+        if (kept.length === this.#order.length) return this
+        const tools = kept
+            .map((spec) => this.#bySlug.get(spec.slug))
+            .filter((tool): tool is Tool => tool !== undefined)
+        return new ToolRegistry({
+            tools,
             dropped: this.dropped,
             warnings: this.warnings,
             notEnabled: this.notEnabled,

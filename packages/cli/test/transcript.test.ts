@@ -509,3 +509,134 @@ describe("transcriptRows — the finished conversation as rows", () => {
         expect(rows.at(-1)?.text).not.toBe("")
     })
 })
+
+describe("compaction events", () => {
+    test("pressure is a gauge: it replaces rather than accumulating", () => {
+        const state = run([
+            {
+                kind: "event",
+                event: ev("context.pressure", {
+                    fraction: 0.4,
+                    tokens: 400,
+                    budget: 1000,
+                    source: "estimated",
+                }),
+            },
+            {
+                kind: "event",
+                event: ev("context.pressure", {
+                    fraction: 0.72,
+                    tokens: 720,
+                    budget: 1000,
+                    source: "corrected",
+                }),
+            },
+        ])
+        expect(state.pressure).toBe(0.72)
+        // Nothing in the transcript: a value that changes every step is not an event.
+        expect(state.items).toEqual([])
+    })
+
+    test("the recoverable stages are silent in the transcript", () => {
+        // trim, snip and micro leave the conversation in the store and a snipped observation keeps a
+        // pointer, so a line per stage would be noise on every turn under pressure.
+        const state = run([
+            {
+                kind: "event",
+                event: ev("compaction.stage", {
+                    stage: "trim",
+                    before: 900,
+                    after: 500,
+                    changed: true,
+                }),
+            },
+            {
+                kind: "event",
+                event: ev("compaction.stage", {
+                    stage: "snip",
+                    before: 500,
+                    after: 400,
+                    changed: true,
+                }),
+            },
+            {
+                kind: "event",
+                event: ev("compaction.stage", {
+                    stage: "micro",
+                    before: 400,
+                    after: 300,
+                    changed: false,
+                }),
+            },
+        ])
+        expect(state.items).toEqual([])
+    })
+
+    test("a summary that replaced part of the conversation gets a line", () => {
+        const state = run([
+            {
+                kind: "event",
+                event: ev("compaction.stage", {
+                    stage: "collapse",
+                    before: 900,
+                    after: 300,
+                    changed: true,
+                    digest: "model",
+                }),
+            },
+        ])
+        expect(state.items.length).toBe(1)
+        expect(state.items[0]?.text).toContain("earlier turns were replaced by a summary")
+        expect(state.items[0]?.text).toContain("900 → 300")
+    })
+
+    test("a stage that changed nothing is not announced", () => {
+        const state = run([
+            {
+                kind: "event",
+                event: ev("compaction.stage", {
+                    stage: "reset",
+                    before: 900,
+                    after: 900,
+                    changed: false,
+                }),
+            },
+        ])
+        expect(state.items).toEqual([])
+    })
+
+    test("a second reset carries the configuration warning into the transcript", () => {
+        const first = run([{ kind: "event", event: ev("context.reset", { count: 1 }) }])
+        expect(first.items).toEqual([])
+
+        const second = run([
+            {
+                kind: "event",
+                event: ev("context.reset", { count: 2, warning: "raise context.window" }),
+            },
+        ])
+        expect(second.items.length).toBe(1)
+        expect(second.items[0]?.text).toContain("raise context.window")
+    })
+})
+
+describe("phase changes", () => {
+    test("a change is both a line and the current state", () => {
+        const state = run([{ kind: "event", event: ev("phase.changed", { to: "act", tools: 6 }) }])
+        expect(state.phase).toBe("act")
+        expect(state.items.length).toBe(1)
+        expect(state.items[0]?.text).toContain("now in act")
+        expect(state.items[0]?.text).toContain("6 tools available")
+    })
+
+    test("the entry phase is not invented — it only appears once something moved it", () => {
+        // The reducer is told about changes, never about where a session started. Filling that in would
+        // be it asserting a fact nobody gave it.
+        expect(EMPTY_TRANSCRIPT.phase).toBeUndefined()
+    })
+
+    test("one tool reads as one, not 1 tools", () => {
+        const state = run([{ kind: "event", event: ev("phase.changed", { to: "x", tools: 1 }) }])
+        expect(state.items[0]?.text).toContain("1 tool available")
+    })
+})

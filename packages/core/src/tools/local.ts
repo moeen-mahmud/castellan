@@ -12,7 +12,14 @@
 
 import { appendFile, mkdir } from "node:fs/promises"
 import { join } from "node:path"
-import { workspaceNotEditable } from "../errors.ts"
+import {
+    artifactNotFound,
+    artifactUnavailable,
+    phaseNotAvailable,
+    phaseUnknown,
+    workspaceNotEditable,
+} from "../errors.ts"
+import { PHASE_SET } from "../loop/phases.ts"
 import type { Tool, ToolContext, ToolProvider } from "./types.ts"
 
 export const LOCAL_PROVIDER_ID = "local"
@@ -164,9 +171,165 @@ const memoryWrite: Tool = {
     },
 }
 
-const LOCAL_TOOLS: readonly Tool[] = [now, memoryWrite]
+/**
+ * How much of a displaced observation one call returns.
+ *
+ * Sized against `limits.observationMaxTokens`, whose default is 2,000, and deliberately under it. The
+ * lesson is recorded for `config_read`: an observation that does not fit the budget gets middle-cut by
+ * the executor, and a middle-cut reference document makes a model read it again — 2,766 tokens against
+ * a 2,000 budget cost one real session three reads and 8,040 output tokens to change one line. A tool
+ * whose entire job is retrieving something large has to page rather than hope.
+ */
+const ARTIFACT_PAGE_TOKENS = 1200
 
-/** Slugs a manifest may name in `tools.local`. */
+/** Characters per token, matching `estimateTokens`. Approximate is fine; over-running the budget is not. */
+const ARTIFACT_PAGE_CHARS = ARTIFACT_PAGE_TOKENS * 3
+
+/**
+ * Reads back what the compaction ladder displaced.
+ *
+ * The pointer left in history carries the id, so this is a one-hop follow rather than a search — the
+ * model is never asked to guess an id, which is why there is no `list` argument and no way to browse.
+ * `from` exists because the alternative is a tool that promises a large observation and returns a
+ * truncation of it; it defaults to the beginning, so the common call is still one argument.
+ */
+const artifactRead: Tool = {
+    spec: {
+        slug: "artifact_read",
+        provider: LOCAL_PROVIDER_ID,
+        summary: "Reads back a tool result that compaction replaced with a pointer.",
+        whenToUse:
+            "a compaction marker in this conversation names an id, and you need the tool result it replaced",
+        whenNotToUse:
+            "for anything still written out in the conversation, or to explore — every id comes from a marker, so there is nothing to browse",
+        mutating: false,
+        tags: ["read", "context"],
+        parameters: {
+            type: "object",
+            properties: {
+                id: {
+                    type: "string",
+                    // No example value, deliberately. A placeholder in a prompt is read as an
+                    // instruction: the NLT preamble showed `field: value` once and qwen3.5:9b wrote
+                    // `value: <the value>`, scoring 27% against native's 92%. A live deepseek session
+                    // kept insisting the id "cannot be guessed" with a marker in front of it — the same
+                    // shape, because what it had been shown was an ellipsis.
+                    description:
+                        "The id printed inside the compaction marker, copied character for character.",
+                },
+                from: {
+                    type: "integer",
+                    description:
+                        "Character offset to continue from. Omit for the beginning; a truncated reply says the number to pass.",
+                },
+            },
+            required: ["id"],
+        },
+    },
+    async handler(args, context) {
+        const id = typeof args.id === "string" ? args.id.trim() : ""
+        const from = typeof args.from === "number" && args.from > 0 ? Math.floor(args.from) : 0
+
+        if (context.readArtifact === undefined) throw artifactUnavailable()
+        const artifact = await context.readArtifact(id)
+        if (artifact === undefined) throw artifactNotFound(id)
+
+        const what = artifact.slug === undefined ? "observation" : `${artifact.slug} observation`
+        const slice = artifact.content.slice(from, from + ARTIFACT_PAGE_CHARS)
+        const end = from + slice.length
+        const header = `Compacted ${what}, ${artifact.tokens} tokens${from === 0 ? "" : `, from character ${from}`}:`
+
+        if (end >= artifact.content.length) return `${header}\n${slice}`
+        // The number to pass next, stated rather than left to arithmetic. A model that has to compute
+        // an offset gets it wrong and then reads the same page twice.
+        return `${header}\n${slice}\n\n[cut here — ${artifact.content.length - end} characters remain; continue with artifact_read(id, from: ${end})]`
+    },
+}
+
+/**
+ * Move the session to another phase.
+ *
+ * Built per agent rather than declared as a constant, because the phase *names* belong in the schema:
+ * an `enum` is refused by the coercion layer before the handler runs, and a model that has to guess a
+ * phase name from prose gets it wrong in a way that costs a step. The same reasoning puts the other
+ * phases and what they add into the description — a model told nothing about `act` reports that it
+ * cannot write, which is decision 4.53's failure. Counts rather than slugs, or the constraint the phase
+ * exists to impose is undone by the sentence explaining it.
+ *
+ * Added per turn through `withTurnTools`, the same seam a skill's script tools use, and rebuilt whenever
+ * the phase changes — because `current` and `others` are facts about the phase, not about the agent.
+ * `mutating` is
+ * **false**: it changes what the agent may do, not anything in the world, and marking it true would
+ * serialise it behind a write slot and suppress its retry for no gain.
+ */
+export function phaseSetTool(init: {
+    readonly phases: readonly string[]
+    readonly current: string
+    readonly others: readonly { readonly name: string; readonly adds: number }[]
+}): Tool {
+    const others =
+        init.others.length === 0
+            ? ""
+            : ` Other phases: ${init.others
+                  .map(
+                      (other) =>
+                          `${other.name} (adds ${other.adds} tool${other.adds === 1 ? "" : "s"})`,
+                  )
+                  .join(", ")}.`
+    return {
+        spec: {
+            slug: PHASE_SET,
+            provider: LOCAL_PROVIDER_ID,
+            // The *current* phase is named here rather than in slot 2, and that placement is load-bearing:
+            // a phase is per session and changes mid-turn, while slot 2 is memoised per agent and frozen
+            // at first use because it sits in the cache-stable prefix. Slot 1 is already rebuilt per
+            // phase, so this is the one place the fact cannot go stale or leak between sessions.
+            summary: `You are in the "${init.current}" phase. This moves to another phase, which changes the tools you have.${others}`,
+            whenToUse:
+                "the tools you need are not in this phase — check what the other phases add and move to the one that has them",
+            // Written against a measured failure, not from taste. On the first `eval:phases` run the
+            // triage arm lost 12.5pp against the full catalogue, and every extra failure was in the
+            // `restraint` group — tasks whose correct answer is to call nothing. One of them was a
+            // literal `phase_set` call, which names the mechanism: being told you are in a restricted
+            // phase with more tools elsewhere reads as an instruction to move. So the refusal case is
+            // stated first and concretely, because "when not to" is the half a model skims.
+            whenNotToUse:
+                "most turns — you already have the tool you need, the person only wants an answer or a draft, or the right response is to call no tool at all. Being in a narrow phase is not a reason to move out of it",
+            mutating: false,
+            tags: ["read", "control"],
+            parameters: {
+                type: "object",
+                properties: {
+                    to: {
+                        type: "string",
+                        description: "The phase to move to.",
+                        enum: [...init.phases],
+                    },
+                },
+                required: ["to"],
+            },
+        },
+        async handler(args, context) {
+            const to = typeof args.to === "string" ? args.to.trim() : ""
+            if (!init.phases.includes(to)) throw phaseUnknown(to, init.phases)
+            if (context.setPhase === undefined) throw phaseNotAvailable()
+            if (to === init.current) return `Already in ${to}. Nothing changed.`
+            await context.setPhase(to)
+            // Names the effect rather than confirming the call: the tools change *now*, in this turn,
+            // and a model that does not know that waits for the next one.
+            return `Now in ${to}. Your tools have changed — the catalogue for this phase is in effect from your next reply in this turn.`
+        },
+    }
+}
+
+const LOCAL_TOOLS: readonly Tool[] = [now, memoryWrite, artifactRead]
+
+/**
+ * Slugs a manifest may name in `tools.local`.
+ *
+ * `phase_set` is deliberately absent: it is registered by the runtime when a manifest declares more than
+ * one phase, and a hand-pinned one on a single-phase agent would be a tool with nowhere to go.
+ */
 export const LOCAL_TOOL_SLUGS: readonly string[] = LOCAL_TOOLS.map((tool) => tool.spec.slug)
 
 export function localProvider(): ToolProvider {
@@ -197,5 +360,12 @@ export function toolContext(overrides: Partial<ToolContext> = {}): ToolContext {
         deadlineMs: overrides.deadlineMs ?? 120_000,
         now: overrides.now ?? (() => new Date()),
         ...(overrides.writeTarget === undefined ? {} : { writeTarget: overrides.writeTarget }),
+        // Listed explicitly, and it was dropped once by being absent from this literal — the fourth
+        // time that has happened in this repo (`apiKeyEnv`, `ChatMessage.toolCalls`,
+        // `TurnInput.skills`). A hand-built object is not excess-property-checked, so a field the
+        // funnel does not name is lost with no type error. Anything added to `ToolContext` belongs here
+        // and wants a test that reads the value out at the far end.
+        ...(overrides.readArtifact === undefined ? {} : { readArtifact: overrides.readArtifact }),
+        ...(overrides.setPhase === undefined ? {} : { setPhase: overrides.setPhase }),
     }
 }

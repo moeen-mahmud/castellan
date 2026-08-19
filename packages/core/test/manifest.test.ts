@@ -1,6 +1,7 @@
 import { mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
+import { fileURLToPath } from "node:url"
 import { BRAND } from "../src/brand.ts"
 import { HarnessError } from "../src/errors.ts"
 import { loadManifest } from "../src/manifest/load.ts"
@@ -978,4 +979,41 @@ describe("resolveProviders", () => {
         expect(providerIds({ providers: { a: {}, b: {} } })).toEqual(["a", "b"])
         expect(providerIds({ provider: "c" })).toEqual(["c"])
     })
+})
+
+describe("the shipped example manifests load", () => {
+    /**
+     * This test exists because they did not.
+     *
+     * `examples/reference/agent.yaml` is documented as holding every field, and it had been failing
+     * validation since Phase 5 removed `skills.budget` — the one file a reader opens to see what good
+     * looks like, refused by the runtime it demonstrates. Nothing caught it because nothing loaded it,
+     * which is the defect; the stale key was only the symptom.
+     */
+    test.each([["examples/minimal/agent.yaml"], ["examples/reference/agent.yaml"]] as [string][])(
+        "%s loads and validates",
+        (path) => {
+            const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..")
+            // A stub key, because loading checks that named env vars are *set* — the same overlay
+            // `init` uses for the manifest it has just written and cannot have credentials for yet.
+            // `loadManifest` validates and throws, so reaching the assertion *is* the assertion. The
+            // known lists are what `Runtime.create` passes: an example naming a provider or channel
+            // this build does not register must fail, and that is the check, not a nuisance.
+            const loaded = loadManifest(join(root, path), {
+                // A real model id, not a placeholder. `examples/minimal` keeps `${MODEL_ID}`
+                // deliberately — demonstrating one manifest against four endpoints is its purpose —
+                // and an unknown id resolves to the default 8k window, which makes its own
+                // `reserveOutput` invalid. The example is correct; a stub id is not a fair test of it.
+                env: {
+                    ...process.env,
+                    MODEL_API_KEY: "stub",
+                    MODEL_ID: "deepseek-v4-pro",
+                    MODEL_BASE_URL: "https://api.deepseek.com/v1",
+                },
+                knownProviders: ["system", "web", "composio"],
+                knownChannels: ["telegram", "whatsapp"],
+            })
+            expect(loaded.manifest.apiVersion).toBe(`${BRAND.slug}/v1`)
+        },
+    )
 })

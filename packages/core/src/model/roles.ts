@@ -28,6 +28,7 @@ export interface ResolveRolesOptions {
     readonly env?: EnvSource
     readonly fetch?: FetchLike
     readonly onRetry?: NonNullable<ChatCompletionsConfig["onRetry"]>
+    readonly onUsageUnsupported?: NonNullable<ChatCompletionsConfig["onUsageUnsupported"]>
     readonly retry?: ChatCompletionsConfig["retry"]
 }
 
@@ -48,6 +49,9 @@ function buildRole(
         ...(options.env === undefined ? {} : { env: options.env }),
         ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
         ...(options.onRetry === undefined ? {} : { onRetry: options.onRetry }),
+        ...(options.onUsageUnsupported === undefined
+            ? {}
+            : { onUsageUnsupported: options.onUsageUnsupported }),
         ...(options.retry === undefined ? {} : { retry: options.retry }),
     })
 

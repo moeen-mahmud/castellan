@@ -155,15 +155,21 @@ Three roles. `main` required; `selector` and `compactor` fall back to `main`.
 | `maxTokens` | number | The cap on what the endpoint may generate. **Omitted from the request entirely when unset** — not derived from `reserveOutput`, which answers a different question. Bounded by `capabilities.maxOutput` and by the window. |
 | `reasoningEffort` | `none \| minimal \| low \| medium \| high` | Sent as OpenAI's `reasoning_effort`; omitted entirely when unset. Worth setting to `none` on a reasoning model doing short, well-specified work — measured on `qwen3.5:9b`, six simultaneous rules with reasoning on burned 2,000 output tokens in 104 s and returned **empty content**, while `none` answered correctly in 2.1 s. It is the other half of the `reserveOutput` lever. Not universally honoured, and an endpoint that ignores it is silent about it. |
 | `headers` | map | Extra headers. Values may use `${ENV_VAR}`. |
-| `streamUsage` | bool | Ask for token usage in a streamed response. Off by default. |
+| `streamUsage` | bool | Ask for token usage in a streamed response. **On by default**; set `false` to stop asking. |
 | `capabilities` | object | Override the shipped registry. See below. |
 
 `streamUsage` sends `stream_options: {include_usage: true}`, which is an OpenAI extension rather than
-part of `/chat/completions` — an endpoint that does not know it may reject the whole request, which is
-why it is opt-in. Turn it on when a token count is being *compared* rather than displayed. Measured
-against Ollama on 2026-08-13: it reports no usage at all without this, so token figures for a local
-model come from the estimator until it is set; with it, `prompt_tokens` and `completion_tokens` arrive
-as they do from a hosted endpoint.
+part of `/chat/completions`, so an endpoint that does not know it may reject the whole request. It was
+opt-in for that reason until Phase 7A, and portability is now kept a different way: a 400 whose body
+names `stream_options` is retried **once** without the field, remembered for the life of the provider,
+and reported as an `agent.warning`. The downgrade does not consume a retry attempt.
+
+It is on by default because the compaction ladder runs on a corrected estimate. `prompt_tokens` is the
+anchor that corrects it, and `estimateTokens` is measured at **16–20% low** on observation-heavy
+prompts — the ones that need compacting — so without usage the correction never leaves 1.0 and
+`context.pressure` reports `source: "estimated"` forever. Measured against Ollama on 2026-08-13: it
+reports no usage at all without this; with it, `prompt_tokens` and `completion_tokens` arrive as they do
+from a hosted endpoint. See `evals/budget/README.md` for the figures.
 
 `$ref: model.selector` reuses another role's definition without repetition.
 
@@ -240,7 +246,7 @@ the provider caches nothing: DeepSeek caches context automatically server-side a
 | `reserveOutput` | 4096 | How much of the window to keep free for the reply, so the prompt cannot crowd it out. A **prompt-budget** number: it never becomes `max_tokens`. |
 | `observationMaxTokens` | 2000 | Above this a single tool observation is trimmed to head+tail with an artifact pointer. |
 | `files` | `[]` | **Deprecated.** Alias for `static`, warning at load and naming the replacement. Keeps resolving against the *manifest* directory rather than `workspace`, which is what makes it an alias rather than a rename. Setting both `files` and `static` is a load failure, not a merge. |
-| `thresholds` | see architecture | Compaction ladder trigger fractions. Must be strictly ascending; validated. |
+| `thresholds` | see architecture | Compaction ladder trigger fractions **of the prompt budget** — `window` minus `reserveOutput`, not of the whole window. Measured against the window, a large reserve lets `assembleContext`'s oldest-first trim run while the ladder still reports mild pressure, which is the common case on a reasoning model. Must be strictly ascending and within `(0, 1)`; validated. |
 
 #### Workspace
 
@@ -289,7 +295,7 @@ case-insensitive and whole-word against the current input. See `07-SPEC-WORKSPAC
 | `budget.reserveWrite` | 6 | Slots held for mutating tools so reads cannot starve writes. |
 | `pinned` | `[]` | Slugs resolved at load. **An unknown slug fails the load** with the slug and provider named — unless a provider claims it with `explainUnresolved()`, which is consulted only once a slug is missing after *every* provider has answered. A cold Composio cache reports itself and names the warm command; the generic nearest-match message would blame correct slugs. |
 | `search.enabled` | false | Exposes a provider search meta-tool as an escape hatch. Off by default: search-then-execute is two-hop reasoning and small models fail it. |
-| `local` | `[]` | Built-in tools: `memory_write`, `phase_set`, `handoff`, `now`. |
+| `local` | `[]` | Built-in tools: `artifact_read`, `memory_write`, `phase_set`, `handoff`, `now`. `artifact_read` follows the pointer compaction leaves behind, so an agent with compaction enabled and this tool unpinned can see that detail was removed and cannot retrieve it. |
 | `policy.mode` | `allow` | What happens to a call no rule mentions. `allow` because **pinning is the primary authorization** — an agent has only the tools its manifest pinned. `ask` on an unattended run means `onNoApprover` answers it, so a schedule would do nothing. |
 | `policy.allow` / `policy.deny` | `[]` | `Tool` or `Tool(pattern)`. Evaluated **deny → allow, first match, specificity never reorders** — so a deny carries no exceptions. A rule naming a primary content field (`exec(command:…)`) is refused: a compound command defeats it. |
 | `policy.onNoApprover` | `deny` | What `ask` means with nobody to ask — a schedule, a pipe, a channel with no approver. |
@@ -510,12 +516,35 @@ phases:
   act:    { allow: ["tag:read", "tag:write"] }
 ```
 
-- `allow` matches slugs, `tag:<name>` annotations, or `*`
-- `entry: true` marks the starting phase; defaults to the first declared
-- Declaring more than one phase auto-registers the `phase_set` local tool
-- A single implicit `default: { allow: ["*"] }` phase exists if the key is omitted
+- `allow` matches slugs, `tag:<name>` annotations from the tool's own spec, or `*` — and nothing else.
+  A pattern language here would be a second matcher beside `tools.policy`'s, and the two disagreeing
+  about what `exec*` means is worse than not supporting it.
+- `entry: true` marks the starting phase; defaults to the first declared, so key order is significant.
+- Declaring more than one phase auto-registers `phase_set`, **in every phase**. A phase without it
+  would be a phase with no way out, and leaving that to authors to remember is a trap in the format.
+- A single implicit `default: { allow: ["*"] }` phase exists if the key is omitted, and one declared
+  phase is treated the same way: there is nothing to move to, so no `phase_set` is registered.
+- An `allow` entry matching no resolved tool **fails the load**, naming the phase, the entry and the
+  available slugs. A phase that silently exposes fewer tools than its author wrote surfaces turns later
+  as the agent declining work it should be able to do. The check runs where "resolved" is knowable — at
+  agent construction — so `validate` does not perform it.
+- A *stored* phase the manifest no longer declares falls back to the entry phase rather than failing.
+  That is a rename between runs, not an authoring mistake, and refusing to resume the conversation is
+  the worse answer.
 
-Phase state persists per session.
+Phase state persists per session, in `sessions.phase`. A change takes effect on the **next step of the
+same turn**: `triage` → `phase_set("act")` → write, inside one turn, is the point of the feature.
+
+The cost, stated: the catalogue is slot 1, so a change invalidates the cached prefix from slot 1 onward
+for that one request. The per-phase catalogue is memoised, so a phase entered twice renders once.
+
+The **current** phase is named in `phase_set`'s own description rather than in the configuration block,
+because a phase is per session while that block is memoised per agent and frozen at first use — two
+sessions in one process would otherwise render each other's phase.
+
+Measured, and the figure is not the one the rationale predicts: on a frontier model the constraint
+**cost** 8–12pp, entirely on tasks whose correct answer is to call no tool. See
+`evals/phases/README.md`; the small-model arm, which is what decision 4.8's claim is about, is unrun.
 
 ### `skills`
 
@@ -666,7 +695,8 @@ Enforced by `manifest/validate.ts`, all failing at load with a field path and a 
 
 1. `apiVersion` must be exactly `castellan/v1`.
 2. Secrets must be `*Env` references. A literal-looking key (`sk-`, `Bearer `, 32+ char hex) in a value fails.
-3. `context.thresholds` must be strictly ascending and within `(0, 1)`.
+3. `context.thresholds` must be strictly ascending and within `(0, 1)`. They are fractions of the
+   prompt budget, `window - reserveOutput`.
 4. `tools.budget.reserveWrite` must be less than `budget.max`.
 5. Every `pinned` slug must resolve against the provider.
 6. Every `phases.*.allow` entry must match at least one resolved tool, or be `*`.

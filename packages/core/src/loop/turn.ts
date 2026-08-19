@@ -14,6 +14,10 @@
 
 import { assembleContext, slotReport } from "../context/assemble.ts"
 import type { ContextBlock } from "../context/blocks.ts"
+import { SLOT } from "../context/blocks.ts"
+import { type Calibration, comparableEstimate, observe, UNCALIBRATED } from "../context/budget.ts"
+import { runLadder, type Thresholds } from "../context/compaction/ladder.ts"
+import type { Displaced } from "../context/compaction/stages.ts"
 import { estimateMessageTokens } from "../context/tokens.ts"
 import { type ErrorDetail, HarnessError, toolRepairFailed } from "../errors.ts"
 import type { EventBus } from "../events/bus.ts"
@@ -21,12 +25,15 @@ import type { TurnEndReason } from "../events/types.ts"
 import type { ChatMessage, ToolDefinition } from "../model/provider.ts"
 import { type ResolvedRole, requestParamsFor } from "../model/roles.ts"
 import type { ParsedOutput, StepOutput, ToolDialect } from "../tools/dialect/dialect.ts"
+import { nativeWireTokens } from "../tools/dialect/native.ts"
 import { type ApprovalRequest, executeIntents } from "../tools/execute.ts"
+import { phaseSetTool } from "../tools/local.ts"
 import type { PolicyConfig } from "../tools/policy.ts"
 import type { ToolRegistry } from "../tools/registry.ts"
 import type { OnMutate } from "../tools/trust.ts"
-import type { Tool, ToolResult, WorkspaceWriteTarget } from "../tools/types.ts"
+import type { DisplacedArtifact, Tool, ToolResult, WorkspaceWriteTarget } from "../tools/types.ts"
 import { newStepId, newTurnId } from "./ids.ts"
+import { allowFor, otherPhases, type PhaseMap } from "./phases.ts"
 import { runStep } from "./step.ts"
 
 export interface TurnLimits {
@@ -124,6 +131,16 @@ export interface TurnInput {
     readonly window: number
     readonly reserveOutput: number
     readonly limits: TurnLimits
+    /**
+     * Compaction, when the caller has a store and thresholds to give it.
+     *
+     * Absent means the blunt oldest-first window in `assembleContext` is the only protection, which is
+     * what every phase before this one had. Present is not a promise that anything runs: the ladder does
+     * nothing until a threshold is crossed, which on an ordinary turn is never.
+     */
+    readonly compaction?: TurnCompaction
+    /** Declared phases and where this session currently is. Absent means one implicit phase. */
+    readonly phases?: TurnPhases
     readonly tools?: ToolRuntime
     readonly bus: EventBus
     /** Where the turn came from, for the `turn.start` event: `repl`, `api`, `schedule`, … */
@@ -131,6 +148,42 @@ export interface TurnInput {
     /** Caller's cancellation. A disconnect must never be wired to this. */
     readonly signal?: AbortSignal
     readonly turnId?: string
+}
+
+export interface TurnPhases {
+    readonly config: PhaseMap
+    /** Where the session is when the turn begins. */
+    readonly current: string
+    /**
+     * Persists a change. Awaited inside the turn, so a crash right after the model was told its tools
+     * changed does not resume in the phase it thought it had left.
+     */
+    readonly persist?: (to: string) => Promise<void>
+}
+
+export interface TurnCompaction {
+    readonly thresholds: Thresholds
+    /**
+     * What the estimator has learned about its own bias, carried in by the caller.
+     *
+     * Passed in and handed back on `TurnResult` rather than mutated through a callback, because it is
+     * session state and the session's owner is the only thing that can decide how long it lives. A
+     * fresh `UNCALIBRATED` is correct and merely means the first turn runs on the raw estimate.
+     */
+    readonly calibration: Calibration
+    /** The `compactor` role. Absent, throwing and empty-returning are all handled the same way. */
+    readonly summarise?: (messages: readonly ChatMessage[]) => Promise<string>
+    /**
+     * Persists what a stage displaced. Awaited *inside* the step loop, not at the end of the turn.
+     *
+     * The pointer a stage leaves behind can be followed by the very next model call, so an artifact
+     * written at turn end is one the model was invited to read and could not.
+     */
+    readonly persist?: (artifacts: readonly Displaced[]) => Promise<void>
+    /** Backs `artifact_read`. Scoped to this session by whoever supplies it. */
+    readonly read?: (id: string) => Promise<DisplacedArtifact | undefined>
+    /** How many times S5 has already fired in this session. A second is a misconfiguration. */
+    readonly resets?: number
 }
 
 export interface TurnResult {
@@ -145,6 +198,20 @@ export interface TurnResult {
     readonly error?: ErrorDetail
     /** Messages appended to the session by this turn. */
     readonly appended: readonly ChatMessage[]
+    /**
+     * The calibration after this turn's observations, for the caller to carry to the next one.
+     *
+     * Absent when no compaction seam was supplied or no endpoint reported `prompt_tokens` — and those
+     * are different states with the same shape here, which is why `context.pressure` carries its own
+     * `source` rather than leaving anyone to infer it from this.
+     */
+    readonly calibration?: Calibration
+    /** Stages that ran across every step of this turn. Zero on an ordinary turn. */
+    readonly compactions?: number
+    /** S5 firings in this turn, to be added to the session's running count. */
+    readonly resets?: number
+    /** The phase the turn ended in. Absent when the agent declares no phases. */
+    readonly phase?: string
 }
 
 /**
@@ -195,6 +262,21 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     let steps = 0
     let promptTokens = 0
     let outputTokens = 0
+    /**
+     * Turn-scoped, and outside the `try` because the result is built after it.
+     *
+     * The calibration is carried in and handed back rather than owned here: it is session state, and a
+     * turn is the wrong lifetime for it — one turn's worth of observations is a sample, not a bias.
+     */
+    let calibration = input.compaction?.calibration ?? UNCALIBRATED
+    let compactions = 0
+    let resets = 0
+    /**
+     * The current phase, outside the `try` because the result is built after it and a turn that failed
+     * still moved phase if `phase_set` succeeded before the failure. Losing that would resume the next
+     * turn in a phase the agent had already left.
+     */
+    let phase = input.phases?.current ?? ""
     let reason: TurnEndReason = "final"
     let error: TurnResult["error"]
     /** Consecutive repair attempts. Reset by any step whose calls were usable. */
@@ -228,46 +310,186 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
 
     try {
         const history: ChatMessage[] = [...input.history]
+        /**
+         * Where the current turn's trace begins — the protected tail's boundary.
+         *
+         * Fixed before the loop, because `history` grows during the turn as calls and observations are
+         * pushed onto it. Without this a stage firing at step three could replace the observation the
+         * model is about to reason over: a compaction that breaks the turn it was called to rescue.
+         */
+        const initialHistoryLength = history.length
         // The active skills' script tools, layered on for this turn only. `withTurnTools` returns a new
         // registry and leaves the one slot 1 was rendered from untouched, which is what keeps the cached
         // prefix out of reach — `tools.blocks` is still the catalogue built at load.
         const turnScripts = (input.skills ?? []).flatMap((skill) => skill.tools)
-        const tools =
+        const baseTools =
             input.tools === undefined || turnScripts.length === 0
                 ? input.tools
                 : { ...input.tools, registry: input.tools.registry.withTurnTools(turnScripts) }
 
+        /**
+         * The catalogue as one phase sees it, rebuilt only when the phase changes.
+         *
+         * Memoised per phase name rather than per step, because rendering it is the expensive half and
+         * a phase is stable across most turns. `wireTokens` is recomputed with it: under `native` the
+         * schemas travel in the request body, so a phase that hides four tools makes the body smaller
+         * and a stale figure would have the budget reserving room for tools that are no longer sent.
+         */
+        const views = new Map<string, ToolRuntime>()
+        const viewFor = (phase: string): ToolRuntime | undefined => {
+            if (baseTools === undefined || input.phases === undefined) return baseTools
+            const cached = views.get(phase)
+            if (cached !== undefined) return cached
+
+            const allow = allowFor(input.phases.config, phase)
+            const all = baseTools.registry.specs()
+            const registry = baseTools.registry.inPhase(allow).withTurnTools([
+                phaseSetTool({
+                    phases: Object.keys(input.phases.config),
+                    current: phase,
+                    others: otherPhases(input.phases.config, phase, all),
+                }),
+            ])
+            const specs = registry.specs()
+            const requestTools = baseTools.dialect.requestTools(specs)
+            const view: ToolRuntime = {
+                ...baseTools,
+                registry,
+                blocks: baseTools.dialect.renderCatalogue(specs, registry.notEnabled),
+                ...(requestTools === undefined ? {} : { requestTools }),
+                wireTokens: requestTools === undefined ? 0 : nativeWireTokens(requestTools),
+            }
+            views.set(phase, view)
+            return view
+        }
+
+        // Reassigned by `setPhase` below — the whole point is that a phase change takes effect for the
+        // rest of *this* turn. Biome's linter would rather this were const; it cannot be.
+        let tools = viewFor(phase)
+
         while (steps < input.limits.maxSteps) {
             if (link.signal.aborted) break
 
-            const assembled = assembleContext({
-                identity: input.identity,
-                ...(tools === undefined ? {} : { toolBlocks: tools.blocks }),
-                ...(input.configSummary === undefined
-                    ? {}
-                    : { configSummary: input.configSummary }),
-                ...(input.examples === undefined ? {} : { examples: input.examples }),
-                ...(input.volatile === undefined ? {} : { volatile: input.volatile }),
-                ...(input.knowledge === undefined || input.knowledge.length === 0
-                    ? {}
-                    : { knowledge: input.knowledge }),
-                ...(input.skills === undefined || input.skills.length === 0
-                    ? {}
-                    : {
-                          skills: input.skills.map((skill) => ({
-                              name: skill.name,
-                              content: skill.content,
-                              role: skill.role,
-                          })),
-                      }),
-                ...(input.reminder === undefined ? {} : { reminder: input.reminder }),
-                history,
-                input: input.input,
-                // Reduced by whatever the dialect puts in the request body rather than in a block.
-                // Zero under NLT, so this is the same arithmetic it always was.
-                window: Math.max(1, input.window - (tools?.wireTokens ?? 0)),
-                reserveOutput: input.reserveOutput,
-            })
+            const assembleWith = (messages: readonly ChatMessage[]) =>
+                assembleContext({
+                    identity: input.identity,
+                    ...(tools === undefined ? {} : { toolBlocks: tools.blocks }),
+                    ...(input.configSummary === undefined
+                        ? {}
+                        : { configSummary: input.configSummary }),
+                    ...(input.examples === undefined ? {} : { examples: input.examples }),
+                    ...(input.volatile === undefined ? {} : { volatile: input.volatile }),
+                    ...(input.knowledge === undefined || input.knowledge.length === 0
+                        ? {}
+                        : { knowledge: input.knowledge }),
+                    ...(input.skills === undefined || input.skills.length === 0
+                        ? {}
+                        : {
+                              skills: input.skills.map((skill) => ({
+                                  name: skill.name,
+                                  content: skill.content,
+                                  role: skill.role,
+                              })),
+                          }),
+                    ...(input.reminder === undefined ? {} : { reminder: input.reminder }),
+                    history: messages,
+                    input: input.input,
+                    // Reduced by whatever the dialect puts in the request body rather than in a block.
+                    // Zero under NLT, so this is the same arithmetic it always was.
+                    window: Math.max(1, input.window - (tools?.wireTokens ?? 0)),
+                    reserveOutput: input.reserveOutput,
+                })
+
+            let assembled = assembleWith(history)
+
+            if (input.compaction !== undefined) {
+                // Everything that is not history: pinned blocks, the input, the reminder. Taken from
+                // the assembled blocks rather than recomputed, so the ladder's arithmetic and the
+                // prompt's cannot disagree — and taken from the *kept* history, because a blunt trim
+                // may already have dropped some and charging the ladder for messages the prompt does
+                // not contain would make it compact against a fiction.
+                const historyCost = assembled.blocks
+                    .filter((b) => b.slot === SLOT.history)
+                    .reduce((sum, b) => sum + b.tokens, 0)
+                const fixed = Math.max(0, assembled.totalTokens - historyCost)
+
+                const result = await runLadder({
+                    history,
+                    protectedTail: history.length - initialHistoryLength,
+                    budget: assembled.promptBudget,
+                    fixed,
+                    thresholds: input.compaction.thresholds,
+                    calibration,
+                    ...(input.compaction.summarise === undefined
+                        ? {}
+                        : { summarise: input.compaction.summarise }),
+                })
+
+                // After the ladder, describing the prompt that will actually be sent. Emitting
+                // `result.before` here put `ctx 128%` on a status line for a session compaction had
+                // handled — a true statement about a prompt nobody sent, and indistinguishable from a
+                // window that had just overflowed. `peak` keeps the diagnostic figure.
+                input.bus.emit(
+                    "context.pressure",
+                    {
+                        fraction: result.after,
+                        tokens: Math.round(result.after * assembled.promptBudget),
+                        budget: assembled.promptBudget,
+                        source: calibration.samples === 0 ? "estimated" : "corrected",
+                        ...(result.before === result.after ? {} : { peak: result.before }),
+                    },
+                    context,
+                )
+
+                for (const record of result.stages) {
+                    input.bus.emit(
+                        "compaction.stage",
+                        {
+                            stage: record.stage,
+                            before: record.before,
+                            after: record.after,
+                            changed: record.changed,
+                            ...(result.digestSource === undefined
+                                ? {}
+                                : { digest: result.digestSource }),
+                        },
+                        context,
+                    )
+                    if (record.stage === "reset" && record.changed) {
+                        resets += 1
+                        const count = (input.compaction.resets ?? 0) + resets
+                        input.bus.emit(
+                            "context.reset",
+                            {
+                                count,
+                                // Not an error: the session keeps working. But a second reset means the
+                                // window is too small for how this agent is configured, and saying so
+                                // once is the difference between a fixable setting and a session that
+                                // mysteriously forgets everything twice an hour.
+                                ...(count > 1
+                                    ? {
+                                          warning:
+                                              "The whole conversation has now been replaced by a digest more than once. That is a configuration problem rather than a busy session: raise context.window, lower context.reserveOutput, or cut what slots 0-2 carry.",
+                                      }
+                                    : {}),
+                            },
+                            context,
+                        )
+                    }
+                }
+
+                if (result.stages.length > 0) {
+                    compactions += result.stages.length
+                    // Awaited before the next model call, not at turn end: the pointer a stage just
+                    // wrote into history can be followed by the very next reply.
+                    if (result.displaced.length > 0 && input.compaction.persist !== undefined) {
+                        await input.compaction.persist(result.displaced)
+                    }
+                    history.length = 0
+                    history.push(...result.history)
+                    assembled = assembleWith(history)
+                }
+            }
 
             input.bus.emit(
                 "context.assembled",
@@ -294,6 +516,19 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
             reasoning += step.reasoning
             promptTokens = step.promptTokens
             outputTokens += step.outputTokens
+
+            // The anchor. Only a figure the endpoint actually reported teaches anything — `promptTokens`
+            // is seeded with our own estimate, so feeding back an unreported one converges the
+            // correction on exactly 1.0 and makes every accuracy check pass by construction.
+            if (input.compaction !== undefined && step.promptTokensReported) {
+                calibration = observe(calibration, {
+                    // Compared against the same bytes the endpoint counted: under `native` the tool
+                    // schemas travel in the request body, absent from the assembled total and present
+                    // in `prompt_tokens`. Skip this and the correction absorbs the whole catalogue.
+                    estimated: comparableEstimate(assembled.totalTokens, tools?.wireTokens ?? 0),
+                    reported: step.promptTokens,
+                })
+            }
             pendingWork = false
 
             // With no catalogue there is nothing to look for, and running a parser over the reply
@@ -366,7 +601,10 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
             // What the model just did, as its own dialect records it: the raw text under NLT, prose
             // plus the structured calls under native. Either way the next model call sees the call it
             // made rather than a cleaned-up version that no longer explains the observation below.
-            const call = tools.dialect.renderCall(output)
+            // Tagged here rather than in each dialect: `origin` is a fact about who produced the
+            // message, and the loop is the only place that knows. Compaction reads it to tell a tool
+            // observation from a human message, which under a text dialect the *role* cannot.
+            const call: ChatMessage = { ...tools.dialect.renderCall(output), origin: "call" }
             history.push(call)
             trace.push(call)
             pendingProse = ""
@@ -408,6 +646,34 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
                               ...(tools.writeTarget === undefined
                                   ? {}
                                   : { writeTarget: tools.writeTarget }),
+                              // Wired from the compaction seam rather than from `tools`, because the
+                              // artifact store and the compaction that fills it are one capability:
+                              // an agent with a store but no thresholds has no pointers to follow,
+                              // and one with thresholds but no store has pointers that resolve to
+                              // nothing. Passing them together is what keeps those two from drifting.
+                              ...(input.compaction?.read === undefined
+                                  ? {}
+                                  : { readArtifact: input.compaction.read }),
+                              // The three things a phase change has to reach, none of which the tool
+                              // can see: the catalogue for the rest of this turn, the store, and the
+                              // event stream. `tools` is reassigned here, which is what makes the
+                              // change take effect on the *next step of this turn* rather than the next
+                              // turn — deferring it would recreate the two-hop shape 4.7 refuses in the
+                              // feature that exists for the models which fail it.
+                              ...(input.phases === undefined
+                                  ? {}
+                                  : {
+                                        setPhase: async (to: string) => {
+                                            phase = to
+                                            tools = viewFor(to)
+                                            await input.phases?.persist?.(to)
+                                            input.bus.emit(
+                                                "phase.changed",
+                                                { to, tools: tools?.registry.size ?? 0 },
+                                                stepContext,
+                                            )
+                                        },
+                                    }),
                               signal: link.signal,
                               // Overwritten per call by `runOne`, which is the only place that knows
                               // the deadline actually in force. Seeded here so the shape is complete.
@@ -427,8 +693,13 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
                       })
 
             if (outcome.results.some((result) => result.ok)) {
+                // Optional-chained rather than narrowed: `tools` became reassignable when phases landed,
+                // so TypeScript correctly stops narrowing it across the await above — `phase_set` may
+                // have swapped the view in between. The registry wanted here is whichever one resolved
+                // the call, and a slug missing from it is not a side effect.
                 sideEffects ||= outcome.results.some(
-                    (result) => result.ok && tools.registry.resolve(result.slug).spec.mutating,
+                    (result) =>
+                        result.ok && tools?.registry.resolve(result.slug).spec.mutating === true,
                 )
             }
 
@@ -461,7 +732,9 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
                     break
                 }
                 repairs += 1
-                const repairMessages = tools.dialect.renderRepair(outcome.repair, output)
+                const repairMessages = tools.dialect
+                    .renderRepair(outcome.repair, output)
+                    .map((message): ChatMessage => ({ ...message, origin: "repair" }))
                 history.push(...repairMessages)
                 trace.push(...repairMessages)
                 pendingWork = true
@@ -469,7 +742,9 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
             }
 
             repairs = 0
-            const observation = tools.dialect.renderObservation(outcome.results)
+            const observation = tools.dialect
+                .renderObservation(outcome.results)
+                .map((message): ChatMessage => ({ ...message, origin: "observation" }))
             history.push(...observation)
             trace.push(...observation)
             pendingWork = true
@@ -547,5 +822,10 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
         durationMs,
         ...(error === undefined ? {} : { error }),
         appended,
+        ...(input.compaction === undefined ? {} : { calibration, compactions, resets }),
+        // The phase the turn *ended* in, which is not always the one it began in. The caller persists
+        // it too — `persist` inside the turn covers a crash mid-turn, and this covers the ordinary path
+        // without making the caller subscribe to an event to learn where its own session got to.
+        ...(input.phases === undefined ? {} : { phase }),
     }
 }

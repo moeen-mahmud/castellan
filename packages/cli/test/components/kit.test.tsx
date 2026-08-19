@@ -226,6 +226,46 @@ describe("StatusBar", () => {
         expect(frame.text).toContain("qwen3.5:9b")
     })
 
+    test("the context gauge appears only when it is worth knowing, and colours when it costs", () => {
+        const at = (pressure: number) =>
+            renderFrame(
+                h(StatusBar, {
+                    status: "idle",
+                    model: "m",
+                    sessionKey: "local:abc123",
+                    elapsedMs: 0,
+                    last: undefined,
+                    quiet: false,
+                    pressure,
+                }),
+                { columns: 100 },
+            ).text
+
+        // Below the lowest shipped threshold there is nothing to say, and a gauge that is always on
+        // is a gauge nobody reads.
+        expect(at(0.3)).not.toContain("ctx")
+        expect(at(0.72)).toContain("ctx 72%")
+        // Rounded, not truncated: 0.895 is nearer 90 than 89, and a figure a person compares against a
+        // threshold should not read low.
+        expect(at(0.895)).toContain("ctx 90%")
+    })
+
+    test("the phase sits with the session key, because it belongs to the conversation", () => {
+        const frame = renderFrame(
+            h(StatusBar, {
+                status: "idle",
+                model: "m",
+                sessionKey: "local:abc123",
+                elapsedMs: 0,
+                last: undefined,
+                quiet: false,
+                phase: "act",
+            }),
+            { columns: 100 },
+        )
+        expect(frame.text).toContain("local:abc123 · act")
+    })
+
     test("shows the elapsed counter, which is what separates slow from hung", () => {
         const frame = renderFrame(
             h(StatusBar, {

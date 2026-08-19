@@ -6,8 +6,25 @@
  * estimator only has to be good enough between calls, and it must never be so slow that
  * assembling context costs more than sending it.
  *
- * Biased slightly high. Over-estimating wastes a little budget; under-estimating overflows the
- * window, and an overflow is a hard failure while waste is a rounding error.
+ * ## The bias is not what this file claimed, and the direction matters
+ *
+ * This said "biased slightly high" for five phases, on the reasoning that over-estimating wastes a
+ * little budget while under-estimating overflows the window. The intent is right; the fact was
+ * unmeasured and is wrong for the prompts that actually get large.
+ *
+ * Measured (`evals/budget/results.json`, deepseek-v4-pro, 31 turns): on a prose-only opening the
+ * estimate is close, and on an observation-heavy prompt it runs **16–20% low** — 14,057 estimated
+ * against 16,835 charged. Tool observations are JSON documents and shell output, where braces,
+ * quotes, colons and identifiers all split into more tokens per character than the 3.8 below assumes,
+ * and a session under compaction pressure is mostly observations by definition. So the error is in
+ * the overflow direction precisely when the window is tight.
+ *
+ * The divisor is deliberately **not** retuned to fix that. A single constant cannot be right for both
+ * prose and JSON, and moving it would trade one silent bias for another while changing assembly
+ * behaviour everywhere. The fix is `context/budget.ts`, which learns the real ratio from the
+ * endpoint's own `prompt_tokens` and corrects it — measured at 14.21% mean error uncorrected against
+ * 2.88% corrected. What remains exposed is the first call of a session, before any observation exists
+ * to learn from; `assembleContext` still trims oldest-first there, and that is the honest floor.
  */
 
 /** Average characters per token for English prose in Byte-Pair Encoding (BPE) vocabularies. */

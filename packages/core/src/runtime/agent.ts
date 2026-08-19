@@ -15,18 +15,32 @@
 import { statSync } from "node:fs"
 import { isAbsolute, resolve } from "node:path"
 import { assembleContext, slotReport } from "../context/assemble.ts"
+import { type Calibration, UNCALIBRATED } from "../context/budget.ts"
+import { renderCompactionNotice } from "../context/compaction-notice.ts"
 import { renderConfigSummary } from "../context/config-summary.ts"
-import { type ErrorDetail, envOverridden, toolGatedAfterFirstUse } from "../errors.ts"
+import {
+    type ErrorDetail,
+    envOverridden,
+    phaseAllowUnmatched,
+    toolGatedAfterFirstUse,
+} from "../errors.ts"
 import type { EventBus } from "../events/bus.ts"
 import { newTurnId } from "../loop/ids.ts"
-import { runTurn, type ToolRuntime, type TurnResult } from "../loop/turn.ts"
+import { entryPhase, isPhased, unmatchedAllows } from "../loop/phases.ts"
+import { runStep } from "../loop/step.ts"
+import { runTurn, type ToolRuntime, type TurnCompaction, type TurnResult } from "../loop/turn.ts"
 import type { LoadedManifest } from "../manifest/load.ts"
 import { resolveProviders } from "../manifest/providers.ts"
 import type { AgentManifest } from "../manifest/schema.ts"
 import type { PromptStyle } from "../model/prompt-style.ts"
 import type { ChatMessage } from "../model/provider.ts"
 
-import { type ResolvedRoles, type ResolveRolesOptions, resolveRoles } from "../model/roles.ts"
+import {
+    type ResolvedRoles,
+    type ResolveRolesOptions,
+    requestParamsFor,
+    resolveRoles,
+} from "../model/roles.ts"
 import { loadSkills, type SkillCatalogue } from "../skills/index.ts"
 import { activateSkills } from "../skills/load.ts"
 import { renderScripts, skillScriptTools } from "../skills/tools.ts"
@@ -56,6 +70,26 @@ function mtimeOf(path: string): number | undefined {
         return undefined
     }
 }
+
+/**
+ * What the compactor is told. One block, generated, never authored by a manifest.
+ *
+ * Written as a brief for notes rather than a style instruction, because the *reader* is the same model
+ * on its next step and what it needs is facts it can act on: what was asked, what was decided, what a
+ * tool established. The last line is the one that matters — a digest that reads as a complete account
+ * invites the model to answer from it, and a digest is lossy by construction.
+ */
+/** The slug whose presence decides whether the notice mentions following a pointer. */
+const ARTIFACT_READ = "artifact_read"
+
+const DIGEST_INSTRUCTION = [
+    "Summarise the conversation above for your own future reference. You are writing notes to yourself, not a report for a person.",
+    "",
+    "Keep: what the person asked for, decisions taken and why, facts established by tool results, and anything still outstanding.",
+    "Drop: pleasantries, your own reasoning, and anything already superseded.",
+    "Write plain prose under 300 words. No headings, no preamble, no closing summary.",
+    "End with one line naming what this summary does not cover, so a later step knows to ask rather than assume.",
+].join("\n")
 
 export interface AgentCreateOptions extends ResolveRolesOptions {
     /**
@@ -141,6 +175,28 @@ export class Agent {
 
     #bus: EventBus
     #toolRuntime: ToolRuntime | undefined
+    /**
+     * Per-session compaction state, in memory for the process's lifetime.
+     *
+     * Deliberately not persisted. The calibration is a fact about *this* endpoint's tokeniser as this
+     * process saw it, and it is re-learned within a couple of turns — storing it would add a migration
+     * and a staleness question (a manifest that changed `model.main` would resume with the previous
+     * model's bias) to save two turns of a correction that starts at 1.0 and is never *wrong*, only
+     * uncorrected. The reset count is the same: it exists to catch a window that is too small for the
+     * configuration, and a fresh process re-earns that within an hour if it is true.
+     */
+    #calibrations = new Map<string, Calibration>()
+    #resets = new Map<string, number>()
+    /**
+     * Phase per session, cached in front of the store.
+     *
+     * Unlike the calibration this *is* persisted — in `sessions.phase`, a column that has existed since
+     * Phase 2 with `setPhase` beside it, so no migration was needed. It has to survive a restart because
+     * it is a statement about where a conversation got to: resuming a triage-then-act session in `triage`
+     * would silently take away tools the agent had already earned, and the model's own history would
+     * show it using them.
+     */
+    #phases = new Map<string, string>()
     /** Absent when the embedder supplied none; then a skill's scripts are never discovered. */
     readonly #scriptRunner: ScriptRunner | undefined
     /**
@@ -247,6 +303,19 @@ export class Agent {
             })
             if (onceOnly.length > 0) {
                 this.warnings = [...this.warnings, toolGatedAfterFirstUse(onceOnly)]
+            }
+
+            // Spec rule 6, and it throws rather than warns for the same reason `resolve()` throws on an
+            // unknown slug: a phase whose `allow` names a tool that is not in the catalogue exposes less
+            // than its author wrote, and the symptom arrives turns later as a model declining work it
+            // was supposed to be able to do. Checked here because "resolved" is only knowable once the
+            // providers have answered — `validate` cannot reach this without resolving tools itself.
+            const unmatched = unmatchedAllows(this.manifest.phases ?? {}, specs)
+            if (unmatched.length > 0) {
+                throw phaseAllowUnmatched(
+                    unmatched,
+                    specs.map((spec) => spec.slug),
+                )
             }
         }
     }
@@ -410,10 +479,41 @@ export class Agent {
                 maxParallelTools: this.manifest.limits.maxParallelTools,
             },
             ...(this.#toolRuntime === undefined ? {} : { tools: this.#toolRuntime }),
+            compaction: this.#compaction(sessionKey),
+            ...(isPhased(this.manifest.phases)
+                ? {
+                      phases: {
+                          config: this.manifest.phases,
+                          current: await this.#phaseOf(sessionKey),
+                          // Persisted inside the turn as well as after it: a crash between the model
+                          // being told its tools changed and the turn finishing would otherwise resume
+                          // in the phase it had already left, with a catalogue it has stopped expecting.
+                          persist: async (to) => {
+                              await this.store.sessions.setPhase(this.id, sessionKey, to)
+                              this.#phases.set(sessionKey, to)
+                          },
+                      },
+                  }
+                : {}),
             bus: this.#bus,
             source,
             ...(options.signal === undefined ? {} : { signal: options.signal }),
         })
+
+        // Carried per session, not per turn. One turn's observations are a sample of the estimator's
+        // bias; the bias itself belongs to the conversation, and a fresh calibration every turn would
+        // spend the first call of each turn running on the raw estimate — which is measured at 16-20%
+        // low on exactly the observation-heavy prompts that need compacting.
+        if (result.calibration !== undefined) {
+            this.#calibrations.set(sessionKey, result.calibration)
+        }
+        if (result.phase !== undefined && result.phase !== "") {
+            this.#phases.set(sessionKey, result.phase)
+            await this.store.sessions.setPhase(this.id, sessionKey, result.phase)
+        }
+        if (result.resets !== undefined && result.resets > 0) {
+            this.#resets.set(sessionKey, (this.#resets.get(sessionKey) ?? 0) + result.resets)
+        }
 
         // The turn row is the audit trail and records every outcome, including a failure and its
         // hint. `appended` is the conversation, and is empty on failure — a turn that errored
@@ -635,6 +735,95 @@ export class Agent {
         })
     }
 
+    /**
+     * The compaction seam for one session, or nothing.
+     *
+     * Absent when `compactionNotice` is off *and* nothing else needs it? No — absent never, because the
+     * thresholds are always present in the manifest. The seam is what turns them from a validated,
+     * inert block into behaviour, so it is always supplied; the ladder itself does nothing until a
+     * threshold is crossed.
+     *
+     * `summarise` is present only when the manifest declares a `compactor` role. There is deliberately
+     * no fallback to `main`: a digest written by the model that is mid-task, inside the same turn, on a
+     * prompt that is already too big, is how a compaction becomes the thing that overflows the window.
+     * The mechanical digest is the fallback, and it never fails.
+     */
+    /**
+     * Where this session is, falling back to the entry phase.
+     *
+     * The store is consulted once per process per session and then cached, because a phase changes only
+     * through `setPhase`, which writes both. A stored phase the manifest no longer declares falls back
+     * to the entry phase rather than failing: someone renamed a phase between runs, and refusing to
+     * resume the conversation is a worse answer than starting it at the beginning of the ladder.
+     */
+    async #phaseOf(sessionKey: string): Promise<string> {
+        const declared = this.manifest.phases ?? {}
+        const entry = entryPhase(declared) ?? ""
+        const cached = this.#phases.get(sessionKey)
+        if (cached !== undefined) return declared[cached] === undefined ? entry : cached
+        const stored = (await this.store.sessions.get(this.id, sessionKey))?.phase
+        const resolved = stored !== undefined && declared[stored] !== undefined ? stored : entry
+        this.#phases.set(sessionKey, resolved)
+        return resolved
+    }
+
+    #compaction(sessionKey: string): TurnCompaction {
+        // `resolveRoles` always returns a compactor — it falls back to `main`, deliberately, so an
+        // unconfigured role costs nothing. `configuredAs` is what distinguishes "configured" from
+        // "inherited", and only a configured one gets to write digests: asking the model that is
+        // mid-task, inside the same turn, on a prompt already too large, is how a compaction becomes
+        // the thing that overflows the window.
+        const compactor =
+            this.roles.compactor.configuredAs === "compactor" ? this.roles.compactor : undefined
+        return {
+            thresholds: this.manifest.context.thresholds,
+            calibration: this.#calibrations.get(sessionKey) ?? UNCALIBRATED,
+            resets: this.#resets.get(sessionKey) ?? 0,
+            persist: async (artifacts) => {
+                await this.store.artifacts.put(
+                    this.id,
+                    sessionKey,
+                    artifacts.map((artifact) => ({
+                        id: artifact.id,
+                        ...(artifact.slug === undefined ? {} : { slug: artifact.slug }),
+                        content: artifact.content,
+                        tokens: artifact.tokens,
+                    })),
+                    new Date().toISOString(),
+                )
+            },
+            read: async (id) => {
+                const found = await this.store.artifacts.get(this.id, sessionKey, id)
+                if (found === undefined) return undefined
+                return {
+                    content: found.content,
+                    tokens: found.tokens,
+                    ...(found.slug === undefined ? {} : { slug: found.slug }),
+                }
+            },
+            ...(compactor === undefined
+                ? {}
+                : {
+                      summarise: async (messages) => {
+                          const result = await runStep({
+                              role: compactor,
+                              provider: compactor.provider,
+                              messages: [
+                                  { role: "system", content: DIGEST_INSTRUCTION },
+                                  ...messages,
+                              ],
+                              params: requestParamsFor(compactor, this.window),
+                              promptTokens: 0,
+                              bus: this.#bus,
+                              context: { agentId: this.id, sessionKey },
+                              signal: new AbortController().signal,
+                          })
+                          return result.text
+                      },
+                  }),
+        }
+    }
+
     #configBlock(): string {
         if (this.#configSummary === undefined) {
             this.#configSummary = renderConfigSummary({
@@ -650,6 +839,18 @@ export class Agent {
                 ...(this.skills === undefined
                     ? {}
                     : { skillNames: this.skills.skills.map((skill) => skill.name) }),
+                // Default on: the behaviour it removes — a model quietly wrapping up because it senses
+                // the window filling — is invisible and costs a whole turn's usefulness, while the
+                // notice costs about sixty tokens once in a cached prefix.
+                ...(this.manifest.context.compactionNotice === false
+                    ? {}
+                    : {
+                          compactionNotice: renderCompactionNotice({
+                              canReadArtifacts: this.tools
+                                  .specs()
+                                  .some((spec) => spec.slug === ARTIFACT_READ),
+                          }),
+                      }),
             })
         }
         return this.#configSummary

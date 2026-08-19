@@ -294,6 +294,21 @@ export class Runtime {
                     onRetry: (info) => {
                         bus.emit("model.retry", info, { agentId: entry.manifest.id })
                     },
+                    // A warning rather than a log line, because the agent keeps working and the only
+                    // visible consequence is that every pressure figure stays `estimated` — carrying
+                    // the estimator's measured 16-20% low bias, forever, with nothing saying so.
+                    onUsageUnsupported: (info) => {
+                        bus.emit(
+                            "agent.warning",
+                            {
+                                code: "model_usage_unsupported",
+                                message: `${entry.manifest.model.main.baseUrl} refused stream_options (HTTP ${info.status}), so token usage is not reported.`,
+                                hint: "The request was retried without it and this agent works normally. What is lost is the prompt_tokens anchor: compaction pressure is estimated from characters rather than corrected against the endpoint, and the estimator runs 16-20% low on tool-heavy prompts. Set model.main.streamUsage: false to stop asking, or point at an endpoint that supports stream_options.",
+                                field: "model.main.streamUsage",
+                            },
+                            { agentId: entry.manifest.id },
+                        )
+                    },
                 }),
             ),
         )

@@ -50,12 +50,29 @@ export interface ChatCompletionsConfig {
     readonly headers?: Readonly<Record<string, string>>
     readonly retry?: RetryPolicy
     /**
-     * Ask for usage in the streamed response. Off by default: `stream_options` is an OpenAI
-     * extension and some compat endpoints reject unknown body fields with a 400, which would
-     * cost portability for an accounting nicety. Phase 7 revisits this when the budget needs a
-     * `prompt_tokens` anchor.
+     * Ask for usage in the streamed response. **On by default since Phase 7A.**
+     *
+     * It was off because `stream_options` is an OpenAI extension and some compat endpoints reject
+     * unknown body fields with a 400 — portability against an accounting nicety. It stopped being a
+     * nicety when the compaction ladder started running on a corrected estimate: without
+     * `prompt_tokens` there is no anchor, the correction never leaves 1.0, and every pressure figure
+     * carries the estimator's measured 16-20% low bias on exactly the observation-heavy prompts that
+     * need compacting.
+     *
+     * Portability is kept by *downgrading* rather than by defaulting off: a 400 naming
+     * `stream_options` is retried once without the field and remembered for the life of this provider,
+     * with `onUsageUnsupported` reporting it. So a compliant endpoint gets the anchor with nothing to
+     * configure, and a non-compliant one costs one extra request per process and says so. Set it to
+     * `false` to opt out entirely.
      */
     readonly streamUsage?: boolean
+    /**
+     * Called once when an endpoint refuses `stream_options` and the request is retried without it.
+     *
+     * Exists so the refusal reaches `agent.warning` instead of a log nobody opens: the agent still
+     * works, and the only visible consequence is that pressure figures stay `estimated` forever.
+     */
+    readonly onUsageUnsupported?: (info: { readonly status: number; readonly body: string }) => void
     /** Injectable for tests. Defaults to global `fetch`. */
     readonly fetch?: FetchLike
     /** Injectable for tests. Defaults to `process.env`, read per request. */
@@ -85,7 +102,8 @@ interface DeltaShape {
         message?: WireDelta
         finish_reason?: unknown
     }[]
-    usage?: { prompt_tokens?: unknown; completion_tokens?: unknown }
+    /** `null` on every chunk but the last, when `stream_options.include_usage` is set. */
+    usage?: { prompt_tokens?: unknown; completion_tokens?: unknown } | null
 }
 
 /**
@@ -241,8 +259,12 @@ function* chunksFromPayload(payload: DeltaShape, calls: ToolCallBuffer): Generat
     // Buffered, not yielded: a fragment is not a call. The buffer is drained once the stream ends.
     if (delta?.tool_calls !== undefined) calls.add(delta.tool_calls)
 
+    // `null`, not just absent. An OpenAI-compatible endpoint with `include_usage` set sends
+    // `"usage": null` on every chunk but the last, and `!== undefined` lets that through to be
+    // dereferenced. It threw on the first real call ever made with `streamUsage: true` — the flag was
+    // written for this phase and had never been exercised, so the bug shipped behind an unused option.
     const usage = payload.usage
-    if (usage !== undefined) {
+    if (usage !== undefined && usage !== null) {
         yield {
             type: "usage",
             promptTokens: asNumber(usage.prompt_tokens) ?? 0,
@@ -274,6 +296,15 @@ export function createChatCompletionsProvider(config: ChatCompletionsConfig): Mo
     const policy = config.retry ?? DEFAULT_RETRY
     const doFetch = config.fetch ?? globalThis.fetch
     const field = config.field ?? "model.main"
+    /**
+     * Usage is asked for unless a manifest says otherwise, and stops being asked for once refused.
+     *
+     * `usageRefused` is per provider instance rather than per request: an endpoint's support for
+     * `stream_options` is a property of the endpoint, so paying the extra round trip once is right and
+     * paying it on every call is not.
+     */
+    const usageWanted = config.streamUsage !== false
+    let usageRefused = false
 
     function authHeaders(): Record<string, string> {
         if (config.apiKeyEnv === undefined) return {}
@@ -285,34 +316,37 @@ export function createChatCompletionsProvider(config: ChatCompletionsConfig): Mo
     }
 
     async function* chat(request: ChatRequest, signal: AbortSignal): AsyncIterable<ChatChunk> {
-        const body = JSON.stringify({
-            model: request.model,
-            messages: request.messages.map(wireMessage),
-            stream: true,
-            // Absent entirely under NLT, so a text-dialect request is byte-for-byte what Phase 1
-            // sent. An endpoint that has never seen a `tools` key is not asked to ignore one.
-            ...(request.tools === undefined || request.tools.length === 0
-                ? {}
-                : {
-                      tools: request.tools.map((tool) => ({
-                          type: "function",
-                          function: {
-                              name: tool.name,
-                              description: tool.description,
-                              parameters: tool.parameters,
-                          },
-                      })),
-                  }),
-            ...(config.streamUsage === true ? { stream_options: { include_usage: true } } : {}),
-            ...(request.temperature === undefined ? {} : { temperature: request.temperature }),
-            ...(request.topP === undefined ? {} : { top_p: request.topP }),
-            ...(request.maxTokens === undefined ? {} : { max_tokens: request.maxTokens }),
-            // Omitted when unset, like every other optional field: an endpoint that has never seen
-            // `reasoning_effort` is not asked to ignore one.
-            ...(request.reasoningEffort === undefined
-                ? {}
-                : { reasoning_effort: request.reasoningEffort }),
-        })
+        // Rebuilt inside the loop, because the one thing that can change between attempts is whether
+        // `stream_options` is included. Everything else is fixed for the request.
+        const buildBody = (withUsage: boolean) =>
+            JSON.stringify({
+                model: request.model,
+                messages: request.messages.map(wireMessage),
+                stream: true,
+                // Absent entirely under NLT, so a text-dialect request is byte-for-byte what Phase 1
+                // sent. An endpoint that has never seen a `tools` key is not asked to ignore one.
+                ...(request.tools === undefined || request.tools.length === 0
+                    ? {}
+                    : {
+                          tools: request.tools.map((tool) => ({
+                              type: "function",
+                              function: {
+                                  name: tool.name,
+                                  description: tool.description,
+                                  parameters: tool.parameters,
+                              },
+                          })),
+                      }),
+                ...(withUsage ? { stream_options: { include_usage: true } } : {}),
+                ...(request.temperature === undefined ? {} : { temperature: request.temperature }),
+                ...(request.topP === undefined ? {} : { top_p: request.topP }),
+                ...(request.maxTokens === undefined ? {} : { max_tokens: request.maxTokens }),
+                // Omitted when unset, like every other optional field: an endpoint that has never seen
+                // `reasoning_effort` is not asked to ignore one.
+                ...(request.reasoningEffort === undefined
+                    ? {}
+                    : { reasoning_effort: request.reasoningEffort }),
+            })
 
         // Read the key *before* the retry loop. Inside it, a missing-key ConfigError would be
         // caught by the network-failure branch, retried twice, and finally reported as "cannot reach
@@ -322,8 +356,18 @@ export function createChatCompletionsProvider(config: ChatCompletionsConfig): Mo
 
         let response: Response | undefined
 
-        for (let attempt = 1; attempt <= policy.attempts; attempt += 1) {
+        /**
+         * `attempt` is incremented by the loop body, not by the header, because one path through it is
+         * not a retry: dropping `stream_options` re-sends the *same* request in a form the endpoint
+         * accepts. Counting it against the budget would make the downgrade spend a real retry, and on a
+         * single-attempt policy it would fall out of the loop with no response at all — which returns an
+         * empty stream and reports nothing, the exact silent-success shape rule 8 forbids.
+         */
+        let attempt = 1
+        while (attempt <= policy.attempts) {
             if (signal.aborted) return
+
+            const body = buildBody(usageWanted && !usageRefused)
 
             let candidate: Response
             try {
@@ -343,6 +387,7 @@ export function createChatCompletionsProvider(config: ChatCompletionsConfig): Mo
                 if (attempt >= policy.attempts) throw modelUnreachable(url, cause)
                 const delayMs = backoffMs(policy, attempt)
                 config.onRetry?.({ status: 0, attempt, delayMs })
+                attempt += 1
                 await sleep(delayMs, signal)
                 continue
             }
@@ -355,6 +400,25 @@ export function createChatCompletionsProvider(config: ChatCompletionsConfig): Mo
             const retryable = RETRYABLE_STATUS.has(candidate.status)
             if (!retryable || attempt >= policy.attempts) {
                 const text = await candidate.text().catch(() => "")
+                // The one non-retryable status worth a second attempt, and only once per provider:
+                // an endpoint that rejects `stream_options` is not broken, it is older. Retrying the
+                // whole request without the field keeps portability without defaulting the anchor
+                // off for everyone. Matched on the field name in the body, not on the status alone —
+                // a 400 is also what a malformed prompt returns, and retrying that would hide a real
+                // error behind an extra request.
+                if (
+                    usageWanted &&
+                    !usageRefused &&
+                    candidate.status === 400 &&
+                    text.includes("stream_options")
+                ) {
+                    usageRefused = true
+                    config.onUsageUnsupported?.({
+                        status: candidate.status,
+                        body: text.slice(0, 400),
+                    })
+                    continue
+                }
                 throw modelHttpError(candidate.status, text, url)
             }
 
@@ -363,6 +427,7 @@ export function createChatCompletionsProvider(config: ChatCompletionsConfig): Mo
             const delayMs =
                 retryAfterMs(candidate.headers.get("retry-after")) ?? backoffMs(policy, attempt)
             config.onRetry?.({ status: candidate.status, attempt, delayMs })
+            attempt += 1
             await sleep(delayMs, signal)
         }
 

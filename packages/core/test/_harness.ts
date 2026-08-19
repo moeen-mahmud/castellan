@@ -61,10 +61,27 @@ export interface Expectation {
     toMatch(expected: string | RegExp): void
     toBeGreaterThan(expected: number): void
     toBeGreaterThanOrEqual(expected: number): void
+    /**
+     * `digits` is decimal places, matching bun's signature: the tolerance is `0.5 * 10 ** -digits`,
+     * not `10 ** -digits`. Getting that wrong makes this harness stricter than `bun test`, so a test
+     * would pass under one runner and fail under the other — the exact drift this file exists to
+     * prevent.
+     */
+    toBeCloseTo(expected: number, digits?: number): void
     toBeLessThan(expected: number): void
     toBeLessThanOrEqual(expected: number): void
     toBeUndefined(): void
     toBeDefined(): void
+    /**
+     * Every synchronous matcher, inverted.
+     *
+     * Derived from the matchers rather than written out, which is the only version worth having: a
+     * hand-listed `not` covering three of eleven matchers would pass under `bun test` and fail under
+     * this runner with "not a function", which is precisely the drift this file exists to prevent.
+     * `rejects` is excluded because inverting it needs the await and a rejection that *matches nothing*
+     * is a different claim from one that does not reject at all.
+     */
+    readonly not: Omit<Expectation, "not" | "rejects">
     readonly rejects: { toThrow(expected?: string | RegExp): Promise<void> }
 }
 
@@ -194,6 +211,13 @@ function nodeExpect(actual: unknown): Expectation {
             const value = requireNumber("toBeGreaterThan")
             if (!(value > expected)) fail(`expected ${value} > ${expected}`)
         },
+        toBeCloseTo(expected, digits = 2) {
+            const value = requireNumber("toBeCloseTo")
+            const tolerance = 0.5 * 10 ** -digits
+            if (!(Math.abs(value - expected) < tolerance)) {
+                fail(`expected ${value} to be within ${tolerance} of ${expected}`)
+            }
+        },
         toBeGreaterThanOrEqual(expected) {
             const value = requireNumber("toBeGreaterThanOrEqual")
             if (!(value >= expected)) fail(`expected ${value} >= ${expected}`)
@@ -231,7 +255,36 @@ function nodeExpect(actual: unknown): Expectation {
                 fail("expected the promise to reject")
             },
         },
+        get not() {
+            return invert(nodeExpect(actual))
+        },
     }
+}
+
+/**
+ * Turn every synchronous matcher into its negation by running it and inverting the outcome.
+ *
+ * A matcher signals failure by throwing, so "it threw" is exactly "the negation holds". Generic on
+ * purpose: a new matcher gains a working `not` with nothing to remember, and there is no list to fall
+ * out of date. The message names the matcher, because "expected not to be 5" reads as a value problem
+ * when it is a matcher problem.
+ */
+function invert(expectation: Expectation): Omit<Expectation, "not" | "rejects"> {
+    const inverted: Record<string, unknown> = {}
+    for (const key of Object.keys(expectation) as (keyof Expectation)[]) {
+        if (key === "rejects" || key === "not") continue
+        const matcher = expectation[key]
+        if (typeof matcher !== "function") continue
+        inverted[key] = (...args: unknown[]): void => {
+            try {
+                ;(matcher as (...rest: unknown[]) => void)(...args)
+            } catch {
+                return
+            }
+            fail(`expected .not.${String(key)}(${args.map((arg) => show(arg)).join(", ")}) to hold`)
+        }
+    }
+    return inverted as Omit<Expectation, "not" | "rejects">
 }
 
 // ─── Wiring ──────────────────────────────────────────────────────────────────────────────
