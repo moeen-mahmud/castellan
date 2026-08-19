@@ -8,49 +8,53 @@
  */
 
 export {
+    type AddressKind,
+    type AddressVerdict,
     classifyAddress,
     classifyIPv4,
     classifyIPv6,
     parseIPv4,
-    parseIPv6, type AddressKind,
-    type AddressVerdict
+    parseIPv6,
 } from "./address.ts"
-export {
-    backend, BACKEND_IDS,
-    type Backend,
-    type BackendId, type SearchHit
-} from "./backends.ts"
+export { BACKEND_IDS, type Backend, type BackendId, backend, type SearchHit } from "./backends.ts"
 export {
     decodeEntities,
     extract,
     extractTitle,
     htmlToText,
-    isTextual
+    isTextual,
 } from "./extract.ts"
 export {
     DEFAULT_MAX_BYTES,
     DEFAULT_MAX_CHARS,
     effectiveTimeout,
-    FETCH_SPEC, fetchTool,
+    FETCH_SPEC,
+    type FetchLike,
+    type FetchOptions,
+    fetchTool,
     MAX_REDIRECTS,
-    readCapped, type FetchLike,
-    type FetchOptions
+    readCapped,
 } from "./fetch.ts"
 export {
     assertFetchable,
-    checkUrlShape, parseUrl,
-    systemLookup, type LookupLike
+    checkUrlShape,
+    type LookupLike,
+    parseUrl,
+    systemLookup,
 } from "./guard.ts"
 export { WEB_PROVIDER_ID } from "./paths.ts"
 export {
-    WEB_TOOL_SLUGS, webFromConfig, WebProvider,
-    type WebProviderOptions
+    WEB_TOOL_SLUGS,
+    WebProvider,
+    type WebProviderOptions,
+    webFromConfig,
 } from "./provider.ts"
 export {
     clampResults,
     DEFAULT_MAX_RESULTS,
     MAX_MAX_RESULTS,
     render,
-    SEARCH_SPEC, searchTool, type SearchOptions
+    SEARCH_SPEC,
+    type SearchOptions,
+    searchTool,
 } from "./search.ts"
-

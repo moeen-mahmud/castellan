@@ -18,9 +18,9 @@
  * consequence, stated: digits reach the first nine rows and the arrows reach the rest.
  */
 
+import { Box, Text } from "ink"
 import { viewport } from "#lib/rows"
 import { GLYPH, THEME } from "#lib/theme"
-import { Box, Text } from "ink"
 
 export interface SelectItem {
     readonly label: string

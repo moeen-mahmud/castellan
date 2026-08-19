@@ -15,11 +15,11 @@
  * real home directory when that is set.
  */
 
-import { readEnv } from "#lib/env"
-import { BRAND, HarnessError, nearest, readManifestHeader } from "@dispach/core"
 import { existsSync, readdirSync, statSync } from "node:fs"
 import { homedir } from "node:os"
 import { isAbsolute, join, resolve, sep } from "node:path"
+import { BRAND, HarnessError, nearest, readManifestHeader } from "@dispach/core"
+import { readEnv } from "#lib/env"
 
 export function sandboxRoot(
     env: Readonly<Record<string, string | undefined>> = process.env,

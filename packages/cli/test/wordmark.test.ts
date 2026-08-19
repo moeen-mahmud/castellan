@@ -6,8 +6,8 @@
  * *any* name renders — a rename has to stay one commit.
  */
 
-import { drawable, wordmark } from "#lib/wordmark"
 import { describe, expect, test } from "bun:test"
+import { drawable, wordmark } from "#lib/wordmark"
 
 const ROOMY = { columns: 140, rows: 20 }
 

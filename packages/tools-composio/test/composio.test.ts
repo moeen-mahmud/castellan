@@ -15,11 +15,11 @@
  * `items` carries an empty `properties` object.
  */
 
-import { BRAND } from "@dispach/core"
 import { expect, test } from "bun:test"
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { BRAND } from "@dispach/core"
 import { cachePath, readCache, writeCache } from "../src/cache.ts"
 import { type ComposioTool, isMutating, isUnannotated, mapTool } from "../src/map.ts"
 import { ComposioProvider } from "../src/provider.ts"

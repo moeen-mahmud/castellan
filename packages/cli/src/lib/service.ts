@@ -14,19 +14,19 @@
  * and script paths. Those are what people get wrong by hand, and this process already knows them.
  */
 
+import { mkdirSync, rmSync, writeFileSync } from "node:fs"
+import { dirname, join } from "node:path"
+import { HarnessError } from "@dispach/core"
 import {
     EXIT_TIMEOUT_SECONDS,
+    type PrintFacts,
     parseDisabled,
     parseLaunchctlList,
     parseLaunchctlPrint,
     renderPlist,
-    type PrintFacts,
     type ServicePlan,
 } from "#lib/launchd"
 import { spawnCapture } from "#lib/spawn"
-import { HarnessError } from "@dispach/core"
-import { mkdirSync, rmSync, writeFileSync } from "node:fs"
-import { dirname, join } from "node:path"
 
 export interface ExecResult {
     readonly code: number

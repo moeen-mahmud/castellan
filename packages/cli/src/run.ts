@@ -13,6 +13,20 @@
  * the streaming writes, because both were verified against a real endpoint and a real SIGINT.
  */
 
+import { randomBytes } from "node:crypto"
+import { existsSync } from "node:fs"
+import { createInterface, type Interface } from "node:readline"
+import {
+    type Agent,
+    type AnyEvent,
+    BRAND,
+    defaultStorePath,
+    HarnessError,
+    processAlive,
+    Runtime as RuntimeClass,
+    type SessionSummary,
+    VERSION,
+} from "@dispach/core"
 import { fetchCatalogue } from "#browse"
 import { initInteractive } from "#init"
 import { ambientEnv, demotedKeys } from "#lib/ambient"
@@ -44,20 +58,6 @@ import type { CatalogueEntry } from "#lib/source-cache"
 import type { RenderMode } from "#lib/types"
 import { type InstallOutcome, skillsCommand } from "#skills"
 import { seed } from "#transcript"
-import {
-    type Agent,
-    type AnyEvent,
-    BRAND,
-    defaultStorePath,
-    HarnessError,
-    processAlive,
-    Runtime as RuntimeClass,
-    type SessionSummary,
-    VERSION,
-} from "@dispach/core"
-import { randomBytes } from "node:crypto"
-import { existsSync } from "node:fs"
-import { createInterface, type Interface } from "node:readline"
 
 /** Opening lines: what is loaded, what session, and whether the last turn finished. */
 async function bannerLines(

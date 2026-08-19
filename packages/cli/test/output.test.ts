@@ -1,7 +1,7 @@
+import { describe, expect, test } from "bun:test"
 import { resolveMode } from "#lib/output"
 import type { ModeInputs } from "#lib/schema"
 import type { EnvFacts } from "#lib/types"
-import { describe, expect, test } from "bun:test"
 
 const QUIET_ENV: EnvFacts = {
     noColor: false,

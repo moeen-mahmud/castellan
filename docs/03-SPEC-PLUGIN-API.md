@@ -1,6 +1,6 @@
 # 03 — Plugin API Specification
 
-Plugins are how dispach varies. Core ships the loop, the context manager, the SQLite
+Plugins are how Dispach varies. Core ships the loop, the context manager, the SQLite
 store, and the chat-completions transport; every channel, tool provider, alternative store,
 skill source, and cross-cutting behaviour arrives as a plugin — including the first-party
 ones. If a first-party package needs something the plugin API can't express, the API is
@@ -321,7 +321,7 @@ scramble. That trade is stated in the README.
 
 **The honest position, printed in the README verbatim:**
 
-> dispach plugins run in-process with full privileges. The `permissions` block is
+> Dispach plugins run in-process with full privileges. The `permissions` block is
 > documentation, not a sandbox. Install plugins you trust, the same way you treat any npm
 > dependency. Real isolation requires separate processes or V8 isolates, both of which cost
 > the startup time and simplicity this project exists to preserve. If you need to run

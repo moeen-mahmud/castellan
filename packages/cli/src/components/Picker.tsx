@@ -6,14 +6,14 @@
  * debugging a manifest wants to reach it, not to be protected from it.
  */
 
+import { Box, useApp, useInput } from "ink"
+import { useCallback, useState } from "react"
 import { Banner } from "#components/Banner"
 import { SelectList } from "#components/SelectList"
 import { keyToListIntent } from "#keymap"
 import type { SandboxAgent } from "#lib/sandbox"
 import { moveSelect, type SelectState } from "#lib/select"
 import { GLYPH } from "#lib/theme"
-import { Box, useApp, useInput } from "ink"
-import { useCallback, useState } from "react"
 
 export type PickerResult =
     | { readonly kind: "run"; readonly manifestPath: string }

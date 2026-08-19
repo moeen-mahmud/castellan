@@ -16,6 +16,7 @@
  * produce the same output and the tests need no fakes.
  */
 
+import type { AnyEvent } from "@dispach/core"
 import { ROLE_PREFIX } from "#lib/theme"
 import type {
     TranscriptItem,
@@ -25,7 +26,6 @@ import type {
     TurnStats,
 } from "#lib/types"
 import { wrapText } from "#lib/wrap"
-import type { AnyEvent } from "@dispach/core"
 
 /**
  * The transcript is driven by more than the bus — a typed line and a cancellation request are not

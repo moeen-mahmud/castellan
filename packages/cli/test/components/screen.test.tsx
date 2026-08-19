@@ -5,20 +5,20 @@
  * not: what is on the screen.
  */
 
+import { describe, expect, test } from "bun:test"
+import { Text } from "ink"
+import { createElement as h } from "react"
 import { Screen, screenWidth } from "#components/Screen"
 import { MAX_SCREEN_COLUMNS, MIN_SCREEN_COLUMNS } from "#lib/const"
 import {
     headerLines,
     hintLine,
     QUIT_HINT,
+    type ScreenHeader,
     screenColumns,
     screenRows,
     titleLine,
-    type ScreenHeader,
 } from "#lib/screen"
-import { describe, expect, test } from "bun:test"
-import { Text } from "ink"
-import { createElement as h } from "react"
 import { overflowing, renderFrame, width } from "../helpers/frame.tsx"
 
 const HEADER: ScreenHeader = { title: "dispach 0.1.0", summary: "sources · 2 registered" }

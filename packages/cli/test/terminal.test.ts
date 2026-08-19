@@ -8,6 +8,11 @@
  * the file surgery keeps whatever was already there.
  */
 
+import { describe, expect, test } from "bun:test"
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { dirname, join } from "node:path"
+import { BRAND } from "@dispach/core"
 import {
     alreadyConfigured,
     detectTerminal,
@@ -17,11 +22,6 @@ import {
     withBinding,
 } from "#lib/terminal"
 import { terminalSetupCommand } from "#terminal-setup"
-import { BRAND } from "@dispach/core"
-import { describe, expect, test } from "bun:test"
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
-import { tmpdir } from "node:os"
-import { dirname, join } from "node:path"
 
 describe("detection", () => {
     test("each terminal is recognised by what it actually sets", () => {

@@ -11,13 +11,13 @@
  */
 
 export { createHandler, type HandlerOptions } from "./handler.ts"
-export { Router, type Route, type RouteMatch } from "./router.ts"
-export { isLoopback, serve, type RunningServer, type ServeOptions } from "./serve.ts"
+export { type Route, type RouteMatch, Router } from "./router.ts"
+export { isLoopback, type RunningServer, type ServeOptions, serve } from "./serve.ts"
 export {
     encodeFrame,
     HEARTBEAT_MS,
-    sseResponse,
     type SseFrame,
     type SseStreamOptions,
+    sseResponse,
 } from "./sse.ts"
 export { attachWebSocket, type WebSocketBridge, type WsSession } from "./ws.ts"

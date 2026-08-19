@@ -43,9 +43,9 @@
  * of "stop checking" do not.
  */
 
-import { AgentManifestSchema, resolveProviders, type Tool, type ToolHandler } from "@dispach/core"
 import { readFile, writeFile } from "node:fs/promises"
 import { join } from "node:path"
+import { AgentManifestSchema, resolveProviders, type Tool, type ToolHandler } from "@dispach/core"
 import { isMap, isSeq, parseDocument, stringify } from "yaml"
 import {
     configInvalid,

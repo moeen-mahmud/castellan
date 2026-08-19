@@ -27,9 +27,9 @@
  * rather than the first — and a small model reaches for whatever the catalogue makes easiest.
  */
 
-import type { Tool, ToolContext, ToolHandler, ToolProviderContext } from "@dispach/core"
 import { mkdir, realpath, rm, stat } from "node:fs/promises"
 import { isAbsolute, resolve } from "node:path"
+import type { Tool, ToolContext, ToolHandler, ToolProviderContext } from "@dispach/core"
 import { execCommandEmpty, execWorkdirMissing } from "./errors.ts"
 import { humanBytes, readOutput, stripLeadingEcho } from "./output.ts"
 import { SYSTEM_PROVIDER_ID, spillDir } from "./paths.ts"

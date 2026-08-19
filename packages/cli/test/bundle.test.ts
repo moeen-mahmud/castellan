@@ -18,11 +18,11 @@
  * reason, because a test that silently skips is a test that has stopped existing.
  */
 
-import { spawnCaptureAsync } from "#lib/spawn"
-import { VERSION } from "@dispach/core"
 import { describe, expect, test } from "bun:test"
 import { existsSync } from "node:fs"
 import { resolve } from "node:path"
+import { VERSION } from "@dispach/core"
+import { spawnCaptureAsync } from "#lib/spawn"
 
 const ENTRY = resolve(import.meta.dirname, "..", "dist", "index.js")
 

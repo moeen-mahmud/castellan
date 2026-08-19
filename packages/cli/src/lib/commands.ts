@@ -10,9 +10,9 @@
  * the one-commit operation hard rule 3 requires.
  */
 
+import { BRAND } from "@dispach/core"
 import { DEFAULT_ROW_LIMIT, MIN_ROW_LIMIT } from "#lib/const"
 import type { ArgSpec, CommandSpec, FlagSpec } from "#lib/schema"
-import { BRAND } from "@dispach/core"
 
 /** Accepted by every command, so the render mode is answered the same way everywhere. */
 export const GLOBAL_FLAGS: readonly FlagSpec[] = [

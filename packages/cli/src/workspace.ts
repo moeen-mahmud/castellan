@@ -11,9 +11,6 @@
  * non-zero exit tells them apart.
  */
 
-import { ambientEnv } from "#lib/ambient"
-import { EXIT_FAILURE, EXIT_OK } from "#lib/const"
-import { CHANNEL_IDS, PROVIDER_IDS } from "#lib/providers"
 import {
     checkAuthoring,
     type ErrorDetail,
@@ -23,6 +20,9 @@ import {
     resolveWorkspace,
     ruleBudgetFailure,
 } from "@dispach/core"
+import { ambientEnv } from "#lib/ambient"
+import { EXIT_FAILURE, EXIT_OK } from "#lib/const"
+import { CHANNEL_IDS, PROVIDER_IDS } from "#lib/providers"
 
 export interface WorkspaceOptions {
     readonly manifestPath: string

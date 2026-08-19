@@ -124,13 +124,13 @@ inbound (channel | API | schedule)
 - **Memory is FTS5, not embeddings.** Prove lexical insufficient before paying for vectors.
 - **Composio is called directly, never through MCP.** MCP is a fine integration protocol and
   a poor internal architecture.
-- **System access is in scope. dispach is a harness, not a channel-resident assistant** — peer to
+- **System access is in scope. Dispach is a harness, not a channel-resident assistant** — peer to
   OpenClaw, Hermes Agent and Claude Code. It runs shell commands and touches files because that is
   what a harness does; channels are one surface it is reached through, not the limit of what it does.
   Shell lives in `packages/tools-system` and never in core: core is what an embedder runs *other
   people's* agents on, and a shell tool there is one every provisioned agent gets with no way to
   decline it.
-- **A policy decides *whether* a command runs; a sandbox decides *where*.** dispach ships the
+- **A policy decides *whether* a command runs; a sandbox decides *where*.** Dispach ships the
   policy — `tools.policy`, enforced, with a hardline floor below every override. Containment is a
   deployment concern and stays one. Describing the permission layer without that sentence makes it
   read as a boundary it is not.
@@ -1247,3 +1247,17 @@ Never claim a performance property without a number in `evals/` and a script to 
   that two qwen runs were byte-identical and `--repeats` therefore measured nothing; remembering only
   that half turns "repeats cannot help" into a rule, and it is a fact about one endpoint. With n=24 and
   4pp of noise an 8pp delta is a signal to investigate, never a result.
+- **A rename is one commit *in the tree* and three things *outside* it.** `scripts/rename-brand.ts`
+  really does hold — the tree went to `dispach` with zero stragglers and 2,190 tests green — and it
+  says nothing about the machine it was run on. launchd's `disable` **persists** while `bootout` does
+  not, so deleting a plist leaves `<oldslug>.agent.<id> => disabled` in
+  `/var/db/com.apple.xpc.launchd/` forever, and a future job with that label then installs cleanly,
+  reports success and silently never starts; `launchctl enable` is what clears it, and no verb deletes
+  the row. `~/.bun/bin/<oldslug>` keeps working *by symlink luck* through a scope directory
+  (`@<oldslug>/cli`) that no longer names any package — so the old command runs and the new one does
+  not exist, which reads as the rename having failed. And `~/.<oldslug>/` is orphaned rather than
+  migrated, taking the sandbox, the store and the skills cache with it. Corollary: **rename with the
+  script, never by hand.** The hand edit lowercased `CASTELLAN_API_TOKEN` to `dispach_API_TOKEN` and
+  the display name to `dispach`, both of which the script's `/CASTELLAN/g` and title-case
+  substitutions get right — and it left the etymology epigraph reading "a dispach holds and governs a
+  keep", which no substitution can fix because it was a sentence about the *old* word's meaning.

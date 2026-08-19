@@ -17,8 +17,8 @@
  * and discovers otherwise only when a scheduled run has nowhere to go.
  */
 
-import { formatSessionKey } from "../store/session-key.ts";
-import type { InboundMessage, RawInbound } from "./channel.ts";
+import { formatSessionKey } from "../store/session-key.ts"
+import type { InboundMessage, RawInbound } from "./channel.ts"
 
 /** Why a message was refused, or that it was not. */
 export type InboundDecision =

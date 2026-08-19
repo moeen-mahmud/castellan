@@ -11,10 +11,10 @@
  * purpose: an unedited scaffold keeps reporting itself until a person has written every section.
  */
 
-import { EXIT_OK } from "#lib/const"
-import { HarnessError, parseWorkspaceFile } from "@dispach/core"
 import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import { basename, dirname, join } from "node:path"
+import { HarnessError, parseWorkspaceFile } from "@dispach/core"
+import { EXIT_OK } from "#lib/const"
 
 export interface SoulOptions {
     readonly action: string

@@ -15,8 +15,8 @@
  *    reintroduced one layer down.
  */
 
-import type { ToolContext } from "@dispach/core"
 import { expect, test } from "bun:test"
+import type { ToolContext } from "@dispach/core"
 import type { ComposioTool } from "../src/map.ts"
 import {
     CONNECT_SPEC,

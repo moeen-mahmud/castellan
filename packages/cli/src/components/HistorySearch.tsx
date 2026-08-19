@@ -12,11 +12,11 @@
  * underneath.
  */
 
+import { Box, Text } from "ink"
 import { searchMatches } from "#editor"
 import { clip, viewport } from "#lib/rows"
 import { GLYPH, THEME } from "#lib/theme"
 import type { EditorState } from "#lib/types"
-import { Box, Text } from "ink"
 
 export interface HistorySearchProps {
     readonly editor: EditorState

@@ -16,9 +16,9 @@
  * precisely the thing that decides whose Gmail a call reaches.
  */
 
-import { BRAND } from "@dispach/core"
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs"
 import { dirname, isAbsolute, join, resolve } from "node:path"
+import { BRAND } from "@dispach/core"
 
 const SESSION_FILE = "composio.session.json"
 

@@ -24,6 +24,9 @@
  * prompt comes back.
  */
 
+import { BRAND, VERSION } from "@dispach/core"
+import { Box, Text, useApp, useInput } from "ink"
+import { type ComponentType, useCallback, useEffect, useMemo, useState } from "react"
 import { BRAND_INDENT, Brandmark } from "#components/Brandmark"
 import { CommandOutput } from "#components/CommandOutput"
 import { HistorySearch } from "#components/HistorySearch"
@@ -65,9 +68,6 @@ import { runSubcommand } from "#lib/subcommand"
 import { THEME } from "#lib/theme"
 import { wordmark } from "#lib/wordmark"
 import { lastStats, transcriptRows } from "#transcript"
-import { BRAND, VERSION } from "@dispach/core"
-import { Box, Text, useApp, useInput } from "ink"
-import { type ComponentType, useCallback, useEffect, useMemo, useState } from "react"
 
 /**
  * What is layered over the conversation.

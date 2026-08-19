@@ -8,21 +8,21 @@
  * exactly the property the first test in this file asserts.
  */
 
+import { describe, expect, test } from "bun:test"
+import { BRAND } from "@dispach/core"
 import {
     decodeWaitStatus,
     escapeXml,
     KEEP_ALIVE,
     labelFor,
+    PlistSecretError,
     parseDisabled,
     parseLaunchctlList,
     parseLaunchctlPrint,
     plistEnvAllowed,
-    PlistSecretError,
     renderPlist,
     type ServicePlan,
 } from "#lib/launchd"
-import { BRAND } from "@dispach/core"
-import { describe, expect, test } from "bun:test"
 
 const PLAN: ServicePlan = {
     label: labelFor(BRAND.slug, "milo"),

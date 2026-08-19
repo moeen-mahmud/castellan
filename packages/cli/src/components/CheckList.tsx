@@ -18,9 +18,9 @@
  * the label, because two sources can carry a skill of the same name and a label key would collapse them.
  */
 
+import { Box, Text } from "ink"
 import { columnsFor, headingRule, layoutRow, viewport } from "#lib/rows"
 import { GLYPH, THEME } from "#lib/theme"
-import { Box, Text } from "ink"
 
 export interface CheckRow {
     /** `source` is a top-level heading, `group` a subheading; neither is selectable. */

@@ -18,6 +18,7 @@
  * asks — and with exactly one agent it does not, because there is nothing to ask.
  */
 
+import { BRAND, HarnessError, VERSION } from "@dispach/core"
 import {
     type BrowseInput,
     type BrowseRow,
@@ -40,7 +41,6 @@ import {
 } from "#lib/source-cache"
 import { loadSources } from "#lib/sources"
 import { type InstallOutcome, skillsCommand } from "#skills"
-import { BRAND, HarnessError, VERSION } from "@dispach/core"
 
 export interface BrowseOptions {
     readonly plain?: boolean

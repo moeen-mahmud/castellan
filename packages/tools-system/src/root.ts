@@ -36,10 +36,10 @@
  * not read outside one directory would be answering a different question than the one anyone asked.
  */
 
-import type { JsonSchemaNode, ToolSpec } from "@dispach/core"
 import { existsSync } from "node:fs"
 import { homedir } from "node:os"
 import { isAbsolute, relative, resolve, sep } from "node:path"
+import type { JsonSchemaNode, ToolSpec } from "@dispach/core"
 
 /**
  * Expand a leading `~` before anything compares the path to a root.

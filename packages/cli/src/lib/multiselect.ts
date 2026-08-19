@@ -15,7 +15,7 @@
  * serves a flat list (every row selectable) and a grouped one.
  */
 
-import { moveSelect, type SelectMove, type SelectState } from "#lib/select";
+import { moveSelect, type SelectMove, type SelectState } from "#lib/select"
 
 export interface MultiSelectState {
     readonly cursor: SelectState

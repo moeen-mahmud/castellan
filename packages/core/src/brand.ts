@@ -13,8 +13,15 @@
 /** Lowercase, filesystem- and env-safe. The single source of every derived field below. */
 const DEFAULT_SLUG = "dispach"
 
-/** Display form. Free-form — appears in CLI banners and log lines, never in a path. */
-const DEFAULT_NAME = "dispach"
+/**
+ * Display form. Free-form — appears in CLI banners and log lines, never in a path.
+ *
+ * Deliberately a literal rather than `titleCaseSlug(DEFAULT_SLUG)`, which would produce the same
+ * string today. The two are not the same *kind* of value: a slug is constrained to lowercase and
+ * inner hyphens, while a display name may carry internal capitals no derivation can reach. The
+ * rename script substitutes the title-cased form, so the literal costs nothing.
+ */
+const DEFAULT_NAME = "Dispach"
 
 /** Major version of the manifest contract. Bumped only on a breaking manifest change. */
 const MANIFEST_MAJOR = 1
@@ -24,7 +31,7 @@ export interface Brand {
     readonly slug: string
     /** Display name, for humans. */
     readonly name: string
-    /** Prefix for every env var the runtime reads, e.g. `dispach_API_TOKEN`. */
+    /** Prefix for every env var the runtime reads, e.g. `DISPACH_API_TOKEN`. */
     readonly envPrefix: string
     /** Dot-directory for runtime state, relative to the workspace. */
     readonly stateDir: string
@@ -75,7 +82,7 @@ export function titleCaseSlug(slug: string): string {
  * Three decisions, all in the direction of coherence over flexibility:
  *
  * 1. **An override moves every derived field, including `apiVersion`.** A half-rebranded
- *    runtime — `.acme/` on disk but `dispach_` env vars — is worse than either end state,
+ *    runtime — `.acme/` on disk but `DISPACH_` env vars — is worse than either end state,
  *    and there is no reading of decision 1.5 under which an embedder wants that. The
  *    consequence is deliberate: a rebranded runtime rejects a stock `apiVersion`, because a
  *    fork that has changed the runtime's identity should not silently accept manifests

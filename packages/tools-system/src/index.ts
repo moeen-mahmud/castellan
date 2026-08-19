@@ -9,50 +9,62 @@
 
 export {
     CONFIG_READ_SPEC,
-    CONFIG_SET_SPEC, configReadHandler,
+    CONFIG_SET_SPEC,
+    type ConfigOptions,
+    configReadHandler,
     configSetHandler,
     configTools,
     parseValue,
-    SETTABLE_PATHS, type ConfigOptions
+    SETTABLE_PATHS,
 } from "./config.ts"
 export {
     execCommandEmpty,
     execPtyUnavailable,
     execSpawnFailed,
-    execWorkdirMissing
+    execWorkdirMissing,
 } from "./errors.ts"
 export {
-    DEFAULT_TIMEOUT_MS, effectiveTimeout, EXEC_SPEC, execFromContext,
+    DEFAULT_TIMEOUT_MS,
+    EXEC_SPEC,
+    type ExecOptions,
+    effectiveTimeout,
+    execFromContext,
     execHandler,
     execTool,
     MAX_TIMEOUT_MS,
-    render, type ExecOptions
+    render,
 } from "./exec.ts"
 export {
     humanBytes,
-    INLINE_CAP, readOutput,
-    stripLeadingEcho, type Observation
+    INLINE_CAP,
+    type Observation,
+    readOutput,
+    stripLeadingEcho,
 } from "./output.ts"
-export { spillDir, SYSTEM_PROVIDER_ID } from "./paths.ts"
+export { SYSTEM_PROVIDER_ID, spillDir } from "./paths.ts"
 export {
     SYSTEM_READONLY_SLUGS,
-    SYSTEM_TOOL_SLUGS, systemFromConfig, SystemProvider,
-    type SystemProviderOptions
+    SYSTEM_TOOL_SLUGS,
+    SystemProvider,
+    type SystemProviderOptions,
+    systemFromConfig,
 } from "./provider.ts"
 export {
     backgroundable,
     backgroundedCommands,
     buildWrapper,
     commandLine,
-    MAX_BACKGROUNDED, readStatus,
-    reapBackgrounded,
-    runCommand, type RunEnding,
+    MAX_BACKGROUNDED,
+    type RunEnding,
     type RunRequest,
-    type RunResult
+    type RunResult,
+    readStatus,
+    reapBackgrounded,
+    runCommand,
 } from "./run.ts"
 export {
     SystemScriptRunner,
-    type SystemScriptRunnerOptions
+    type SystemScriptRunnerOptions,
 } from "./scripts.ts"
 export { ShellSessions } from "./session.ts"
 /**

@@ -15,13 +15,13 @@
  * in a log file.
  */
 
+import { BRAND, EventBus, HarnessError, loadManifest, Runtime } from "@dispach/core"
+import { serve } from "@dispach/server"
 import { ambientEnv } from "#lib/ambient"
 import { EXIT_FAILURE, EXIT_OK } from "#lib/const"
 import { claimSignals, onExit } from "#lib/exit"
 import { CHANNEL_IDS, CHANNELS, PROVIDER_IDS, scriptRunner, TOOL_PROVIDERS } from "#lib/providers"
 import { storePath } from "#lib/sandbox"
-import { BRAND, EventBus, HarnessError, loadManifest, Runtime } from "@dispach/core"
-import { serve } from "@dispach/server"
 
 export interface ServeOptions {
     readonly manifestPath: string

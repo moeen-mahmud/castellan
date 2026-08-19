@@ -7,6 +7,7 @@
  * different ways; as a table they are nine assertions.
  */
 
+import { describe, expect, test } from "bun:test"
 import {
     type Attention,
     attentionFrom,
@@ -18,7 +19,6 @@ import {
     type ServiceFacts,
     summariseStatus,
 } from "#lib/daemon-plan"
-import { describe, expect, test } from "bun:test"
 
 const BASE: PreflightFacts = {
     platform: "darwin",

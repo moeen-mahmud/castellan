@@ -10,13 +10,13 @@
  * rendering fault.
  */
 
+import { Box, Text, useInput } from "ink"
+import { useState } from "react"
 import { SelectList } from "#components/SelectList"
 import { keyToListIntent } from "#keymap"
 import { moveSelect, type SelectState } from "#lib/select"
-import { sessionRows, type SessionRow, type SessionRowSource } from "#lib/sessions-view"
+import { type SessionRow, type SessionRowSource, sessionRows } from "#lib/sessions-view"
 import { THEME } from "#lib/theme"
-import { Box, Text, useInput } from "ink"
-import { useState } from "react"
 
 export interface SessionPickerProps {
     readonly sessions: readonly SessionRowSource[]

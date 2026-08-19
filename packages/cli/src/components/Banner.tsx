@@ -9,8 +9,8 @@
  * screens look like one product.
  */
 
-import { BORDER_STYLE, THEME } from "#lib/theme"
 import { Box, Text } from "ink"
+import { BORDER_STYLE, THEME } from "#lib/theme"
 
 export interface BannerProps {
     readonly title: string

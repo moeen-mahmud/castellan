@@ -23,11 +23,11 @@
  * make the endorsement mandatory.
  */
 
-import { CURATED_COMMUNITY_SKILLS } from "#lib/curated"
-import { sandboxRoot } from "#lib/sandbox"
-import { HarnessError } from "@dispach/core"
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
+import { HarnessError } from "@dispach/core"
+import { CURATED_COMMUNITY_SKILLS } from "#lib/curated"
+import { sandboxRoot } from "#lib/sandbox"
 
 /** A repository to look for skills in. */
 export interface SourceSpec {

@@ -22,6 +22,8 @@
  * The focused surface owns the single `useInput`, and this is never it.
  */
 
+import { Box, Text } from "ink"
+import type { ReactNode } from "react"
 import { useTerminalSize } from "#hooks/useTerminalSize"
 import { MAX_SCREEN_COLUMNS, MIN_SCREEN_COLUMNS } from "#lib/const"
 import {
@@ -33,8 +35,6 @@ import {
     type StateChip,
 } from "#lib/screen"
 import { BORDER_STYLE, THEME } from "#lib/theme"
-import { Box, Text } from "ink"
-import type { ReactNode } from "react"
 
 export interface ScreenProps {
     readonly header: ScreenHeader

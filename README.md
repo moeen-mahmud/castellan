@@ -24,7 +24,7 @@ An agent harness is a runtime layer with four necessary and sufficient elements:
 3. **Context management** — assembly, budgeting, progressive compaction
 4. **Control mechanisms** — phases, limits, cancellation, scheduling
 
-Anything outside those four is a plugin, not core. dispach is not an orchestration graph,
+Anything outside those four is a plugin, not core. Dispach is not an orchestration graph,
 a workflow engine, a RAG pipeline, a vector database, or a model gateway.
 
 ## Design commitments

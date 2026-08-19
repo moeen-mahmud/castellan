@@ -7,8 +7,8 @@
  * rather than proving a request failed.
  */
 
-import { HarnessError, toolContext } from "@dispach/core"
 import { describe, expect, test } from "bun:test"
+import { HarnessError, toolContext } from "@dispach/core"
 import { classifyAddress, parseIPv4, parseIPv6 } from "../src/address.ts"
 import { backend } from "../src/backends.ts"
 import { decodeEntities, extract, htmlToText, isTextual } from "../src/extract.ts"
@@ -20,7 +20,7 @@ import {
     readCapped,
 } from "../src/fetch.ts"
 import { assertFetchable, checkUrlShape, type LookupLike, parseUrl } from "../src/guard.ts"
-import { webFromConfig, WebProvider } from "../src/provider.ts"
+import { WebProvider, webFromConfig } from "../src/provider.ts"
 import { clampResults, render, SEARCH_SPEC, searchTool } from "../src/search.ts"
 
 /** A resolver that answers with whatever the test says, and records that it was consulted. */

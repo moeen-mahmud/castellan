@@ -7,11 +7,11 @@
  * present.
  */
 
+import { Text } from "ink"
 import type { StatusBarProps } from "#lib/schema"
 import { GLYPH, STATUS_COLOR, THEME } from "#lib/theme"
 import type { TurnStatus } from "#lib/types"
 import { formatStats } from "#transcript"
-import { Text } from "ink"
 
 const LABEL: Record<TurnStatus, string> = {
     idle: "ready",

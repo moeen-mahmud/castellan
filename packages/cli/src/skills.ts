@@ -16,20 +16,17 @@
  * The command answers about the runtime, not about a subset of it.
  */
 
-import { ambientEnv } from "#lib/ambient"
-import { EXIT_FAILURE, EXIT_OK } from "#lib/const"
-import { forgetOrigin, type Origin, readOrigins, recordOrigins } from "#lib/origins"
-import { CHANNEL_IDS, PROVIDER_IDS, scriptRunner } from "#lib/providers"
-import { bullet, indent, keyValue, section } from "#lib/render"
 import {
-    type CatalogueEntry,
-    isCached,
-    looksLikePath,
-    readCatalogue,
-    readMeta,
-} from "#lib/source-cache"
-import { loadSources, parseSkillRef, type SkillRef, type SourceSpec } from "#lib/sources"
-import { fillTemplate, SKILL_TEMPLATE } from "#lib/templates"
+    cpSync,
+    existsSync,
+    mkdirSync,
+    readdirSync,
+    readFileSync,
+    rmSync,
+    statSync,
+    writeFileSync,
+} from "node:fs"
+import { basename, isAbsolute, join, relative, resolve } from "node:path"
 import {
     checkSkillAuthoring,
     type ErrorDetail,
@@ -45,17 +42,20 @@ import {
     whenNotToUseKey,
 } from "@dispach/core"
 import { setInSource } from "@dispach/tools-system"
+import { ambientEnv } from "#lib/ambient"
+import { EXIT_FAILURE, EXIT_OK } from "#lib/const"
+import { forgetOrigin, type Origin, readOrigins, recordOrigins } from "#lib/origins"
+import { CHANNEL_IDS, PROVIDER_IDS, scriptRunner } from "#lib/providers"
+import { bullet, indent, keyValue, section } from "#lib/render"
 import {
-    cpSync,
-    existsSync,
-    mkdirSync,
-    readdirSync,
-    readFileSync,
-    rmSync,
-    statSync,
-    writeFileSync,
-} from "node:fs"
-import { basename, isAbsolute, join, relative, resolve } from "node:path"
+    type CatalogueEntry,
+    isCached,
+    looksLikePath,
+    readCatalogue,
+    readMeta,
+} from "#lib/source-cache"
+import { loadSources, parseSkillRef, type SkillRef, type SourceSpec } from "#lib/sources"
+import { fillTemplate, SKILL_TEMPLATE } from "#lib/templates"
 
 /** A skill found in a fetched source, with everything provenance needs. */
 interface Located {

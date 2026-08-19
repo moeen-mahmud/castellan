@@ -6,11 +6,13 @@
  * two-hop reasoning, which is where small models fail, so the catalogue is fixed at load.
  */
 
-export { cachePath, readCache, writeCache, type CacheFile } from "./cache.ts"
+export { type CacheFile, cachePath, readCache, writeCache } from "./cache.ts"
 export {
-    ComposioClient, type ClientOptions, type FetchLike,
+    type ClientOptions,
+    ComposioClient,
+    type FetchLike,
     type MetaResult,
-    type SessionCreated
+    type SessionCreated,
 } from "./client.ts"
 export {
     composioCacheMiss,
@@ -20,25 +22,28 @@ export {
     composioNotConnected,
     composioRequestFailed,
     composioSchemaUnsupported,
-    composioSessionKeyMissing
+    composioSessionKeyMissing,
 } from "./errors.ts"
-export { isMutating, isUnannotated, mapParameters, mapTool, type ComposioTool } from "./map.ts"
+export { type ComposioTool, isMutating, isUnannotated, mapParameters, mapTool } from "./map.ts"
 export {
     CONNECT_SLUG,
     CONNECT_SPEC,
     findUrl,
-    META_SLUGS, metaTools,
+    META_SLUGS,
+    type MetaContext,
+    metaTools,
     renderConnect,
     renderSearch,
     renderWorkbench,
     SEARCH_SLUG,
     SEARCH_SPEC,
     WORKBENCH_SLUG,
-    WORKBENCH_SPEC, type MetaContext
+    WORKBENCH_SPEC,
 } from "./meta.ts"
 export {
-    composioFromConfig, ComposioProvider,
-    type ComposioProviderOptions, type RefreshReport
+    ComposioProvider,
+    type ComposioProviderOptions,
+    composioFromConfig,
+    type RefreshReport,
 } from "./provider.ts"
 export { readSession, sessionPath, writeSession } from "./session.ts"
-

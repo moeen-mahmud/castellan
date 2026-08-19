@@ -13,8 +13,8 @@
  * voice, so the `workspace` command keeps warning until a person writes real exchanges.
  */
 
-import { fillTemplate, SKILL_TEMPLATE, WORKSPACE_TEMPLATES } from "#lib/templates";
-import { BRAND, whenNotToUseKey } from "@dispach/core";
+import { BRAND, whenNotToUseKey } from "@dispach/core"
+import { fillTemplate, SKILL_TEMPLATE, WORKSPACE_TEMPLATES } from "#lib/templates"
 
 /**
  * The local tools every generated agent starts with, and the one line of guidance each carries

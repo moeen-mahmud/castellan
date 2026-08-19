@@ -10,6 +10,11 @@
  * only the download replaced.
  */
 
+import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { dirname, join } from "node:path"
+import { BRAND } from "@dispach/core"
 import { findAndInstallSkill } from "#lib/init-skills"
 import { type Git, looksLikePath, readCatalogue, readMeta } from "#lib/source-cache"
 import {
@@ -22,11 +27,6 @@ import {
     removeSource,
 } from "#lib/sources"
 import { sourcesCommand } from "#sources"
-import { BRAND } from "@dispach/core"
-import { afterEach, beforeEach, describe, expect, test } from "bun:test"
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
-import { tmpdir } from "node:os"
-import { dirname, join } from "node:path"
 
 const dirs: string[] = []
 let home = ""

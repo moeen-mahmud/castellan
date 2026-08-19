@@ -7,14 +7,14 @@
  * every output identical, while quietly adding ~200 ms to every invocation of every command.
  */
 
+import { describe, expect, test } from "bun:test"
+import { readdirSync, readFileSync, statSync } from "node:fs"
+import { join, relative, resolve } from "node:path"
+import { BRAND } from "@dispach/core"
 import { DAEMON_ACTIONS } from "#daemon"
 import { COMMANDS } from "#lib/commands"
 import { helpText } from "#lib/help"
 import { SKILLS_ACTIONS } from "#skills"
-import { BRAND } from "@dispach/core"
-import { describe, expect, test } from "bun:test"
-import { readdirSync, readFileSync, statSync } from "node:fs"
-import { join, relative, resolve } from "node:path"
 
 const SRC = resolve(import.meta.dirname, "..", "src")
 

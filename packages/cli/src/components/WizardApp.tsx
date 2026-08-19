@@ -7,6 +7,8 @@
  * Static; the transcript's constraints do not apply to a form.
  */
 
+import { Box, Text, useApp, useInput } from "ink"
+import { useCallback, useEffect, useReducer, useState } from "react"
 import { fetchCatalogue } from "#browse"
 import { Banner } from "#components/Banner"
 import { CheckList } from "#components/CheckList"
@@ -35,8 +37,6 @@ import {
     summaryRows,
     type WizardState,
 } from "#lib/wizard"
-import { Box, Text, useApp, useInput } from "ink"
-import { useCallback, useEffect, useReducer, useState } from "react"
 
 export interface WizardAppProps {
     readonly title: string

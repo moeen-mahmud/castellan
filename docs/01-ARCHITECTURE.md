@@ -22,7 +22,7 @@ sufficient elements:
 Anything outside those four is a plugin, not core. Use this every time scope creep argues
 with you.
 
-## What dispach is not
+## What Dispach is not
 
 Not an orchestration graph. Not a workflow engine. Not a RAG pipeline. Not a vector
 database. Not a browser automator — `web_fetch` reads one page by explicit URL with no JavaScript

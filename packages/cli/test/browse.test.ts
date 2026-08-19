@@ -7,6 +7,11 @@
  * does rather than formatting its own list.
  */
 
+import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { BRAND } from "@dispach/core"
 import { browseRows, chosenEntries, curatedEntries, selectableOf, summarise } from "#lib/browse"
 import { CURATED_COMMUNITY, CURATED_COMMUNITY_SKILLS, curatedGroupOf } from "#lib/curated"
 import { firstSelectable, reduceMultiSelect, startMultiSelect } from "#lib/multiselect"
@@ -14,11 +19,6 @@ import { columnsFor, compactTokens, layoutRow, metaOf } from "#lib/rows"
 import type { CatalogueEntry } from "#lib/source-cache"
 import type { SourceSpec } from "#lib/sources"
 import { type InstallOutcome, skillsCommand } from "#skills"
-import { BRAND } from "@dispach/core"
-import { afterEach, beforeEach, describe, expect, test } from "bun:test"
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
 
 function entry(source: string, skill: string, over: Partial<CatalogueEntry> = {}): CatalogueEntry {
     return {

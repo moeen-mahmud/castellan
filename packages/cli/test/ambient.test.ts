@@ -9,8 +9,8 @@
  * happened to be standing in is not an operator's explicit export.
  */
 
-import { ambientEnv, demotedKeys } from "#lib/ambient"
 import { describe, expect, test } from "bun:test"
+import { ambientEnv, demotedKeys } from "#lib/ambient"
 
 /** Two directories with `.env` files, without touching disk. */
 function dirs(map: Record<string, Record<string, string>>) {

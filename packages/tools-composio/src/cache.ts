@@ -16,9 +16,9 @@
  * hint rather than as a parse error.
  */
 
-import { BRAND } from "@dispach/core"
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs"
 import { dirname, isAbsolute, join, resolve } from "node:path"
+import { BRAND } from "@dispach/core"
 import type { ComposioTool } from "./map.ts"
 
 /** Bumped when the cached shape changes, so an old file is ignored rather than misread. */

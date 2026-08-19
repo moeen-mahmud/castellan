@@ -9,9 +9,9 @@
  * The name is derived from `BRAND`, never written out, so a rename stays one commit (hard rule 3).
  */
 
-import { BRAND } from "@dispach/core"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { BRAND } from "@dispach/core"
 
 /** `tools.provider` names this to get shell and file tools. Also `ToolSpec.provider`. */
 export const SYSTEM_PROVIDER_ID = "system"

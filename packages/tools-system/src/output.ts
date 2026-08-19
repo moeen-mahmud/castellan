@@ -22,8 +22,8 @@
  * ordinary case rather than the exotic one.
  */
 
-import { stripControl } from "@dispach/core"
 import { open } from "node:fs/promises"
+import { stripControl } from "@dispach/core"
 
 /**
  * Above this, output is left on disk. Roughly 1,500 tokens — deliberately under the 2,000-token

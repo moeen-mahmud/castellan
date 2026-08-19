@@ -6,11 +6,11 @@
  * model endpoint, and the only tests that need a socket are the ones about sockets.
  */
 
-import { Runtime } from "@dispach/core"
 import { afterAll, describe, expect, test } from "bun:test"
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { Runtime } from "@dispach/core"
 import { createHandler } from "../src/handler.ts"
 import { Router } from "../src/router.ts"
 import { isLoopback, serve } from "../src/serve.ts"

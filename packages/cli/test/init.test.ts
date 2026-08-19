@@ -6,21 +6,21 @@
  * directory actually loads. Every assertion here goes through the real loader.
  */
 
-import { initCommand } from "#init"
-import { EXIT_OK } from "#lib/const"
-import { PROVIDER_IDS, TOOL_PROVIDERS } from "#lib/providers"
+import { describe, expect, test } from "bun:test"
+import { existsSync, mkdtempSync, readFileSync, statSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import {
     BRAND,
     checkAuthoring,
     HarnessError,
     loadManifest,
-    resolveWorkspace,
     Runtime,
+    resolveWorkspace,
 } from "@dispach/core"
-import { describe, expect, test } from "bun:test"
-import { existsSync, mkdtempSync, readFileSync, statSync } from "node:fs"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { initCommand } from "#init"
+import { EXIT_OK } from "#lib/const"
+import { PROVIDER_IDS, TOOL_PROVIDERS } from "#lib/providers"
 
 function scratch(): string {
     return join(mkdtempSync(join(tmpdir(), "init-test-")), "agent")

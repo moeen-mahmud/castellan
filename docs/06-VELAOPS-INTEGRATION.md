@@ -105,7 +105,7 @@ actually lands in context via `GET /v1/agents/:id/context`.
 
 `02-GOTCHAS.md` is an executable spec for Phase 12. Each row is a test that must pass.
 
-| VelaOps gotcha | dispach behaviour to verify |
+| VelaOps gotcha | Dispach behaviour to verify |
 | --- | --- |
 | Model field only accepts `openclaw/main` | Adapter rewrites; native manifest takes a real id |
 | Config silently rolls back on version skew | `apiVersion` mismatch fails loudly at boot |
@@ -141,7 +141,7 @@ deviation.
 Not the pitch — the specific things that become possible once the runtime is yours.
 
 **Container weight.** The current agent container runs the gateway, a Python embed-service
-with model weights, the Baileys bridge, the Teams channel, and `composio-proxy`. dispach
+with model weights, the Baileys bridge, the Teams channel, and `composio-proxy`. Dispach
 is one process. FTS5 replaces the embed-service, which is the single largest per-agent cost
 line and the reason `EMBED_MODEL` exists. Direct Composio deletes `composio-proxy`. One
 ingress port also resolves the unverified whatsapp-bridge/Teams 3978 collision flagged in
@@ -171,7 +171,7 @@ Dispach does not replace these, and requests to make it do so should be declined
 - **Isolation.** No opinion on containers. The `.pem` model stays.
 - **Provisioning.** No agent lifecycle management. That is literally VelaOps.
 - **Persistence beyond its own tables.** Core emits events; the engine subscribes and writes
-  `sub_agent_invocations` and `tool_calls`. dispach never writes to the `velaops` database.
+  `sub_agent_invocations` and `tool_calls`. Dispach never writes to the `velaops` database.
 
 That last one is the cleanest boundary in the whole design. Core owns its SQLite file inside
 the container. Everything the platform wants to know arrives over `GET /v1/events`.
@@ -181,10 +181,10 @@ the container. Everything the platform wants to know arrives over `GET /v1/event
 ## Operational notes
 
 **Verification stays Docker Compose.** The VelaOps standing mandate is unchanged for
-engine-side work. dispach itself has `bun test`, and those are different questions.
+engine-side work. Dispach itself has `bun test`, and those are different questions.
 
 **Version pinning inverts.** Today `OPENCLAW_RUNTIME_VERSION` pins a foreign runtime and
-`check:openclaw` asserts agreement. With dispach, VelaOps pins a git SHA or version range
+`check:openclaw` asserts agreement. With Dispach, VelaOps pins a git SHA or version range
 of its own dependency. Same discipline, but a bump is now a decision rather than an
 emergency.
 

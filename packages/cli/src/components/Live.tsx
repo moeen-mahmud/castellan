@@ -13,10 +13,10 @@
  * renders, so being short by a row is a frame taller than the screen.
  */
 
+import { Box, Text } from "ink"
 import { LIVE_PANE_MAX_ROWS } from "#lib/const"
 import type { LiveProps } from "#lib/schema"
 import { livePane } from "#lib/wrap"
-import { Box, Text } from "ink"
 
 export function Live({ live, showReasoning, columns }: LiveProps) {
     const showing = showReasoning && live.reasoning !== "" && live.text === ""

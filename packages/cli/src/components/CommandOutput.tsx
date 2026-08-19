@@ -16,10 +16,10 @@
  * Controlled: the scroll offset lives in the screen root, and this owns no keyboard.
  */
 
+import { Box, Text } from "ink"
 import { Spinner } from "#components/Spinner"
 import { viewport } from "#lib/rows"
 import { GLYPH, THEME } from "#lib/theme"
-import { Box, Text } from "ink"
 
 export interface CommandOutputProps {
     /** `undefined` while it is still running. */

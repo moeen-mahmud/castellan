@@ -35,9 +35,9 @@
  * were standing in.
  */
 
-import { type EnvSource, parseDotEnv } from "@dispach/core"
 import { existsSync, readFileSync } from "node:fs"
 import { dirname, join, resolve } from "node:path"
+import { type EnvSource, parseDotEnv } from "@dispach/core"
 
 function readDotEnv(dir: string): Record<string, string> {
     const path = join(dir, ".env")

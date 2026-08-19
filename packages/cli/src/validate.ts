@@ -8,10 +8,7 @@
  * renderer costs ~170-210 ms to import under Node, which would be most of this command's runtime.
  */
 
-import { ambientEnv } from "#lib/ambient"
-import { EXIT_FAILURE, EXIT_OK } from "#lib/const"
-import { CHANNEL_IDS, CHANNELS, PROVIDER_IDS } from "#lib/providers"
-import type { ValidateOptions } from "#lib/schema"
+import { isAbsolute, resolve } from "node:path"
 import {
     buildChannels,
     HarnessError,
@@ -21,7 +18,10 @@ import {
     resolveWorkspace,
     ruleBudgetFailure,
 } from "@dispach/core"
-import { isAbsolute, resolve } from "node:path"
+import { ambientEnv } from "#lib/ambient"
+import { EXIT_FAILURE, EXIT_OK } from "#lib/const"
+import { CHANNEL_IDS, CHANNELS, PROVIDER_IDS } from "#lib/providers"
+import type { ValidateOptions } from "#lib/schema"
 
 export function validateCommand(options: ValidateOptions): number {
     try {

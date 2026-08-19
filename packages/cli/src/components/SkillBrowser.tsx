@@ -20,6 +20,8 @@
  * otherwise have both reading the same keystroke.
  */
 
+import { Box, Text, useInput } from "ink"
+import { useCallback, useEffect, useState } from "react"
 import { CheckList } from "#components/CheckList"
 import { Screen } from "#components/Screen"
 import { SelectList } from "#components/SelectList"
@@ -35,8 +37,6 @@ import { QUIT_HINT, type ScreenHeader } from "#lib/screen"
 import { moveSelect, type SelectState } from "#lib/select"
 import type { CatalogueEntry } from "#lib/source-cache"
 import { GLYPH, THEME } from "#lib/theme"
-import { Box, Text, useInput } from "ink"
-import { useCallback, useEffect, useState } from "react"
 
 export interface SkillBrowserProps {
     /** Fetch the catalogue, reporting progress. Called once, inside the mount. */

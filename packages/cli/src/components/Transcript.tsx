@@ -19,10 +19,10 @@
  * `transcriptRows`, and this owns no keyboard and no state.
  */
 
+import { Box, Text } from "ink"
 import type { TranscriptProps } from "#lib/schema"
 import { scrollHint } from "#lib/scroll"
 import { ROLE_COLOR, THEME } from "#lib/theme"
-import { Box, Text } from "ink"
 
 export function Transcript({ rows, slice }: TranscriptProps) {
     const visible = rows.slice(slice.from, slice.to)

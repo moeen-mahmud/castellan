@@ -1,7 +1,7 @@
+import { describe, expect, test } from "bun:test"
+import type { AnyEvent } from "@dispach/core"
 import type { TranscriptState } from "#lib/types"
 import { EMPTY_TRANSCRIPT, reduce, type TranscriptAction, transcriptRows } from "#transcript"
-import type { AnyEvent } from "@dispach/core"
-import { describe, expect, test } from "bun:test"
 
 /**
  * Envelope fields the reducer never reads. The cast is needed only because TypeScript cannot check
