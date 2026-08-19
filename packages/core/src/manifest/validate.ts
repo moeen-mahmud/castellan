@@ -443,7 +443,6 @@ function validateChannels(
  * never looks like a user's intent.
  */
 const UNSUPPORTED_SECTIONS: readonly { key: string; feature: string; phase: string }[] = [
-    { key: "memory", feature: "memory", phase: "Phase 6" },
     { key: "schedules", feature: "schedules", phase: "Phase 8" },
     { key: "plugins", feature: "plugins", phase: "Phase 9" },
 ]

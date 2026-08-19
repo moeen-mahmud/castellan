@@ -43,134 +43,18 @@
  * after. Re-run `evals`-style calibration against the fixtures before touching any of it.
  */
 
+import { ceiling, counted, informative, score, terms } from "../rank/bm25.ts"
 import type { Skill } from "./index.ts"
 
-/** Standard BM25 parameters. Named so the normalization above can refer to `k1`. */
-const K1 = 1.2
-const B = 0.75
-
-/** Single characters carry no routing signal and inflate every document's length. */
-const MIN_TERM = 2
-
 /**
- * English function words, dropped from documents and queries alike.
+ * Re-exported so `authoring.ts` and the package index keep one import site for the tokeniser.
  *
- * A closed list rather than a corpus statistic, because the corpus statistic **cannot work at these
- * sizes** and three separate measurements said so. `discriminating()` excludes a term appearing in more
- * than half the skills, which is sound with fifty and meaningless with three: in the shipped reference
- * workspace, `the` appears in exactly one of three descriptions, so "who won the 1998 world cup" reduced
- * to `{the}` and activated a CSV profiler at 0.446. The same shape appeared at four skills ("capital *of*
- * peru" → a Word-document skill, 0.518) and at eight ("what's *the* weather in dhaka" → 0.771, before the
- * half-corpus rule existed at all).
- *
- * Deliberately only function words: articles, pronouns, auxiliaries, prepositions, conjunctions. Nothing
- * domain-bearing, nothing a skill description would ever hinge on. That is the difference between a
- * stopword list and a tuned blocklist — the first is a statement about English, the second is a statement
- * about this corpus, and the second would need re-tuning every time a skill was added.
+ * A re-export rather than a local wrapper on purpose: `memory/fts5.ts` stores this function's output in
+ * an indexed column, so a second definition here would be a second tokeniser — and the two would drift
+ * silently, every score still plausible while `skills.threshold` and `memory.threshold` stopped
+ * measuring the same thing.
  */
-const STOPWORDS: ReadonlySet<string> = new Set([
-    "about",
-    "after",
-    "all",
-    "also",
-    "am",
-    "an",
-    "and",
-    "any",
-    "are",
-    "as",
-    "at",
-    "be",
-    "been",
-    "before",
-    "being",
-    "both",
-    "but",
-    "by",
-    "can",
-    "did",
-    "do",
-    "does",
-    "doing",
-    "done",
-    "for",
-    "from",
-    "had",
-    "has",
-    "have",
-    "he",
-    "her",
-    "here",
-    "hers",
-    "him",
-    "his",
-    "how",
-    "if",
-    "in",
-    "into",
-    "is",
-    "it",
-    "its",
-    "just",
-    "me",
-    "more",
-    "most",
-    "my",
-    "no",
-    "nor",
-    "not",
-    "now",
-    "of",
-    "off",
-    "on",
-    "once",
-    "only",
-    "or",
-    "other",
-    "our",
-    "out",
-    "over",
-    "own",
-    "same",
-    "she",
-    "so",
-    "some",
-    "such",
-    "than",
-    "that",
-    "the",
-    "their",
-    "them",
-    "then",
-    "there",
-    "these",
-    "they",
-    "this",
-    "those",
-    "through",
-    "to",
-    "too",
-    "under",
-    "until",
-    "up",
-    "very",
-    "was",
-    "we",
-    "were",
-    "what",
-    "when",
-    "where",
-    "which",
-    "while",
-    "who",
-    "whom",
-    "why",
-    "will",
-    "with",
-    "would",
-    "you",
-    "your",
-])
+export { terms } from "../rank/bm25.ts"
 
 export interface ScoredSkill {
     readonly skill: Skill
@@ -189,84 +73,6 @@ export interface ScoredSkill {
  * rather than looked up here, so this stays a pure function of text.
  */
 export type SkillSelector = (input: string, skills: readonly Skill[]) => readonly ScoredSkill[]
-
-/**
- * Crude suffix stripping, so an inflected description meets a base-form query.
- *
- * **Measured against real third-party skills.** `anthropics/skills`' `pdf` description says "combining or
- * merging", "rotating pages"; a person types "merge these two pdfs and rotate page 3". Without this the
- * query's only matching terms were `pdfs` and `page` — and `page` appears in the *docx* description, which
- * is shorter, so `docx` won a question about rotating PDF pages while `pdf` scored nothing on its three
- * strongest signals.
- *
- * Not a Porter stemmer, and deliberately not: the full ruleset is several hundred lines to fix cases a
- * routing decision over a handful of documents does not have. This handles the plural and the gerund,
- * which is what descriptions and requests actually disagree about. `extraction` still does not meet
- * `extract`, and that is an accepted miss rather than an oversight.
- *
- * The `>= 3` floors are what keep it from destroying short words: `bring` must not become `br`, and `sing`
- * must not become `s`.
- */
-function stem(term: string): string {
-    let out = term
-    if (out.length > 3) {
-        for (const suffix of ["ing", "ed", "es", "s"]) {
-            if (out.endsWith(suffix) && out.length - suffix.length >= 3) {
-                out = out.slice(0, -suffix.length)
-                break
-            }
-        }
-    }
-    // A trailing `e` last, so `merge` and `merging` both land on `merg` — the pair that motivated this.
-    return out.length > 3 && out.endsWith("e") ? out.slice(0, -1) : out
-}
-
-export function terms(text: string): string[] {
-    return text
-        .toLowerCase()
-        .split(/[^a-z0-9]+/)
-        .filter((term) => term.length >= MIN_TERM && !STOPWORDS.has(term))
-        .map(stem)
-}
-
-function counted(list: readonly string[]): Map<string, number> {
-    const out = new Map<string, number>()
-    for (const term of list) out.set(term, (out.get(term) ?? 0) + 1)
-    return out
-}
-
-/**
- * Inverse document frequency, in the BM25 form that cannot go negative.
- *
- * The textbook `ln((N - df + 0.5) / (df + 0.5))` turns negative once a term is in more than half the
- * corpus, and with fifty skills a common word like "file" easily is — a negative idf would mean a
- * document is *penalised* for containing a query term, which reads as a broken scorer long before
- * anyone suspects the formula. The `1 +` form is the standard fix and stays positive throughout.
- */
-function idf(total: number, df: number): number {
-    return Math.log(1 + (total - df + 0.5) / (df + 0.5))
-}
-
-/**
- * Whether a query term discriminates between skills: present in the corpus, and in at most half of it.
- *
- * Both halves are load-bearing, and the second was **measured**, not reasoned. Without it, "what's the
- * weather in dhaka tomorrow" scored **0.771** against `git-release` — higher than every one of the
- * seventeen true positives, whose range is 0.370–0.600. The reason is subtle and worth keeping: the
- * normalisation divides by `Σ idf(q)` over the same terms it sums, so **idf cancels out**. With a
- * one-term query, matching `the` scores exactly as well as matching `pdf`; idf survives only as relative
- * weighting *between* several query terms. Every word in that question was absent from the corpus except
- * `the`, so the query reduced to `{the}` and the shortest description containing it most often won.
- *
- * Excluding a term in more than half the corpus is BM25's own logic taken one step further — its idf
- * already says such a term carries almost no information, and this stops it from being the *only* thing
- * a score is built from. The `total >= 3` guard keeps a one- or two-skill workspace working, where "more
- * than half" would otherwise exclude everything and nothing could ever activate.
- */
-function discriminating(df: number, total: number): boolean {
-    if (df === 0) return false
-    return total < 3 || df <= total / 2
-}
 
 export const bm25Selector: SkillSelector = (input, skills) => {
     if (skills.length === 0) return []
@@ -287,9 +93,7 @@ export const bm25Selector: SkillSelector = (input, skills) => {
     // zero average would produce NaN rather than zero, and NaN sorts unpredictably instead of failing.
     const averageLength = totalLength === 0 ? 1 : totalLength / total
 
-    const query = [...new Set(terms(input))].filter((term) =>
-        discriminating(df.get(term) ?? 0, total),
-    )
+    const query = informative(input, df, total)
     // Sorted even when everything scores zero. An unsorted return here was inconsistent with the scored
     // path for no reason, and a caller that logs "the ranking" would have shown insertion order on the
     // one input where the ranking is the interesting part — the input that selects nothing.
@@ -299,21 +103,21 @@ export const bm25Selector: SkillSelector = (input, skills) => {
             .sort(byScoreThenName)
     }
 
-    const ceiling = (K1 + 1) * query.reduce((sum, term) => sum + idf(total, df.get(term) ?? 0), 0)
+    const denominator = ceiling(query, df, total)
 
     return documents
-        .map((document) => {
-            let raw = 0
-            for (const term of query) {
-                const frequency = document.counts.get(term) ?? 0
-                if (frequency === 0) continue
-                const normalisedLength = 1 - B + (B * document.length) / averageLength
-                raw +=
-                    idf(total, df.get(term) ?? 0) *
-                    ((frequency * (K1 + 1)) / (frequency + K1 * normalisedLength))
-            }
-            return { skill: document.skill, score: ceiling === 0 ? 0 : raw / ceiling }
-        })
+        .map((document) => ({
+            skill: document.skill,
+            score: score({
+                counts: document.counts,
+                length: document.length,
+                averageLength,
+                query,
+                df,
+                total,
+                denominator,
+            }),
+        }))
         .sort(byScoreThenName)
 }
 

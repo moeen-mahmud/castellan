@@ -52,6 +52,21 @@ const HTML_COMMENT = /<!--[\s\S]*?-->/g
 /** Three or more consecutive newlines, left behind wherever a comment block was removed. */
 const BLANK_RUN = /\n{3,}/g
 
+/**
+ * The body with any leading frontmatter block removed, and nothing else done to it.
+ *
+ * Exported for `memory/passages.ts`, which reads markdown a person may have put frontmatter on but
+ * which carries none of the workspace tier keys — `readFrontmatter` would refuse those as unknown, so
+ * it needs the removal without the validation. Sharing the function rather than the regex is the
+ * point: `FRONTMATTER` is anchored at position 0 for a measured reason (a `---` further down is a
+ * horizontal rule, and swallowing the text above it deletes instructions silently), and a second copy
+ * of that anchoring is a second chance to get it wrong.
+ */
+export function withoutFrontmatter(raw: string): string {
+    const match = FRONTMATTER.exec(raw)
+    return match === null || match === undefined ? raw : raw.slice(match[0].length)
+}
+
 export function parseWorkspaceFile(name: string, raw: string): ParsedFile {
     const match = FRONTMATTER.exec(raw)
     const frontmatter =

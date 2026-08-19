@@ -242,6 +242,63 @@ export const COMMANDS: readonly CommandSpec[] = [
         ],
     },
     {
+        // Two questions, and they are asked of the *index* rather than of the files. `search` is what
+        // makes a ranking explicable — it prints the lexical score beside the boosted one, so "retrieved
+        // because it is about your question" and "retrieved because it is recent" are distinguishable
+        // without reading the code. `rebuild` exists because staleness detection is mtime plus size, and
+        // an edit that preserves both is a real blind spot rather than a hypothetical one.
+        name: "memory",
+
+        // A view: the result is a list somebody reads and then wants to act on. Read-only for now —
+        // deleting a memory means editing the file, which is the point of files being canonical.
+        inSession: "view",
+        summary: "search what the agent remembers, or rebuild the index from the files",
+        args: [
+            {
+                name: "action",
+                required: true,
+                help: "what to do",
+                choices: [
+                    {
+                        value: "search",
+                        help: "rank the corpus against a query, exactly as a turn would",
+                    },
+                    {
+                        value: "rebuild",
+                        help: "forget the index and re-read every file — for an edit that kept the mtime",
+                    },
+                ],
+            },
+            { ...MANIFEST, required: true },
+            {
+                name: "query",
+                required: false,
+                help: "the words to search for (search only); quote a phrase",
+            },
+        ],
+        flags: [
+            STORE,
+            {
+                name: "limit",
+                kind: "number",
+                placeholder: "n",
+                help: "passages to show",
+                defaultHelp: "10",
+                min: 1,
+                integer: true,
+            },
+            {
+                // The manifest's `memory.threshold` is what a *turn* applies. A search is a person
+                // asking what is in there, and a floor that hid the near-misses would make the command
+                // useless for the question it exists to answer — "why did it not recall that?"
+                name: "all",
+                kind: "boolean",
+                help: "show passages below the manifest's threshold too, marked",
+            },
+            JSON_FLAG,
+        ],
+    },
+    {
         name: "validate",
 
         inSession: "output",

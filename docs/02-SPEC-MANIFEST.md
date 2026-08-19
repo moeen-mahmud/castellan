@@ -574,12 +574,51 @@ honoured**: a downloaded folder does not widen what the agent may run.
 
 ### `memory`
 
+Two tiers, one writer. `memory_write` appends to the **carried** file — the workspace's write target,
+in the `volatile` tier, present in slot 4 on every turn — and when that file passes its budget the
+oldest notes move into `dir`, where only retrieval reaches them. So a fact said a minute ago is still
+carried, and one from June is found by searching. Nothing is deleted at either step.
+
 | Field | Default | Notes |
 | --- | --- | --- |
-| `retriever` | `fts5` | Interface id. `fts5` is the only shipped implementation. |
-| `dir` | `./memory` | Dated markdown. Written by the agent through `memory_write`. |
-| `k` | 6 | Passages retrieved into context slot 6. |
-| `includeHistory` | true | Whether past messages are indexed alongside memory files. |
+| `retriever` | `fts5` | The seam. `fts5` is the only implementation; an unknown name is refused at load rather than retrieving nothing. |
+| `dir` | `./memory` | Where eviction files older notes, relative to the manifest. Monthly `YYYY-MM.md`. Indexed, never carried. |
+| `maxActive` | 3 | Passages injected in one turn, into slot 7. `0` switches injection off while leaving `memory search` working. |
+| `threshold` | 0.20 | Normalised score floor, on the same scale as `skills.threshold`. |
+| `budget` | 600 | Total tokens across injected passages. Outside the workspace cap — this tier is retrieved, not carried. |
+| `includeHistory` | true | Index the person's messages and the agent's replies as well as the notes. **Never tool observations, at any setting.** |
+
+Omitting the section switches memory off entirely: no slot 7, no index, and `memory search` reports
+that the agent has none configured rather than that it remembers nothing. `memory: {}` is enough to
+turn it on, since every field has a default.
+
+**`threshold` is lower than `skills.threshold` on purpose.** Both go through `rank/bm25.ts`, so the
+numbers are directly comparable — and the two want opposite errors. A wrong skill *displaces* the
+right one at `maxActive: 1`, so routing pays for precision; an extra remembered passage costs about
+twenty tokens under a budget that already caps the slot, so retrieval pays for recall. Measured: the
+note "the deploy pipeline waits for a manual approval gate" scores **0.284** against "how does the
+deploy approval work" — it matches two of the query's three informative terms and the normalisation
+divides by all three. Correct arithmetic, and a good answer that `0.35` withholds. A full match at
+average document length is about `0.45`.
+
+**Retrieval is per turn, never per step**, like `knowledge`: two steps of one turn must not argue
+from different remembered facts. Slot 7 is **not pinned** — this tier is retrieved rather than
+carried, so compaction may drop it. A fact that must always hold belongs in the carried file.
+
+**Tool observations are never indexed.** That is where untrusted text lives, and indexing it would
+make prompt injection durable: text a stranger wrote, retrieved into slot 7 in a later session, long
+after the write gate that fenced it stopped applying. `ChatMessage.origin` is what makes the
+distinction reliable — under a text dialect an observation returns as a `user` message and the role
+does not say.
+
+**Deleting a session leaves memory untouched**, structurally: `memory_passages` carries no session
+column and no foreign key, unlike `artifacts`, which cascade with theirs.
+
+`dispach memory search <agent> "<words>"` ranks the corpus exactly as a turn would but applies no
+threshold and does not exclude the carried file, because the question it exists to answer is usually
+"why was that *not* recalled". `dispach memory rebuild <agent>` forgets the index and re-reads every
+file — staleness is detected from mtime **and** size, and an edit preserving both is a real blind
+spot rather than a hypothetical one.
 
 ### `channels`
 

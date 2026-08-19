@@ -8,6 +8,7 @@
 
 import { describe, expect, test } from "bun:test"
 import { COMMANDS } from "#lib/commands"
+import { LANDING_LIST_ROWS } from "#lib/const"
 import { paletteEntries, paletteFor, paletteSelection } from "#lib/palette"
 import { resolveSessionCommand, SESSION_COMMANDS } from "#lib/session-commands"
 import { paneRefusal, subcommandArgv } from "#lib/subcommand"
@@ -29,6 +30,16 @@ describe("every command declares how it appears in a session", () => {
         expect(hidden).toContain("run")
         expect(hidden).toContain("serve")
         expect(hidden).toContain("init")
+    })
+
+    test("LANDING_LIST_ROWS fits the whole in-session table", () => {
+        // The landing palette's own reason for existing is that a person opening the screen before they
+        // know the commands should see all of them, not six behind a `… 9 below`. That makes the constant
+        // a function of the table's size — so it is asserted here, where adding a command fails on the
+        // relationship, rather than in a frame test where it fails as a missing string and reads like a
+        // rendering bug. Adding `memory` in Phase 6 took the table from 14 to 15 and did exactly that.
+        const offered = COMMANDS.filter((spec) => spec.inSession !== "hidden").length
+        expect(LANDING_LIST_ROWS).toBeGreaterThanOrEqual(offered)
     })
 
     test("the reporting commands are offered", () => {

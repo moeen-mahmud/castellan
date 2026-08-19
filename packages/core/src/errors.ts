@@ -831,3 +831,35 @@ export function envOverridden(overrides: readonly EnvOverride[]): ErrorDetail {
         hint: "The real environment always wins over a .env beside the manifest, so an operator's export beats a committed file. That is usually what you want and occasionally a surprise — most often a .env in the directory you launched from, which is why running from a project checkout can silently change the model. Unset the variable there, or run from elsewhere, if the agent's own .env is the one you meant.",
     }
 }
+
+/**
+ * A `memory.retriever` name nothing implements.
+ *
+ * Refused at load rather than falling back to the one that exists. A typo would otherwise produce an
+ * agent that boots, answers, and silently remembers nothing — the failure has no symptom at all, because
+ * an empty slot 7 looks exactly like a turn with nothing relevant to say.
+ */
+export function unknownRetriever(name: string): ConfigError {
+    return new ConfigError({
+        code: "memory_unknown_retriever",
+        message: `memory.retriever is "${name}", which this build does not implement.`,
+        hint: "Use `fts5`, the only retriever in v1. The field is a seam rather than an enum so a different retrieval strategy can occupy it later — but naming one that does not exist would give you an agent that remembers nothing and reports nothing.",
+        field: "memory.retriever",
+    })
+}
+
+/**
+ * `memory search` or `memory rebuild` on an agent whose manifest configures no memory.
+ *
+ * Named rather than answered with an empty result: "nothing remembered yet" and "this agent has no
+ * memory configured" are different facts, and reporting the first for the second sends a person looking
+ * for a lost note instead of at the four lines they never added to the manifest.
+ */
+export function memoryNotConfigured(): ConfigError {
+    return new ConfigError({
+        code: "memory_not_configured",
+        message: "This agent has no memory configured.",
+        hint: "Add a `memory:` block to agent.yaml — `dir`, `maxActive`, `threshold` and `budget` all have defaults, so `memory: {}` is enough to switch it on.",
+        field: "memory",
+    })
+}

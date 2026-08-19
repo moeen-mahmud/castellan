@@ -6,10 +6,10 @@
  * input has (^A/^E, ^W, code-point cursor) works here without a second implementation.
  */
 
-import { Box, Text } from "ink"
 import { LineCursor } from "#components/LineCursor"
 import { GLYPH, THEME } from "#lib/theme"
 import type { EditorState } from "#lib/types"
+import { Box, Text } from "ink"
 
 export interface TextFieldProps {
     readonly label: string

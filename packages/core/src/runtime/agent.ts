@@ -21,8 +21,10 @@ import { renderConfigSummary } from "../context/config-summary.ts"
 import {
     type ErrorDetail,
     envOverridden,
+    memoryNotConfigured,
     phaseAllowUnmatched,
     toolGatedAfterFirstUse,
+    unknownRetriever,
 } from "../errors.ts"
 import type { EventBus } from "../events/bus.ts"
 import { newTurnId } from "../loop/ids.ts"
@@ -32,9 +34,17 @@ import { runTurn, type ToolRuntime, type TurnCompaction, type TurnResult } from 
 import type { LoadedManifest } from "../manifest/load.ts"
 import { resolveProviders } from "../manifest/providers.ts"
 import type { AgentManifest } from "../manifest/schema.ts"
+import {
+    enumerateFiles,
+    fts5Retriever,
+    type IndexReport,
+    type MemoryRetriever,
+    type RetrievedPassage,
+    selectPassages,
+    syncFiles,
+} from "../memory/index.ts"
 import type { PromptStyle } from "../model/prompt-style.ts"
 import type { ChatMessage } from "../model/provider.ts"
-
 import {
     type ResolvedRoles,
     type ResolveRolesOptions,
@@ -161,6 +171,23 @@ export class Agent {
     /** Non-fatal load findings, emitted as `agent.warning` by `Runtime`. */
     readonly warnings: readonly ErrorDetail[]
     readonly store: Store
+    /**
+     * Resolved memory wiring, or `undefined` when the manifest configures none.
+     *
+     * `carried` is the source name of the workspace file that is *already in the prompt* — slot 4 — and
+     * it is excluded from slot 7 rather than from the index, so `memory search` can still find a note
+     * saved a minute ago while the model is never told the same thing twice.
+     */
+    readonly #memory:
+        | {
+              readonly retrieve: MemoryRetriever
+              readonly dir: string
+              readonly carried: string | undefined
+              readonly maxActive: number
+              readonly threshold: number
+              readonly budget: number
+          }
+        | undefined
     /** Resolved once, at load. Never searched, never extended at runtime. */
     readonly tools: ToolRegistry
     /** Tier 3, read once at load. `undefined` when the manifest configures none. */
@@ -248,6 +275,26 @@ export class Agent {
         this.skills = init.skills
         this.#scriptRunner = init.scriptRunner
 
+        const memory = init.loaded.manifest.memory
+        if (memory === undefined) {
+            this.#memory = undefined
+        } else {
+            if (memory.retriever !== "fts5") {
+                throw unknownRetriever(memory.retriever)
+            }
+            const target = writeTarget(init.workspace)
+            this.#memory = {
+                retrieve: fts5Retriever({ store: init.store.memory, agentId: this.id }),
+                dir: isAbsolute(memory.dir) ? memory.dir : resolve(init.loaded.dir, memory.dir),
+                // Only a *writable* target is carried-and-excluded. A refused one is not being written
+                // to, so nothing accumulates there and nothing needs excluding.
+                carried: target?.mode === "refused" ? undefined : target?.name,
+                maxActive: memory.maxActive,
+                threshold: memory.threshold,
+                budget: memory.budget,
+            }
+        }
+
         this.#manifestPath = init.loaded.path
         this.#manifestMtime = mtimeOf(init.loaded.path)
 
@@ -282,6 +329,7 @@ export class Agent {
                 // way to make slot 1 vary and quietly stop prompt caching.
                 blocks: dialect.renderCatalogue(specs, init.tools.notEnabled),
                 ...(target === undefined ? {} : { writeTarget: target }),
+                ...(this.#memory === undefined ? {} : { memoryDir: this.#memory.dir }),
                 ...(requestTools === undefined ? {} : { requestTools }),
                 wireTokens: requestTools === undefined ? 0 : nativeWireTokens(requestTools),
                 observationMaxTokens: this.manifest.context.observationMaxTokens,
@@ -440,6 +488,7 @@ export class Agent {
 
         const active = this.knowledge === undefined ? [] : activateKnowledge(input, this.knowledge)
         const skills = this.#activateSkills(input, history)
+        const remembered = await this.#recall(input)
 
         const result = await runTurn({
             agentId: this.id,
@@ -468,6 +517,7 @@ export class Agent {
                           content: entry.content,
                       })),
                   }),
+            ...(remembered.length === 0 ? {} : { memory: remembered }),
             ...(skills.length === 0 ? {} : { skills }),
             role: this.roles.main,
             window: this.window,
@@ -621,6 +671,7 @@ export class Agent {
                 ? []
                 : activateKnowledge(input, this.knowledge)
         const skills = input === "" ? [] : this.#activateSkills(input, history)
+        const remembered = await this.#recall(input)
         const tools = this.#toolRuntime
 
         const assembled = assembleContext({
@@ -637,6 +688,7 @@ export class Agent {
                           content: entry.content,
                       })),
                   }),
+            ...(remembered.length === 0 ? {} : { memory: remembered }),
             ...(skills.length === 0 ? {} : { skills }),
             ...(this.workspace.reminder === "" ? {} : { reminder: this.workspace.reminder }),
             history,
@@ -690,6 +742,127 @@ export class Agent {
      * and did not, which is precisely the class of thing that must never be silent. They are per-turn,
      * so they go on the bus rather than onto `agent.warnings`, which is for the whole session.
      */
+
+    /**
+     * Reconcile the index with the files, then rank against this turn's input.
+     *
+     * Sync runs **per turn**, not only at boot, and it is cheap on purpose: `enumerateFiles` stats and
+     * does not read, and `syncFiles` skips a source whose mtime, size and tokeniser version all match, so
+     * the steady-state cost is a dozen `stat` calls. That is what makes two acceptance criteria hold at
+     * once — an externally edited memory file is picked up without a restart, and `memory_write`'s own
+     * eviction is indexed before the next turn can ask about it.
+     *
+     * Retrieval failure is **not** a turn failure. A corrupt index or a store from a newer build should
+     * cost the agent its memory for that turn, not the reply: the person asked a question, and answering
+     * without slot 7 is strictly better than an error. Reported on the bus rather than swallowed.
+     */
+    async #recall(input: string): Promise<readonly { source: string; at: string; text: string }[]> {
+        const memory = this.#memory
+        if (memory === undefined || memory.maxActive === 0 || input === "") return []
+
+        try {
+            await this.#syncMemory(memory.dir)
+
+            const ranked = await memory.retrieve({
+                input,
+                now: new Date(),
+                // Over-fetch relative to `maxActive`: the retriever re-ranks by recency and drops
+                // excluded sources, so asking for exactly the cap would lose both effects.
+                limit: Math.max(memory.maxActive * 4, 12),
+                ...(memory.carried === undefined ? {} : { exclude: [memory.carried] }),
+            })
+
+            return selectPassages(ranked, {
+                threshold: memory.threshold,
+                maxActive: memory.maxActive,
+                budget: memory.budget,
+            }).map((hit) => ({
+                source: hit.passage.source,
+                at: hit.passage.at,
+                text: hit.passage.text,
+            }))
+        } catch (error) {
+            this.#bus.emit("agent.warning", {
+                code: "memory_recall_failed",
+                message: `Memory recall failed: ${error instanceof Error ? error.message : String(error)}`,
+                hint: "The turn continues without slot 7. Run `memory rebuild` to re-read the files; if it keeps failing, the store may be from a newer build.",
+            })
+            return []
+        }
+    }
+
+    /**
+     * Reconcile the index with the files on disk. Shared by recall, `memory search` and `memory rebuild`.
+     *
+     * The carried workspace file is indexed *alongside* the archive, which looks redundant and is not:
+     * `memory search` has to be able to find a note saved a minute ago, and that note is still in the
+     * carried file. Slot 7 excludes it at **retrieval** instead, which is the only arrangement under
+     * which the model is never told the same thing twice and the person can still search everything.
+     */
+    async #syncMemory(dir: string): Promise<IndexReport> {
+        const target = writeTarget(this.workspace)
+        return await syncFiles({
+            store: this.store.memory,
+            agentId: this.id,
+            files: enumerateFiles({
+                dir,
+                ...(target?.path === undefined || target.mode === "refused"
+                    ? {}
+                    : { extra: [{ source: target.name, path: target.path }] }),
+            }),
+            now: new Date(),
+        })
+    }
+
+    /**
+     * Rank the whole corpus against a query, the way a turn would — but **without** the threshold and
+     * without excluding the carried file.
+     *
+     * Both omissions are the point. A person running this is asking "what is in there, and why did it
+     * not recall X", and a floor that hid the near-misses would make the command useless for exactly
+     * that question; the caller marks what falls below `threshold` rather than dropping it. And the
+     * carried file is included because "where is that note" has a legitimate answer of "still in
+     * MEMORY.md, which is why you did not see it under Remembered".
+     */
+    async searchMemory(options: { readonly query: string; readonly limit?: number }): Promise<{
+        readonly corpus: number
+        readonly threshold: number
+        readonly carried: string | undefined
+        readonly hits: readonly RetrievedPassage[]
+    }> {
+        const memory = this.#memory
+        if (memory === undefined) throw memoryNotConfigured()
+
+        await this.#syncMemory(memory.dir)
+        const hits = await memory.retrieve({
+            input: options.query,
+            now: new Date(),
+            limit: options.limit ?? 10,
+        })
+        const stats = await this.store.memory.stats(this.id)
+        return {
+            corpus: stats.passages,
+            threshold: memory.threshold,
+            carried: memory.carried,
+            hits,
+        }
+    }
+
+    /**
+     * Forget the index and re-read every file.
+     *
+     * Exists because staleness is detected from mtime **and** size, and an edit that preserves both is a
+     * real blind spot rather than a hypothetical one — a one-character correction, or a restore from a
+     * copy that kept timestamps. The files are canonical, so this is always safe: nothing is lost by
+     * discarding an index that can be rebuilt from them.
+     */
+    async rebuildMemory(): Promise<IndexReport> {
+        const memory = this.#memory
+        if (memory === undefined) throw memoryNotConfigured()
+        await this.store.memory.clear(this.id)
+        return await this.#syncMemory(memory.dir)
+    }
+
     #activateSkills(
         input: string,
         history: readonly ChatMessage[],

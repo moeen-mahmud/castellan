@@ -176,6 +176,18 @@ export interface RunOptions {
     readonly plain?: boolean
 }
 
+export interface MemoryOptions {
+    readonly action: string
+    readonly manifestPath: string
+    /** The words to rank against. Required for `search`, unused by `rebuild`. */
+    readonly query?: string
+    readonly store?: string
+    readonly limit?: number
+    /** Show passages below the manifest's threshold too, marked. */
+    readonly all?: boolean
+    readonly json?: boolean
+}
+
 export interface SessionsOptions {
     readonly manifestPath: string
     /** Inspect this session instead of listing them. */

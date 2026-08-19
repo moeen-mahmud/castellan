@@ -283,6 +283,110 @@ CREATE TABLE artifacts (
 );
 `,
     },
+    {
+        version: 6,
+        name: "memory_passages",
+        /**
+         * The memory corpus: what the agent knows about the person, across sessions.
+         *
+         * **Not scoped to a session, and with no foreign key to one.** Every other per-conversation
+         * table here cascades from `sessions`; this one deliberately does not, which is what makes
+         * "deleting a session leaves memory untouched" a property of the schema rather than a promise
+         * in a docstring. A memory is a fact about the person, and the conversation it was learned in
+         * is an implementation detail of how it arrived.
+         *
+         * `id` is content-derived (`derivedId("mem", text)`, see `ids.ts`) and printable ASCII, for the
+         * same two reasons artifacts are: the duplicate that happens is a re-index of unchanged text,
+         * which only a recomputable identity collapses; and `node:sqlite` truncates a bound string at a
+         * NUL byte while `bun:sqlite` keeps it, so a key carrying one resolves on one runtime and
+         * silently misses on the other. It also means a passage that *moves* — which is exactly what
+         * eviction does, carrying a note out of `MEMORY.md` into an archive — keeps its row and only
+         * changes `source`.
+         *
+         * ## Why `terms` and `length` are columns
+         *
+         * FTS5 is used as a **candidate filter, not as the scorer**. `bm25()` would have been free, and
+         * it computes its statistics over the whole table — which holds every agent's passages, since
+         * one sandbox root has one store. Average document length and N would therefore be corpus-wide
+         * while retrieval is per-agent, so an agent's scores would shift when an unrelated agent wrote
+         * a note. Storing the pre-tokenised `terms` and its `length` lets `memory/fts5.ts` score the
+         * candidates with the shared BM25 in `rank/bm25.ts` — per-agent statistics, the same formula and
+         * the same tokeniser as `skills/select.ts`, so `memory.threshold` and `skills.threshold` mean
+         * the same thing. It also makes FTS5's own tokeniser and k1/b defaults irrelevant.
+         *
+         * `terms` is derived from `rank/bm25.ts`, so `memory_sources.tokeniser` records the version that
+         * produced it. A stale value forces a rebuild; without it, editing the stopword list would leave
+         * the index tokenised under old rules while queries arrive under new ones, and retrieval would
+         * simply get worse with nothing reporting why.
+         *
+         * The FTS5 table is external-content with the standard three triggers, so `memory_passages` is
+         * the single writable surface: an upsert, a delete by source, and a whole-corpus wipe all keep
+         * the index in step with no second code path to forget. Verified identical on both drivers,
+         * including `ON CONFLICT DO UPDATE` firing the update trigger exactly once.
+         */
+        sql: `
+CREATE TABLE memory_passages (
+    agent_id    TEXT NOT NULL,
+    -- Content-derived. Printable ASCII: it is a bound key.
+    id          TEXT NOT NULL,
+    -- Path relative to the memory root, or session:<key> for an indexed message.
+    source      TEXT NOT NULL,
+    -- Nearest enclosing markdown heading, scored with the text. Null at top level.
+    heading     TEXT,
+    -- Verbatim as authored. What slot 7 injects; never rewritten.
+    text        TEXT NOT NULL,
+    -- rank/bm25.ts terms(), space-joined. The indexed column, and what BM25 counts.
+    terms       TEXT NOT NULL,
+    -- Term count, so average document length is a SUM rather than a scan.
+    length      INTEGER NOT NULL,
+    -- When the fact was learned. From the passage's own stamp where it had one.
+    at          TEXT NOT NULL,
+    -- 1 when at is the passage's own stamp, 0 when it was implied by a filename or an mtime.
+    stamped     INTEGER NOT NULL,
+    -- Comma-joined, for display only. Not scored: a tag is already in the text.
+    tags        TEXT NOT NULL,
+    -- Estimated cost of text, so the slot budget applies without re-estimating every turn.
+    tokens      INTEGER NOT NULL,
+    indexed_at  TEXT NOT NULL,
+    PRIMARY KEY (agent_id, id)
+);
+
+CREATE INDEX memory_passages_source ON memory_passages (agent_id, source);
+
+CREATE VIRTUAL TABLE memory_fts USING fts5(
+    terms,
+    content='memory_passages',
+    content_rowid='rowid'
+);
+
+CREATE TRIGGER memory_passages_ai AFTER INSERT ON memory_passages BEGIN
+    INSERT INTO memory_fts(rowid, terms) VALUES (new.rowid, new.terms);
+END;
+
+CREATE TRIGGER memory_passages_ad AFTER DELETE ON memory_passages BEGIN
+    INSERT INTO memory_fts(memory_fts, rowid, terms) VALUES ('delete', old.rowid, old.terms);
+END;
+
+CREATE TRIGGER memory_passages_au AFTER UPDATE ON memory_passages BEGIN
+    INSERT INTO memory_fts(memory_fts, rowid, terms) VALUES ('delete', old.rowid, old.terms);
+    INSERT INTO memory_fts(rowid, terms) VALUES (new.rowid, new.terms);
+END;
+
+-- What has been indexed and under which rules, so a changed file or a changed tokeniser is
+-- detectable without re-reading the corpus.
+CREATE TABLE memory_sources (
+    agent_id    TEXT NOT NULL,
+    source      TEXT NOT NULL,
+    mtime_ms    INTEGER NOT NULL,
+    size        INTEGER NOT NULL,
+    -- rank/bm25.ts TOKENISER_VERSION at index time. A mismatch forces a rebuild.
+    tokeniser   INTEGER NOT NULL,
+    passages    INTEGER NOT NULL,
+    indexed_at  TEXT NOT NULL,
+    PRIMARY KEY (agent_id, source)
+);
+`,
+    },
 ]
 
 export interface MigrationReport {

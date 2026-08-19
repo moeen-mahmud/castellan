@@ -272,14 +272,26 @@ export function writeTarget(workspace: Workspace): WorkspaceWriteTarget | undefi
     const volatiles = workspace.files.filter((file) => file.tier === "volatile")
     if (volatiles.length === 0) return undefined
 
-    const writable = volatiles.find(
-        (file) => file.editable === "append" || file.editable === "replace",
-    )
+    const canWrite = (file: { readonly editable: string }): boolean =>
+        file.editable === "append" || file.editable === "replace"
+
+    // `eviction: oldest` wins over declared order, and that is the author naming the target rather than
+    // the loader guessing. The generated workspace lists `USER.md` before `MEMORY.md` and makes both
+    // writable, so plain declared order sent every saved note into the hand-written file describing the
+    // person — which then grew until it busted its own budget and the agent refused to boot, while the
+    // file that exists for notes and declares how to trim them was never touched. A declaration that
+    // says "this file accumulates notes and may be trimmed" is exactly the statement a write target
+    // needs, and it costs no new field.
+    const writable =
+        volatiles.find((file) => canWrite(file) && file.eviction === "oldest") ??
+        volatiles.find(canWrite)
     if (writable !== undefined) {
         return {
             path: writable.path,
             name: writable.name,
             mode: writable.editable === "replace" ? "replace" : "append",
+            budget: writable.budget,
+            eviction: writable.eviction,
         }
     }
 

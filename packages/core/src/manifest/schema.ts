@@ -326,9 +326,53 @@ export const SkillsSchema = z
 
 export const MemorySchema = z
     .object({
+        /**
+         * Which retriever backs slot 7. Only `fts5` exists; an unknown name is refused at load with
+         * the known ones named, rather than silently retrieving nothing.
+         *
+         * A string rather than an enum because `MemoryRetriever` is a function-shaped seam and the
+         * point of a seam is that something else can occupy it — the vectors this phase refuses until
+         * lexical is proven insufficient arrive here as another name, not as another pipeline.
+         */
         retriever: z.string().min(1).default("fts5"),
+        /**
+         * Where eviction files older notes, relative to the manifest. Indexed; never carried.
+         *
+         * The carried file is the workspace's `volatile` tier and is configured there. This directory
+         * is its overflow: `memory_write` appends to the carried file, and when that file passes its
+         * budget the oldest notes move here, where only retrieval reaches them.
+         */
         dir: z.string().min(1).default("./memory"),
-        k: z.number().int().nonnegative().default(6),
+        /** Passages injected in one turn. Slot 7 is retrieved, never pinned; compaction may drop it. */
+        maxActive: z.number().int().nonnegative().default(3),
+        /**
+         * Normalised score floor, on exactly the scale `skills.threshold` uses — both go through
+         * `rank/bm25.ts`, so the numbers are comparable and one formula change invalidates both.
+         *
+         * **Lower than skills' 0.35 on purpose, because the two want opposite errors.** A wrong skill
+         * *displaces* the right one at `maxActive: 1`, so routing pays for precision; an extra
+         * remembered passage costs twenty tokens under a budget that already caps the slot, so
+         * retrieval pays for recall.
+         *
+         * Measured on a real corpus: the note "the deploy pipeline waits for a manual approval gate"
+         * scored **0.284** against "how does the deploy approval work". It matched two of the query's
+         * three informative terms and the normalisation divides by all three — correct arithmetic, and
+         * a good answer that 0.35 would have withheld. A full match at average length is about 0.45,
+         * so 0.20 admits a two-of-three match and still refuses a one-term coincidence.
+         */
+        threshold: z.number().default(0.2),
+        /** Total tokens across injected passages. Outside the workspace cap — this tier is retrieved. */
+        budget: z.number().int().positive().default(600),
+        /**
+         * Index the person's messages and the agent's replies as well as the notes.
+         *
+         * **Tool observations are never indexed, at any setting.** That is where untrusted text lives —
+         * a fetched page, a provider result — and indexing it would make prompt injection *durable*:
+         * text a stranger wrote, retrieved into slot 7 in a later session, long after the write gate
+         * that fenced it stopped applying. `ChatMessage.origin` is what makes the distinction reliable,
+         * since under a text dialect an observation comes back as a `user` message and the role does
+         * not say.
+         */
         includeHistory: z.boolean().default(true),
     })
     .strict()

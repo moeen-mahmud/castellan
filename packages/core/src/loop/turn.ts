@@ -72,6 +72,16 @@ export interface ToolRuntime {
     /** Where `memory_write` lands, resolved from the workspace at load. Absent means no workspace
      * declared anywhere writable, and the tool falls back to the agent's own directory. */
     readonly writeTarget?: WorkspaceWriteTarget
+    /**
+     * Where eviction files older notes: `memory.dir`, resolved. Forwarded to `ToolContext.memoryDir`.
+     *
+     * Declared here rather than only on the context because this object is built with conditional
+     * spreads, so an undeclared property is **not** excess-property-checked — it type-checks, lands
+     * nowhere, and `memory_write` silently degrades to appending without eviction. That is the fifth
+     * time this exact shape has cost a debugging round in this repo (`apiKeyEnv`,
+     * `ChatMessage.toolCalls`, `TurnInput.skills`, `ToolContext.readArtifact`), and it cost one here.
+     */
+    readonly memoryDir?: string
     readonly observationMaxTokens: number
     /**
      * What to do when untrusted content is in the turn and the model asks for a mutating tool.
@@ -119,6 +129,15 @@ export interface TurnInput {
      * `tools` are layered onto the registry for the duration of the turn and are **never** rendered into
      * slot 1, which is built once at load and must stay byte-identical.
      */
+    /**
+     * Retrieved memory passages, `SLOT.memory`. Selected by the caller *per turn*, for the same reason
+     * knowledge is: two steps of one turn must not argue from different remembered facts.
+     */
+    readonly memory?: readonly {
+        readonly source: string
+        readonly at: string
+        readonly text: string
+    }[]
     readonly skills?: readonly {
         readonly name: string
         readonly content: string
@@ -379,6 +398,9 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
                         : { configSummary: input.configSummary }),
                     ...(input.examples === undefined ? {} : { examples: input.examples }),
                     ...(input.volatile === undefined ? {} : { volatile: input.volatile }),
+                    ...(input.memory === undefined || input.memory.length === 0
+                        ? {}
+                        : { memory: input.memory }),
                     ...(input.knowledge === undefined || input.knowledge.length === 0
                         ? {}
                         : { knowledge: input.knowledge }),
@@ -646,6 +668,9 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
                               ...(tools.writeTarget === undefined
                                   ? {}
                                   : { writeTarget: tools.writeTarget }),
+                              ...(tools.memoryDir === undefined
+                                  ? {}
+                                  : { memoryDir: tools.memoryDir }),
                               // Wired from the compaction seam rather than from `tools`, because the
                               // artifact store and the compaction that fills it are one capability:
                               // an agent with a store but no thresholds has no pointers to follow,

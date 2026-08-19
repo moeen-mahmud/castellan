@@ -1942,27 +1942,58 @@ change.
 
 **Goal.** The agent remembers across sessions without an embedding model.
 
+**Two tiers, one writer.** `memory_write` appends to the *carried* file — the workspace write target,
+in the `volatile` tier, in slot 4 every turn — and when that file passes its budget the oldest notes
+move into `memory.dir`, which only retrieval reaches. Retrieval-only was the alternative and loses the
+near term: a fact saved a minute ago would be invisible next turn unless the query happened to match
+it, which is the "the model must choose to look" assumption decision 6.2 rejects for skills.
+
 **Deliverables**
 
-- `memory/retriever.ts` interface
-- `memory/fts5.ts` — FTS5 over memory markdown + message history, BM25 with recency boost
-- `memory/writer.ts` — real `memory_write` appending to `memory/YYYY-MM-DD.md`
-- Incremental index on write; rebuild on mtime mismatch
-- Context slot 4
-- `dispach memory search|rebuild` — table entry plus a plain writer, `--json` included
+- [x] `rank/bm25.ts` — the tokeniser, idf, summation and normalisation, **extracted** from
+  `skills/select.ts` so there is one scorer rather than two that look alike
+- [x] `memory/passages.ts` — markdown into passages; one list item, falling back to a heading section
+- [x] `memory/retriever.ts` — the seam, the multiplicative recency boost, and the three limits
+- [x] `memory/fts5.ts` — FTS5 as a **candidate filter**, scored by `rank/bm25.ts`; plus the indexer
+- [x] `memory/writer.ts` — append, then evict, then report. Implements `eviction: oldest`
+- [x] Incremental index: mtime + size + tokeniser version, reconciled per turn, `stat` without reading
+- [x] Context slot **7** (the plan said 4; 4 is the carried volatile tier, which is the other half)
+- [x] `dispach memory search|rebuild` — table entry plus a plain writer, `--json` included
+- [ ] `includeHistory` — indexing the person's and the agent's messages. Schema, spec and the refusal of
+  tool observations are in; the incremental hook at turn end is not
 
-**Files.** `packages/core/src/memory/`, migration **006** (005 is the artifact store)
+**Files.** `packages/core/src/memory/`, `packages/core/src/rank/`, `packages/core/src/ids.ts`,
+migration **006** (005 is the artifact store)
 
 **Acceptance**
 
-- [ ] Fact stated in session A is recalled in session B
-- [ ] `memory_write` produces valid dated markdown, human-readable and diffable
-- [ ] Index rebuild after external file edit
-- [ ] Retrieval under 20 ms over 5000 passages
-- [ ] Deleting a session leaves memory files untouched
-- [ ] Boot budget met with a 5000-passage index
-- [ ] Zero Python, zero model weights, zero network in the memory path
-- [ ] The retriever reuses Phase 3.5's ranking seam rather than building a second index
+- [x] Fact stated in session A is recalled in session B — `memory-turn.test.ts`, through the real loop:
+  saved in A, evicted to the archive by the budget, retrieved in B where the carried file no longer
+  holds it
+- [x] `memory_write` produces valid dated markdown, human-readable and diffable
+- [x] Index rebuild after external file edit — mtime *and* size, with `memory rebuild` for the edit that
+  preserves both
+- [x] Retrieval under 20 ms over 5000 passages — **median 0.43 ms, slowest 1.35 ms** (`evals/memory/`)
+- [x] Deleting a session leaves memory files untouched — structural: `memory_passages` has no session
+  column and no foreign key
+- [x] Boot budget met with a 5000-passage index — 76.6 ms median; an unchanged file is `stat`ed, never
+  read, which is why `IndexableFile.read` is lazy
+- [x] Zero Python, zero model weights, zero network in the memory path
+- [x] The retriever reuses Phase 3.5's ranking seam rather than building a second index — asserted, not
+  claimed: `memory-rank.test.ts` scores one corpus through `bm25Selector` and through `fts5Retriever`
+  and compares to **1e-12**
+
+**Found while building, and fixed.** `assembleContext` silently discarded a block whose slot was absent
+from its explicit ordering list, *after* charging it against the prompt budget — there is now an
+invariant that throws. `ToolRuntime` and `ToolContext` both take conditional spreads, so `memoryDir`
+type-checked onto the wrong one and landed nowhere: the fifth occurrence of that shape here.
+`eviction: oldest` was declared vocabulary nothing consumed, so ~200 saves took a freshly scaffolded
+agent to `workspace_budget_exceeded` and it would not boot. And the write target resolved to `USER.md`
+rather than `MEMORY.md`, so every saved note appended to a person's hand-written prose about themselves.
+
+**Known limitation, measured and accepted.** A query reducing to one informative term scores a rare
+match as highly as a relevant one, because idf cancels in the normalisation — 0.490 against a genuine
+0.394, so no threshold separates them (decision 5.38).
 
 **Non-goals.** Vectors. Reranking. Knowledge graphs.
 

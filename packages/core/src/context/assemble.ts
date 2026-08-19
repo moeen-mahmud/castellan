@@ -65,6 +65,24 @@ export interface AssembleInput {
      */
     readonly knowledge?: readonly { name: string; content: string }[]
     /**
+     * `SLOT.memory`: retrieved memory passages, already ranked, filtered and budgeted by the caller.
+     *
+     * **Not pinned**, like knowledge and for the same reason: this tier is retrieved per turn rather
+     * than carried, so compaction may drop it where it must never drop a workspace tier. A passage that
+     * must always hold belongs in the volatile tier, which is what the carried `MEMORY.md` is for.
+     *
+     * Framed rather than injected bare. The lesson is recorded for the volatile tier, which arrived as
+     * an unframed paragraph and produced an agent that had "Moeen is the person I work for" in its
+     * context and answered "each session starts fresh": **a fact with no frame is a fact a small model
+     * will not connect to a question.** Each passage carries where it came from and when it was learned,
+     * because "you told me in June" is a different claim from "you told me a minute ago".
+     */
+    readonly memory?: readonly {
+        readonly source: string
+        readonly at: string
+        readonly text: string
+    }[]
+    /**
      * Slot 9: the workspace's `reminder` tier, one or two re-asserted rules.
      *
      * Placed after the history rather than with the other pinned instruction blocks, because rule
@@ -175,6 +193,21 @@ export function assembleContext(input: AssembleInput): AssembledContext {
             block(SLOT.knowledge, "system", entry.content, false, `knowledge:${entry.name}`),
         )
     }
+    // Slot 7, retrieved: unpinned for the same reason knowledge is, and framed so the model can tell a
+    // remembered fact from an instruction. One block per passage, so compaction can drop the weakest
+    // rather than all of them.
+    for (const passage of input.memory ?? []) {
+        if (passage.text.trim() === "") continue
+        pinned.push(
+            block(
+                SLOT.memory,
+                "system",
+                `# Remembered\n\nFrom ${passage.source}, learned ${passage.at}:\n\n${passage.text}`,
+                false,
+                `memory:${passage.source}`,
+            ),
+        )
+    }
     if (input.reminder !== undefined && input.reminder.trim() !== "") {
         pinned.push(block(SLOT.reminder, "system", input.reminder, true, "workspace-reminder"))
     }
@@ -226,10 +259,29 @@ export function assembleContext(input: AssembleInput): AssembledContext {
         ...pinned.filter((b) => b.slot === SLOT.volatile),
         ...pinned.filter((b) => b.slot === SLOT.skill),
         ...pinned.filter((b) => b.slot === SLOT.knowledge),
+        ...pinned.filter((b) => b.slot === SLOT.memory),
         ...historyBlocks,
         ...pinned.filter((b) => b.slot === SLOT.reminder),
         ...pinned.filter((b) => b.slot === SLOT.input || b.slot === SLOT.error),
     ]
+
+    // Every block that was built must appear in the output, and this is a real defect it catches
+    // rather than a defensive flourish. The list above is an *explicit* slot ordering, so a new slot
+    // pushed into `pinned` but forgotten here is silently discarded — after being counted in
+    // `pinnedTokens`, which means it takes budget away from the history and produces no other symptom.
+    // `SLOT.memory` was exactly that for the length of one debugging round: the passage was retrieved,
+    // ranked, selected, charged for, and never sent.
+    if (blocks.length !== pinned.length + historyBlocks.length) {
+        const missing = pinned
+            .filter((b) => !blocks.includes(b))
+            .map((b) => `${b.label} (slot ${b.slot})`)
+        throw new Error(
+            `assembleContext built ${pinned.length + historyBlocks.length} blocks and emitted ` +
+                `${blocks.length}: ${missing.join(", ")} did not match any slot in the ordering. ` +
+                "hint: a slot added to SLOT and pushed into `pinned` must also be listed in the " +
+                "`blocks` array below, or it costs prompt budget and reaches nothing.",
+        )
+    }
 
     return {
         blocks,

@@ -158,6 +158,14 @@ export interface ToolContext {
      * `phase_set` refuses rather than reporting a move that did not happen.
      */
     readonly setPhase?: (to: string) => Promise<void>
+    /**
+     * Absolute path of the archive directory eviction writes to — `memory.dir`, resolved.
+     *
+     * Absent means the runtime has no memory configured, and `memory_write` then appends without
+     * evicting: the previous behaviour, which is honest about what it does rather than silently
+     * dropping notes on the floor because nowhere was configured to keep them.
+     */
+    readonly memoryDir?: string
 }
 
 /** What `artifact_read` needs to know about a displaced observation. Structural on purpose. */
@@ -185,6 +193,25 @@ export interface WorkspaceWriteTarget {
     readonly mode: "append" | "replace" | "refused"
     /** Set when `mode` is `refused`: the `editable` value that refused it. */
     readonly reason?: string
+    /**
+     * The file's effective token budget — its own `budget:` or its tier's.
+     *
+     * Carried because `memory_write` is what makes the file grow, so it is the only caller in a
+     * position to evict before the *next load* fails on it. The budget is a hard load failure, not a
+     * truncation, so a tool that appends without knowing the ceiling is a tool that can brick the agent.
+     */
+    readonly budget?: number
+    /**
+     * The file's `eviction:` declaration. **Eviction only runs when this is `oldest`.**
+     *
+     * Not a convenience — it is what stops the memory tool rewriting the wrong file. `writeTarget`
+     * resolves the first *writable* volatile file, and a workspace that lists `USER.md` before
+     * `MEMORY.md` therefore resolves to `USER.md`: hand-written prose about the person, with no
+     * `eviction` field and no intention of being trimmed. Evicting there would delete an author's
+     * sentences into a dated archive. `eviction: oldest` is the author saying "this file accumulates
+     * notes and may be trimmed", and nothing else grants that.
+     */
+    readonly eviction?: "oldest" | "none"
 }
 
 /** Returns the observation text the model will see. Throwing is a failed call, reported as one. */

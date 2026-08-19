@@ -31,6 +31,7 @@ import { finish, installGuards } from "#lib/exit"
 import { helpText } from "#lib/help"
 import { resolveAgentRef } from "#lib/sandbox"
 import { quietAcceptedWarnings } from "#lib/warnings"
+import { memoryCommand } from "#memory"
 import { runCommand } from "#run"
 import { serveCommand } from "#serve"
 import { sessionsCommand } from "#sessions"
@@ -161,6 +162,22 @@ async function dispatch(argv: readonly string[]): Promise<number> {
                 json: flags.bool("json"),
                 clear: flags.bool("clear"),
                 turns: flags.bool("turns"),
+            })
+        }
+
+        case "memory": {
+            const limit = flags.num("limit")
+            const store = flags.str("store")
+            return await memoryCommand({
+                // Positional 0 is the action, as for `soul` and `daemon` — so `resolved()` must not run
+                // here; the manifest is positional 1.
+                action: manifestPath,
+                manifestPath: resolveAgentRef(positionals[1] ?? ""),
+                ...(positionals[2] === undefined ? {} : { query: positionals[2] }),
+                ...(limit === undefined ? {} : { limit }),
+                ...(store === undefined ? {} : { store }),
+                all: flags.bool("all"),
+                json: flags.bool("json"),
             })
         }
 

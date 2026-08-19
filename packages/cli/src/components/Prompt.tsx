@@ -16,12 +16,12 @@
  * untouched by definition.
  */
 
-import { Box, Text } from "ink"
 import { LineCursor } from "#components/LineCursor"
 import { MAX_INPUT_ROWS, PROMPT } from "#lib/const"
 import type { PromptProps } from "#lib/schema"
 import { NEWLINE_HINT } from "#lib/session-commands"
 import { BORDER_STYLE, THEME } from "#lib/theme"
+import { Box, Text } from "ink"
 
 export function Prompt({ editor, busy, placeholder, roomy }: PromptProps) {
     const lines = editor.value.split("\n").length

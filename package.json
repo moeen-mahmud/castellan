@@ -32,7 +32,8 @@
         "eval:budget": "bun scripts/eval-budget.ts",
         "eval:phases": "bun scripts/eval-phases.ts",
         "mock": "bun scripts/mock-endpoint.ts",
-        "verify:endpoints": "bun scripts/verify-endpoints.ts"
+        "verify:endpoints": "bun scripts/verify-endpoints.ts",
+        "eval:memory": "bun scripts/eval-memory.ts"
     },
     "devDependencies": {
         "@biomejs/biome": "^2.3.11",

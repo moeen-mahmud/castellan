@@ -930,7 +930,10 @@ describe("App, the landing state", () => {
         const frame = harness.frame()
         harness.unmount()
         // Every command rather than six behind a counter: there is no conversation to hide behind the list.
+        // `LANDING_LIST_ROWS` tracks the table's size for exactly this reason, and `commands.test.ts`
+        // asserts the relationship so the next command added fails there rather than here.
         expect(frame.text).toContain("/help")
+        expect(frame.text).toContain("/memory")
         expect(frame.text).toContain("/daemon")
         expect(frame.text).not.toContain("below")
     })

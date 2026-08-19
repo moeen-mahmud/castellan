@@ -451,6 +451,95 @@ export interface ArtifactStore {
     list(agentId: string, sessionKey: string): Promise<readonly ArtifactRecord[]>
 }
 
+export interface MemoryPassageRecord {
+    /** Content-derived, printable ASCII. See `ids.ts`. */
+    readonly id: string
+    /** Path relative to the memory root, or `session:<key>`. */
+    readonly source: string
+    readonly heading?: string
+    /** Verbatim as authored. What slot 7 injects. */
+    readonly text: string
+    /** `rank/bm25.ts` terms(), space-joined — the indexed form, and what BM25 counts. */
+    readonly terms: string
+    /** Number of terms, so average document length is a SUM rather than a scan. */
+    readonly length: number
+    readonly at: string
+    readonly stamped: boolean
+    readonly tags: readonly string[]
+    /** Estimated cost of `text`, so the slot budget applies without re-estimating per turn. */
+    readonly tokens: number
+}
+
+/** What has been indexed for one source, and under which tokeniser. */
+export interface MemorySourceState {
+    readonly source: string
+    readonly mtimeMs: number
+    readonly size: number
+    /** `TOKENISER_VERSION` at index time. A mismatch means the terms on disk are stale. */
+    readonly tokeniser: number
+    readonly passages: number
+    readonly indexedAt: string
+}
+
+/** BM25's corpus statistics, per agent. */
+export interface MemoryCorpusStats {
+    readonly passages: number
+    readonly totalLength: number
+}
+
+/**
+ * The memory corpus. **Not scoped to a session, and that is structural.**
+ *
+ * Every other per-conversation table cascades from `sessions`; these rows do not reference one at all,
+ * which is what makes "deleting a session leaves memory untouched" a property of the schema rather than
+ * a promise. A memory is a fact about the person; which conversation carried it is an implementation
+ * detail of how it arrived.
+ *
+ * The store supplies *candidates and statistics*, never a score. Ranking is `memory/fts5.ts` using the
+ * shared BM25 in `rank/bm25.ts`, for the reason migration 6 records: FTS5's own `bm25()` computes its
+ * statistics over the whole table, and one sandbox root has one store shared by every agent in it — so
+ * a corpus-wide average document length would make one agent's scores move when an unrelated agent
+ * saved a note.
+ */
+export interface MemoryStore {
+    /**
+     * Replace everything indexed for one source, in one transaction.
+     *
+     * Wholesale rather than incremental because a markdown file has no stable identity per line: an
+     * edit three passages up renumbers nothing and changes nothing about the others, but working that
+     * out is more expensive and more fragile than re-splitting a file that is measured in kilobytes.
+     * Content-derived ids make the re-insert idempotent, so an unchanged passage keeps its row.
+     */
+    replaceSource(
+        agentId: string,
+        source: string,
+        passages: readonly MemoryPassageRecord[],
+        state: Omit<MemorySourceState, "source" | "passages" | "indexedAt">,
+        now: string,
+    ): Promise<void>
+    /** Every source currently indexed, so a caller can spot a changed, vanished or stale-tokenised one. */
+    sources(agentId: string): Promise<readonly MemorySourceState[]>
+    /** Forget one source: its passages and its state. For a file that has been deleted. */
+    dropSource(agentId: string, source: string): Promise<void>
+    /** Forget everything for this agent. What `memory rebuild` does before re-reading the files. */
+    clear(agentId: string): Promise<void>
+    stats(agentId: string): Promise<MemoryCorpusStats>
+    /** Document frequency per term, within this agent's corpus. */
+    frequencies(agentId: string, terms: readonly string[]): Promise<Map<string, number>>
+    /**
+     * Passages containing at least one of `terms`, bounded by `limit`.
+     *
+     * Ordered by FTS5's own `bm25()` — which is the one legitimate use for it here. It is approximately
+     * the right ranking, and it is only being asked to decide *which* rows are worth scoring properly,
+     * so its corpus-wide statistics cost nothing. The caller re-scores what comes back.
+     */
+    candidates(
+        agentId: string,
+        terms: readonly string[],
+        limit: number,
+    ): Promise<readonly MemoryPassageRecord[]>
+}
+
 export interface Store {
     readonly sessions: SessionStore
     readonly messages: MessageStore
@@ -459,6 +548,7 @@ export interface Store {
     readonly leases: LeaseStore
     readonly kv: KVStore
     readonly artifacts: ArtifactStore
+    readonly memory: MemoryStore
     /** Human-readable location, for `store.ready` and the `sessions` command. */
     readonly location: string
     close(): Promise<void>

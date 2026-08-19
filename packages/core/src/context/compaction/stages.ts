@@ -36,6 +36,7 @@
  * trim with nothing explaining why.
  */
 
+import { derivedId } from "../../ids.ts"
 import type { ChatMessage } from "../../model/provider.ts"
 import { estimateMessageTokens, estimateTokens } from "../tokens.ts"
 
@@ -86,26 +87,9 @@ export interface StageInput {
 
 const NO_DISPLACEMENTS: ReadonlyMap<number, Displaced> = new Map()
 
-/**
- * FNV-1a, 32-bit, written out rather than imported.
- *
- * `Bun.hash` is not available under Node and `node:crypto` would be a needless import on a hot path
- * for a value that is an identity, not a security claim. Written here so the id is byte-identical
- * under both runtimes — a store key that differs per runtime would make an artifact unreadable on the
- * other one, which is exactly the class of failure `sqlite/driver.ts` documents.
- */
-function fnv1a(text: string): string {
-    let hash = 0x811c9dc5
-    for (let i = 0; i < text.length; i += 1) {
-        hash ^= text.charCodeAt(i)
-        hash = Math.imul(hash, 0x01000193) >>> 0
-    }
-    return hash.toString(16).padStart(8, "0")
-}
-
 /** `obs_<len>_<hash>`. Length is in the id so two hash collisions still have to agree on size. */
 export function displacedId(content: string): string {
-    return `obs_${content.length.toString(36)}_${fnv1a(content)}`
+    return derivedId("obs", content)
 }
 
 /** What a message costs, matching `assembleContext`'s accounting including tool-call arguments. */

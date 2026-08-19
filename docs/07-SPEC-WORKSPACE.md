@@ -98,11 +98,31 @@ mitigation for persona drift.
 
 Only the `volatile` tier is writable, and a `static` or `reminder` file declaring otherwise is
 refused at load rather than quietly downgraded. `memory_write` takes no file argument: the runtime
-resolves one write target — the first `volatile` file whose frontmatter allows a write, in declared
-order — because choosing a file would be a second decision on every save, and a second decision is
-the two-hop shape small models fail. A workspace whose volatile files are all `editable: none` is a
-refusal with a name in it, not a fall-through to the default note file: a save the model believes
-succeeded, landing somewhere the agent's own context never reads, is worse than a failed call.
+resolves one write target, because choosing a file would be a second decision on every save, and a
+second decision is the two-hop shape small models fail. A workspace whose volatile files are all
+`editable: none` is a refusal with a name in it, not a fall-through to the default note file: a save
+the model believes succeeded, landing somewhere the agent's own context never reads, is worse than a
+failed call.
+
+**Resolution order — `eviction: oldest` first, then declared order.** A writable `volatile` file
+declaring `eviction: oldest` wins; otherwise the first writable one in declared order does. The
+declaration is the author saying *this file accumulates notes and may be trimmed*, which is exactly
+the statement a write target needs, so it costs no new field.
+
+The plain rule was declared order alone, and it was wrong in the configuration `init` generates.
+That workspace lists `USER.md` before `MEMORY.md` and makes both writable, so every saved note
+appended to the hand-written description of the person — which has a 1,500-token budget, no
+`eviction` declaration, and no intention of being trimmed. It grew until the workspace budget failed
+the load, while `MEMORY.md`, the file that exists for notes and says how to trim them, was never
+written to at all.
+
+**Eviction only runs on a file declaring it.** Where the target has `eviction: oldest`, appending
+past its budget moves the oldest entries into `memory.dir` (see `02-SPEC-MANIFEST.md`) and reports
+how many and where. Where it does not, the note is still appended and the observation says the file
+is now over budget and by how much — because the thing that fails is the *next load*, by which point
+nobody is reading that observation. Nothing is ever evicted from a file whose author did not ask for
+it: frontmatter, HTML comments, headings and prose stay at their original bytes, and only top-level
+list items are eligible to move.
 
 ---
 

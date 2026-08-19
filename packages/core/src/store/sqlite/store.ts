@@ -22,6 +22,9 @@ import type {
     LeaseClaim,
     LeaseRecord,
     LeaseStore,
+    MemoryPassageRecord,
+    MemorySourceState,
+    MemoryStore,
     MessagePage,
     MessageStore,
     OutboxStore,
@@ -104,6 +107,28 @@ function toolCallsFrom(raw: string | null): readonly ToolCallRequest[] | undefin
     } catch {
         return undefined
     }
+}
+
+interface MemoryPassageRow {
+    id: string
+    source: string
+    heading: string | null
+    text: string
+    terms: string
+    length: number
+    at: string
+    stamped: number
+    tags: string
+    tokens: number
+}
+
+interface MemorySourceRow {
+    source: string
+    mtime_ms: number
+    size: number
+    tokeniser: number
+    passages: number
+    indexed_at: string
 }
 
 interface ArtifactRow {
@@ -224,6 +249,49 @@ function toChatMessage(row: MessageRow): ChatMessage {
     }
 }
 
+function toMemoryPassage(row: MemoryPassageRow): MemoryPassageRecord {
+    return {
+        id: row.id,
+        source: row.source,
+        ...(row.heading === null ? {} : { heading: row.heading }),
+        text: row.text,
+        terms: row.terms,
+        length: row.length,
+        at: row.at,
+        stamped: row.stamped === 1,
+        // An empty `tags` column must produce no tags, not one empty tag — `"".split(",")` is `[""]`,
+        // which would render as `_()_` and score as a term.
+        tags: row.tags === "" ? [] : row.tags.split(","),
+        tokens: row.tokens,
+    }
+}
+
+function toMemorySource(row: MemorySourceRow): MemorySourceState {
+    return {
+        source: row.source,
+        mtimeMs: row.mtime_ms,
+        size: row.size,
+        tokeniser: row.tokeniser,
+        passages: row.passages,
+        indexedAt: row.indexed_at,
+    }
+}
+
+/**
+ * Terms → one FTS5 MATCH expression, OR-joined.
+ *
+ * **Every term is double-quoted, and that is not decoration.** FTS5's query language reserves `AND`,
+ * `OR`, `NOT` and `NEAR`; the first three are in `STOPWORDS` and never reach here, but `near` is an
+ * ordinary English word that `terms()` passes through, and unquoted it is a syntax error rather than a
+ * search. Quoting makes every term a string literal, so the expression cannot be anything but a query.
+ *
+ * OR rather than the default AND: BM25 scores partial matches, and requiring every term would turn a
+ * five-word question into a demand that one passage contain all five.
+ */
+function matchExpression(terms: readonly string[]): string {
+    return terms.map((term) => `"${term}"`).join(" OR ")
+}
+
 function toArtifact(row: ArtifactRow): ArtifactRecord {
     return {
         id: row.id,
@@ -313,6 +381,7 @@ export class SqliteStore implements Store {
     readonly leases: LeaseStore
     readonly kv: KVStore
     readonly artifacts: ArtifactStore
+    readonly memory: MemoryStore
     readonly location: string
     /** What `migrate` did at open. Reported by boot rather than logged and forgotten. */
     readonly migrations: MigrationReport
@@ -382,6 +451,70 @@ export class SqliteStore implements Store {
             artifactList: db.prepare(
                 `SELECT id, session_key, slug, content, tokens, created_at FROM artifacts
                   WHERE agent_id = ? AND session_key = ? ORDER BY created_at DESC, id DESC`,
+            ),
+            memoryPut: db.prepare(
+                // The update path exists for a passage that has *moved*: eviction carries a note out
+                // of the carried file into an archive, and because the id is derived from the text the
+                // row is the same row with a new `source`. Without DO UPDATE the insert would be
+                // ignored and the passage would still claim to live in a file it has left.
+                `INSERT INTO memory_passages
+                     (agent_id, id, source, heading, text, terms, length, at, stamped, tags, tokens,
+                      indexed_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 ON CONFLICT (agent_id, id) DO UPDATE SET
+                     source = excluded.source,
+                     heading = excluded.heading,
+                     text = excluded.text,
+                     terms = excluded.terms,
+                     length = excluded.length,
+                     at = excluded.at,
+                     stamped = excluded.stamped,
+                     tags = excluded.tags,
+                     tokens = excluded.tokens,
+                     indexed_at = excluded.indexed_at`,
+            ),
+            memoryDeleteSource: db.prepare(
+                "DELETE FROM memory_passages WHERE agent_id = ? AND source = ?",
+            ),
+            memoryDeleteAll: db.prepare("DELETE FROM memory_passages WHERE agent_id = ?"),
+            memorySourcePut: db.prepare(
+                `INSERT INTO memory_sources
+                     (agent_id, source, mtime_ms, size, tokeniser, passages, indexed_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)
+                 ON CONFLICT (agent_id, source) DO UPDATE SET
+                     mtime_ms = excluded.mtime_ms,
+                     size = excluded.size,
+                     tokeniser = excluded.tokeniser,
+                     passages = excluded.passages,
+                     indexed_at = excluded.indexed_at`,
+            ),
+            memorySourceDelete: db.prepare(
+                "DELETE FROM memory_sources WHERE agent_id = ? AND source = ?",
+            ),
+            memorySourceDeleteAll: db.prepare("DELETE FROM memory_sources WHERE agent_id = ?"),
+            memorySources: db.prepare(
+                `SELECT source, mtime_ms, size, tokeniser, passages, indexed_at
+                   FROM memory_sources WHERE agent_id = ? ORDER BY source ASC`,
+            ),
+            memoryStats: db.prepare(
+                `SELECT count(*) AS passages, coalesce(sum(length), 0) AS total_length
+                   FROM memory_passages WHERE agent_id = ?`,
+            ),
+            // One term per call. The whole MATCH expression is a single bound parameter, so this stays
+            // a cached statement rather than being rebuilt per query.
+            memoryDf: db.prepare(
+                `SELECT count(*) AS df FROM memory_fts f
+                   JOIN memory_passages p ON p.rowid = f.rowid
+                  WHERE memory_fts MATCH ? AND p.agent_id = ?`,
+            ),
+            memoryCandidates: db.prepare(
+                `SELECT p.id, p.source, p.heading, p.text, p.terms, p.length, p.at, p.stamped,
+                        p.tags, p.tokens
+                   FROM memory_fts f
+                   JOIN memory_passages p ON p.rowid = f.rowid
+                  WHERE memory_fts MATCH ? AND p.agent_id = ?
+                  ORDER BY bm25(memory_fts)
+                  LIMIT ?`,
             ),
             historyAll: db.prepare(
                 `SELECT ${MESSAGE_COLUMNS} FROM messages
@@ -985,6 +1118,78 @@ export class SqliteStore implements Store {
             },
             list: async (agentId, sessionKey) =>
                 q.artifactList.all<ArtifactRow>(agentId, sessionKey).map(toArtifact),
+        }
+        this.memory = {
+            replaceSource: async (agentId, source, passages, state, now) => {
+                // One transaction, and the delete comes first so a source that lost passages loses
+                // their rows. A passage that moved to another source is *not* caught by this delete —
+                // the upsert has already changed its `source` — which is the behaviour wanted: the row
+                // follows the text, and eviction is exactly that move.
+                this.#db.transaction(() => {
+                    q.memoryDeleteSource.run(agentId, source)
+                    for (const passage of passages) {
+                        q.memoryPut.run(
+                            agentId,
+                            passage.id,
+                            passage.source,
+                            passage.heading ?? null,
+                            passage.text,
+                            passage.terms,
+                            passage.length,
+                            passage.at,
+                            passage.stamped ? 1 : 0,
+                            passage.tags.join(","),
+                            passage.tokens,
+                            now,
+                        )
+                    }
+                    q.memorySourcePut.run(
+                        agentId,
+                        source,
+                        state.mtimeMs,
+                        state.size,
+                        state.tokeniser,
+                        passages.length,
+                        now,
+                    )
+                })
+            },
+            sources: async (agentId) =>
+                q.memorySources.all<MemorySourceRow>(agentId).map(toMemorySource),
+            dropSource: async (agentId, source) => {
+                this.#db.transaction(() => {
+                    q.memoryDeleteSource.run(agentId, source)
+                    q.memorySourceDelete.run(agentId, source)
+                })
+            },
+            clear: async (agentId) => {
+                this.#db.transaction(() => {
+                    q.memoryDeleteAll.run(agentId)
+                    q.memorySourceDeleteAll.run(agentId)
+                })
+            },
+            stats: async (agentId) => {
+                const row = q.memoryStats.get<{ passages: number; total_length: number }>(agentId)
+                return {
+                    passages: row?.passages ?? 0,
+                    totalLength: row?.total_length ?? 0,
+                }
+            },
+            frequencies: async (agentId, terms) => {
+                const out = new Map<string, number>()
+                for (const term of terms) {
+                    if (out.has(term)) continue
+                    const row = q.memoryDf.get<{ df: number }>(matchExpression([term]), agentId)
+                    out.set(term, row?.df ?? 0)
+                }
+                return out
+            },
+            candidates: async (agentId, terms, limit) => {
+                if (terms.length === 0 || limit <= 0) return []
+                return q.memoryCandidates
+                    .all<MemoryPassageRow>(matchExpression(terms), agentId, limit)
+                    .map(toMemoryPassage)
+            },
         }
     }
 

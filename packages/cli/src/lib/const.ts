@@ -125,11 +125,16 @@ export const MIN_BODY_ROWS = 3
  *
  * Deliberately larger than `SEARCH_ROWS`, which is tuned for a live conversation where every row of list is a
  * row of conversation hidden. There is no conversation yet on the landing screen and its whole job is
- * discovery: showing six of fourteen commands behind a `… 8 below` is the wrong trade on the screen somebody
+ * discovery: showing six of fifteen commands behind a `… 9 below` is the wrong trade on the screen somebody
  * opens before they know what the commands are. The brand mark gives up a tier to pay for it, which the tier
  * ladder already knows how to do.
+ *
+ * **This tracks the size of the in-session command table**, so a phase that adds a command has to raise it —
+ * which is why `commands.test.ts` asserts the relationship rather than leaving it to whoever notices the
+ * `… 1 below`. It is not derived from `COMMANDS` directly because `commands.ts` reads this module, and the
+ * cycle would cost more than the assertion does.
  */
-export const LANDING_LIST_ROWS = 14
+export const LANDING_LIST_ROWS = 15
 
 /**
  * Rows of conversation the landing screen keeps, whatever the brand mark would like.

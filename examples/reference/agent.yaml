@@ -110,7 +110,10 @@ context:
     - AGENTS.md
 
   # Tier 1 — slot 3, AFTER the breakpoint, so a memory write leaves the cached prefix untouched.
-  # `memory_write` lands in the first file here whose frontmatter allows it.
+  # `memory_write` lands in whichever file here declares `eviction: oldest`, falling back to the
+  # first writable one in declared order. The declaration is what names the target: USER.md is
+  # writable and comes first, but it is a person's prose with no intention of being trimmed, and
+  # under plain declared order every saved note went there until it burst its own budget.
   # volatile:
   #   - USER.md
   #   - MEMORY.md
@@ -383,13 +386,30 @@ knowledge:
   budget: 600
 
 # ── Phase 6: memory ───────────────────────────────────────────────────────────────────────
-# FTS5 over memory markdown plus message history. No embedding model, no network.
+# Two tiers, one writer. `memory_write` appends to the *carried* file — the workspace write target,
+# in the volatile tier, present in slot 4 every turn — and when that file passes its budget the
+# oldest notes move into `dir`, where only retrieval reaches them. So a fact said a minute ago is
+# still carried, one from June is found by searching, and nothing is deleted at either step.
 #
-# memory:
-#   retriever: fts5
-#   dir: ./memory
-#   k: 6
-#   includeHistory: true
+# FTS5 over the notes, no embedding model and no network. The index is a *candidate filter*: scoring
+# is the same BM25 `skills` uses, which is why `threshold` here and `skills.threshold` are on one
+# comparable scale. Omit the whole block to switch memory off; `memory: {}` is enough to turn it on.
+memory:
+  retriever: fts5
+  # Relative to this file. Monthly `YYYY-MM.md`, written by eviction, read by retrieval.
+  dir: ./memory
+  # Passages injected into slot 7 in one turn. 0 keeps `memory search` working with no injection.
+  maxActive: 3
+  # LOWER than skills' 0.35 on purpose: a wrong skill displaces the right one, an extra remembered
+  # note costs ~20 tokens. Measured — a note matching two of a query's three informative terms
+  # scores 0.284, which 0.35 would withhold and which is a good answer.
+  threshold: 0.2
+  # Total across injected passages. Outside the workspace cap: this tier is retrieved, not carried.
+  budget: 600
+  # Index the person's messages and the agent's replies too. Tool observations are NEVER indexed at
+  # any setting — that is where untrusted text lives, and indexing it would make an injection
+  # durable across sessions, long after the write gate that fenced it stopped applying.
+  includeHistory: true
 
 # ── Phase 4: channels, delivery, and the HTTP server ──────────────────────────────────────
 # `allowFrom` is **inbound-only**, and omitting it permits nobody. It confers nothing on outbound

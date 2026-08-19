@@ -1261,3 +1261,68 @@ Never claim a performance property without a number in `evals/` and a script to 
   the display name to `dispach`, both of which the script's `/CASTELLAN/g` and title-case
   substitutions get right — and it left the etymology epigraph reading "a dispach holds and governs a
   keep", which no substitution can fix because it was a sentence about the *old* word's meaning.
+- **A block whose slot is missing from `assembleContext`'s ordering list is built, charged for, and
+  thrown away.** The output is composed from explicit `pinned.filter(b => b.slot === SLOT.x)` lines, so
+  a new slot pushed into `pinned` but forgotten there costs prompt budget — it is counted in
+  `pinnedTokens`, which takes room from the history — and reaches the model never. `SLOT.memory` was
+  exactly that for a debugging round: retrieved, ranked, selected, billed, never sent, with slightly
+  less history as the only symptom. There is now an invariant that throws naming the orphaned block.
+- **`ToolRuntime` and `ToolContext` are both built with conditional spreads, so a field on the wrong
+  one type-checks and lands nowhere.** `memoryDir` was declared on `ToolContext`, set on the
+  *`ToolRuntime`* literal in `agent.ts`, and silently dropped — `memory_write` degraded to appending
+  without eviction, with no error anywhere. That is the **fifth** time this shape has cost a round here
+  (`apiKeyEnv`, `ChatMessage.toolCalls`, `TurnInput.skills`, `ToolContext.readArtifact`), and the guard
+  is the same one every time: declare the field on every object that forwards it, and put one test at
+  the *far end* that reads the value out of the request body.
+- **`eviction: oldest` was declared vocabulary nothing consumed, and `memory_write` could brick the
+  agent.** The workspace budget is a hard load failure by design, so ~200 saves took a freshly
+  scaffolded agent to `workspace_budget_exceeded: MEMORY.md is 7843 tokens against its 2000-token
+  budget` — the tool the agent is told to use for remembering, used enough, stopped it starting.
+  Eviction moves **only top-level list items**; frontmatter, comments, headings and prose stay at their
+  original bytes. And it is **gated on the declaration**, because `writeTarget` resolves the first
+  writable `volatile` file and `init` lists `USER.md` first — without the gate, eviction would have
+  deleted an author's hand-written prose about themselves into a dated archive.
+- **The write target prefers a file declaring `eviction: oldest` over declared order, and the plain rule
+  was wrong on the generated workspace.** `USER.md` before `MEMORY.md`, both writable, so every saved
+  note went into the person's file — 1,500-token budget, no eviction, no intention of being trimmed —
+  while the notes file was never touched. Found by running the real command against a real agent rather
+  than by reading. The declaration *is* the author naming the target.
+- **A memory corpus of near-identical notes retrieves nothing, and that is `discriminating()` working.**
+  Any query term present in more than half the corpus is dropped as uninformative, so twelve notes that
+  all say "the deploy pipeline waits for a manual approval gate" have no informative vocabulary at all.
+  A test fixture hit this first and it read as "memory is broken". Corollary: **corpus composition
+  changes the normalisation** — the same query scored 0.284 with `USER.md` in the corpus and 0.404
+  without it, because a term's df decides whether it counts toward the denominator.
+- **FTS5 supplies candidates, never the score.** `bm25()` computes its statistics over the whole table
+  and one sandbox root has one store shared by every agent in it, so a corpus-wide average document
+  length would make one agent's scores move when an unrelated agent saved a note. Scoring in
+  `rank/bm25.ts` also makes FTS5's tokeniser irrelevant, which matters because `porter` stems
+  differently from `stem()` and no built-in tokeniser applies a stopword list — scoring through
+  `bm25()` would have made `skills.threshold` and `memory.threshold` two different floors wearing one
+  number. What is indexed is `terms()` output, so the indexed column is **derived**: `TOKENISER_VERSION`
+  is what turns a changed tokeniser into a rebuild instead of into silently worse retrieval.
+- **`syncFiles` reconciles rather than adds.** A source present in the index and absent from `files` is
+  dropped, so calling it with one file forgets every other source — correct for "here is the corpus",
+  catastrophic for "here is one more file". The first test written against it made exactly that mistake,
+  indexing five files one call at a time and finding four of them gone.
+- **Do not claim a score improvement without measuring it.** Stripping the ISO stamp out of the indexed
+  text looks like it must help — five junk terms beside six real ones — and it does not: every passage
+  carries a stamp, so removing them moves each document's length and the corpus average together, and
+  the measured change was **0.278 → 0.284**. The change is kept for the reasons that survive (a smaller
+  index, a `length` that means what it says), and the docstring says so, because a false number in a
+  comment outlives whoever guessed it.
+- **A fake model that decides "have I already acted this turn?" from the prompt must key on the input,
+  not on the tail.** `SLOT.input` is ordered *after* the history, so an observation is never the last
+  message; and an observation stays in the history forever, so "does the prompt contain OBSERVATION" is
+  true from the second turn onward. Both mistakes were made in one fixture and both presented as
+  "eviction does not work" rather than as a broken test.
+- **A memory query that reduces to *one* informative term scores a rare match as highly as the right
+  one, and no threshold separates them.** The normalisation divides by `Σ idf` over the terms it sums, so
+  with a single term idf cancels. Measured: "who won the 1998 world cup" reduces to `{1998}`, matches a
+  filler note containing that number once, and scores **0.490** — above the genuine two-of-three match
+  at **0.394**. Same shape as the skills collapse on `{the}` at 0.771, with the fix inverted: there the
+  culprit was a *common* term and a stopword list removed it; here it is a term the corpus holds **once**,
+  which idf calls maximally informative. Accepted because the cost differs by an order of magnitude — a
+  wrong skill displaces the right one, a wrong memory spends twenty tokens — and because a rule refusing
+  single-term queries would refuse "frankfurt?" too. Do not "fix" it with a constant; it is a property of
+  a normalised score.
