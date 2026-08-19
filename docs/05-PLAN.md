@@ -49,7 +49,7 @@ ability to review it.
       legs carry `continue-on-error`, so their steps were inspected individually rather than
       trusted from the job checkmark.
 - [x] `bun scripts/rename-brand.ts foo` renames throughout; `git diff` touches only `brand.ts` and `package.json` files — plus, once a second package existed, files carrying the derived `@<slug>/` import scope and `apiVersion`. See the note under Phase 1.
-- [x] Adding `import "@castellan/cli"` to core fails CI
+- [x] Adding `import "@dispach/cli"` to core fails CI
 
 **Non-goals.** Any runtime behaviour.
 
@@ -57,7 +57,7 @@ ability to review it.
 
 ## Phase 1 — Manifest, loop, model, CLI
 
-**Goal.** `castellan run agent.yaml` gives a working REPL against any OpenAI-compatible
+**Goal.** `dispach run agent.yaml` gives a working REPL against any OpenAI-compatible
 endpoint. No tools, no channels, no storage.
 
 **Deliverables**
@@ -72,18 +72,18 @@ endpoint. No tools, no channels, no storage.
 - `loop/turn.ts`, `loop/step.ts` — single step, no tools; abort support
 - `events/bus.ts` + types for turn/model events
 - `runtime/runtime.ts` — hosts N agents, boot sequence, `runtime.ready`
-- `packages/cli` — `castellan run <manifest>` interactive REPL, `castellan validate <manifest>`
+- `packages/cli` — `dispach run <manifest>` interactive REPL, `dispach validate <manifest>`
 
 **Files.** `packages/core/src/{manifest,model,context,loop,events,runtime}/`, `packages/cli/`
 
 **Acceptance**
 
-- [x] `castellan run examples/minimal/agent.yaml` reaches a prompt and answers, streaming tokens
+- [x] `dispach run examples/minimal/agent.yaml` reaches a prompt and answers, streaming tokens
 - [ ] Works against **three** endpoints unchanged: OpenAI, an Anthropic-compat base URL, and a local
       Ollama — `bun run verify:endpoints` reports **Ollama ok** (qwen3.5:9b, 11,817 ms) and DeepSeek ok
       on both models, from one unchanged manifest shape. OpenAI and Anthropic are still skipped for want
       of keys, and the script exits 1 rather than calling two of three a pass
-- [x] `castellan validate` on a manifest with a literal API key fails naming the field
+- [x] `dispach validate` on a manifest with a literal API key fails naming the field
 - [x] Missing `${ENV}` fails at load naming the variable — not later as an auth error
 - [x] Ctrl-C mid-stream cancels within 100 ms, no unhandled rejection — measured 4 ms via real SIGINT
 - [x] Unit tests: manifest validation (≥15 cases), SSE parsing incl. split frames and `[DONE]`, capability merge
@@ -118,7 +118,7 @@ endpoint. No tools, no channels, no storage.
 - Session resolution `{channel}:{peerId}[:{thread}]` and explicit keys
 - Turn records with status: `running` | `final` | `stopped` | `error`
 - In-memory buffer per running turn, replayable on attach
-- `castellan sessions` CLI
+- `dispach sessions` CLI
 
 **Files.** `packages/core/src/store/`, `loop/turn.ts` (persistence), `packages/cli/`
 
@@ -315,7 +315,7 @@ Phase 3 or later. Any change to `packages/core`.
 - [x] Parser unit tests: 47 cases across multi-block, missing END, wrong case, bullets, numbered
       lists, backticked slugs, embedded `>>>`, wrapping fences, CRLF, and repeated keys
 - [x] Composio path uses zero MCP transport — grep proves it: `packages/tools-composio` depends on
-      `@castellan/core` and nothing else, no `@modelcontextprotocol` import anywhere, no `EventSource`
+      `@dispach/core` and nothing else, no `@modelcontextprotocol` import anywhere, no `EventSource`
       and no `text/event-stream`. Every request goes through one injectable `fetch`, and a test asserts
       all three absences per source file rather than trusting them
 
@@ -515,7 +515,7 @@ Phase 3 is complete.
   now, memory_write"* — three correct slugs blamed, local tools offered as the alternative, and no
   mention of the actual cause. Only the provider knows the cache is empty, so it now throws
   `composio_cache_miss` naming the slugs, the cache path, and the warm command.
-- **`castellan tools <manifest> [--warm]` is a new command, and it had to be.** Without it the cache is
+- **`dispach tools <manifest> [--warm]` is a new command, and it had to be.** Without it the cache is
   unfillable: an empty cache fails the load, so the post-readiness refresh that would have populated it
   never runs. `--warm` therefore does not boot the runtime at all — it loads the manifest, constructs
   the provider, and fetches. It exits non-zero when a slug does not exist, since exiting 0 would let a
@@ -797,7 +797,7 @@ web — and third-party text cannot quietly drive any of it.
 
 **The correction that reshaped this phase.** It was first scoped as "untrusted content and web
 tools", on a reading of the README's "lives in messaging channels" as a scope limit. It is not one.
-Castellan is a harness, peer to OpenClaw, Hermes Agent and Claude Code, and a harness that cannot act
+Dispach is a harness, peer to OpenClaw, Hermes Agent and Claude Code, and a harness that cannot act
 on the user's machine is not one. Three things follow:
 
 1. The first-party tool surface **grows** to cover system work — shell and the file family.
@@ -808,7 +808,7 @@ on the user's machine is not one. Three things follow:
    a bad note; `exec` in the same picture is remote code execution by email.
 
 **The gap this owns.** Neither OpenClaw nor Hermes has taint tracking or a write gate — OpenClaw's
-issue proposing per-result trust tagging was closed as not planned. Castellan had it as a written
+issue proposing per-result trust tagging was closed as not planned. Dispach had it as a written
 decision (4.25–4.27) before it had the tools that make it urgent. Part A is the differentiator, not
 the catch-up.
 
@@ -1127,7 +1127,7 @@ swap, and the theme is one internal token set, not a theming system.
 
 **Acceptance**
 
-- [x] `CASTELLAN_HOME=<tmp> init --user … --name Milo --preset deepseek --yes` writes 10 files to
+- [x] `DISPACH_HOME=<tmp> init --user … --name Milo --preset deepseek --yes` writes 10 files to
   `<tmp>/agents/milo`, validates, and prints `run milo` — verified live
 - [x] `run milo`, `validate milo`, `workspace milo` resolve from any cwd; unknown names list
   candidates with a nearest-match hint — verified live
@@ -1177,7 +1177,7 @@ it than a test that kills the process at a chosen instruction. **Part B** is `ch
 - `packages/channel-telegram` — raw Bot API, long-poll and webhook, chunking at 4096, typing indicator
 - `packages/server` — every endpoint in `04-SPEC-WIRE.md` except schedules
 - SSE with heartbeat; WS endpoint
-- `castellan serve` — a `lib/commands.ts` entry plus a plain writer
+- `dispach serve` — a `lib/commands.ts` entry plus a plain writer
 
 **Files.** `packages/core/src/channels/`, `packages/channel-telegram/`, `packages/server/`
 
@@ -1412,16 +1412,16 @@ readable by one user and a system daemon runs as another. `daemon doctor`, healt
 - `SkillsSchema` gains `budget`; `skills` leaves `UNSUPPORTED_SECTIONS`
 - Skill template with when-not-to-use under `metadata`, the spec's own extension point, keyed from
   `BRAND.slug`. Warned by `validate`, never required at load
-- `castellan skills list|show|new|install|remove|validate` — table entry plus a plain writer, `--json`
+- `dispach skills list|show|new|install|remove|validate` — table entry plus a plain writer, `--json`
   included. `new` and `install` turn skills *on* for an agent that skipped them at `init`, writing the
   `skills:` block and creating the directory in one step, because either half alone fails the load
-- `castellan sources list|add|remove|update|search` — the repositories skills come from. Machine-level,
+- `dispach sources list|add|remove|update|search` — the repositories skills come from. Machine-level,
   so it takes no manifest; two built-in defaults compiled in; a page URL from the address bar is
   understood; search ranks with the same `bm25Selector` that decides activation
 - `init` asks about skills, because every capability the runtime has is a question in `init`
 - 3 example skills, one shipping a Python script
 
-`castellan workspace validate` belongs to Phase 3.5, not here: it validates workspace tiers and
+`dispach workspace validate` belongs to Phase 3.5, not here: it validates workspace tiers and
 budgets, which exist by then. Skills only add the when-not-to-use check to it.
 
 **Files.** `packages/core/src/skills/`, `packages/tools-system/` (the `ScriptRunner` implementation),
@@ -1460,7 +1460,7 @@ site, moved out of `lib/service.ts`)
       interpreter, on every load including a warm cache, since a machine can lose one between boots
 - [x] Adding a skill file and reloading picks it up without restart; an edited *body* takes effect on
       the next turn without even that, because bodies are read on activation
-- [x] `castellan skills validate` rejects a missing `description`; **warns** on a missing
+- [x] `dispach skills validate` rejects a missing `description`; **warns** on a missing
       when-not-to-use — and warns on five more things measurement or the spec justified: a scaffold
       still holding its own instructions, a description under 40 characters, one that never says
       *when*, one whose only distinguishing word is generic (the measured false-activation shape), a
@@ -1642,7 +1642,7 @@ elsewhere.
 ## Phase 5.5 — the TUI is the product
 
 Phase 5 shipped screens that are Ink and an *experience* that is not. Four of the five phases of
-`castellan skills` were plain text: the fetch printed to stdout before the mount, the result printed
+`dispach skills` were plain text: the fetch printed to stdout before the mount, the result printed
 after the unmount, and the width was measured once and frozen. Three of ~15 commands mounted Ink at
 all. And `ink-testing-library` had been a declared devDependency since Ink arrived, unused — so every
 `.tsx` was verified through its reducers only, which is a different claim from "the row is one line".
@@ -1949,7 +1949,7 @@ change.
 - `memory/writer.ts` — real `memory_write` appending to `memory/YYYY-MM-DD.md`
 - Incremental index on write; rebuild on mtime mismatch
 - Context slot 4
-- `castellan memory search|rebuild` — table entry plus a plain writer, `--json` included
+- `dispach memory search|rebuild` — table entry plus a plain writer, `--json` included
 
 **Files.** `packages/core/src/memory/`, migration **006** (005 is the artifact store)
 
@@ -1980,7 +1980,7 @@ change.
 - Write-time validation with specific errors
 - Isolated vs `shared:<key>` session modes
 - Manifest reconciliation: manifest owns manifest schedules; API-created ones untouched
-- Schedule endpoints; `castellan schedules` — table entry plus a plain writer
+- Schedule endpoints; `dispach schedules` — table entry plus a plain writer
 
 **Files.** `packages/core/src/schedule/`, `packages/server/`, `packages/cli/`
 
@@ -2011,15 +2011,15 @@ change.
 - **Refactor** telegram and composio into plugins using only the public API
 - `packages/channel-whatsapp` — Baileys, auth dir, QR, reconnect, credential wipe on `loggedOut`
 - Documented risk note in that package's README
-- `@castellan/core/testing` conformance suite
-- `castellan plugins list` — table entry plus a plain writer
+- `@dispach/core/testing` conformance suite
+- `dispach plugins list` — table entry plus a plain writer
 
 **Files.** `packages/core/src/plugins/`, `packages/channel-whatsapp/`, refactors
 
 **Acceptance**
 
 - [ ] Telegram and Composio use zero private core APIs — enforced by an export-surface test
-- [ ] A plugin with a mismatched `castellanApi` refuses to load naming both versions
+- [ ] A plugin with a mismatched `dispachApi` refuses to load naming both versions
 - [ ] Middleware ordering matches manifest order; a short-circuit returns a well-formed result
 - [ ] Retry middleware demonstrably retries a 429
 - [ ] Approval middleware blocks a mutating tool and the agent adapts rather than crashing
@@ -2090,7 +2090,7 @@ change.
 
 ## Phase 12 — VelaOps compat adapter
 
-**Goal.** A VelaOps agent container runs Castellan instead of OpenClaw, with `apps/engine`
+**Goal.** A VelaOps agent container runs Dispach instead of OpenClaw, with `apps/engine`
 unchanged.
 
 **Deliverables**
@@ -2106,7 +2106,7 @@ unchanged.
 
 **Acceptance**
 
-- [ ] A VelaOps agent container with `runtime: castellan` boots and serves chat with **zero** engine changes
+- [ ] A VelaOps agent container with `runtime: dispach` boots and serves chat with **zero** engine changes
 - [ ] Telegram and WhatsApp work through the existing wiring
 - [ ] `boot-progress.ts` renders the stepper correctly
 - [ ] Cron round-trips through the existing UI including all three kinds and disabled jobs

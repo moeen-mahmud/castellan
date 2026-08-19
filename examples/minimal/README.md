@@ -4,8 +4,8 @@ One model, one identity file, no tools and no channels. The smallest thing that 
 
 ```bash
 cp .env.example .env      # then fill in MODEL_* for one of the presets
-castellan validate ./agent.yaml
-castellan run ./agent.yaml
+dispach validate ./agent.yaml
+dispach run ./agent.yaml
 ```
 
 From a clone, before the CLI is installed:
@@ -55,19 +55,19 @@ including it in `baseUrl` is refused at load rather than producing a 404 later.
 
 ```bash
 # one turn, no REPL — useful in scripts and CI
-castellan run ./agent.yaml --input "what can you do?"
+dispach run ./agent.yaml --input "what can you do?"
 
 # machine-readable validation, including resolved capabilities
-castellan validate ./agent.yaml --json
+dispach validate ./agent.yaml --json
 
 # a reasoning model, with its chain of thought streamed separately from the reply
 MODEL_ID=deepseek-v4-pro MODEL_BASE_URL=https://api.deepseek.com/v1 \
-  castellan run ./agent.yaml --show-reasoning --input "which is heavier, 1kg of steel or 1kg of feathers?"
+  dispach run ./agent.yaml --show-reasoning --input "which is heavier, 1kg of steel or 1kg of feathers?"
 
 # a deliberately awkward local endpoint: split SSE frames, heartbeats, no trailing blank line
 bun scripts/mock-endpoint.ts
 MODEL_ID=mock MODEL_BASE_URL=http://localhost:8787/v1 MODEL_API_KEY=x \
-  castellan run ./agent.yaml --input "hello"
+  dispach run ./agent.yaml --input "hello"
 ```
 
 Ctrl-C during a reply cancels that turn and returns the prompt; Ctrl-C at an idle prompt exits.

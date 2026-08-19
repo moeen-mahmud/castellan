@@ -17,7 +17,7 @@ examples/*/memory/
 
 # runtime state directory. Named literally because gitignore has no way to read brand.ts —
 # `scripts/rename-brand.ts` reports this file as needing a manual edit after a rename.
-.castellan/
+.dispach/
 
 # local agent tooling state
 .remember/

@@ -6,19 +6,19 @@
  * a keyless endpoint. An empty-string slip here would generate agents that refuse to load.
  */
 
-import { describe, expect, test } from "bun:test"
-import { countRules, LOCAL_TOOL_SLUGS, parseWorkspaceFile, rulesBlocksOnly } from "@castellan/core"
 import {
     COMPOSIO_KEY_ENV,
     INIT_LOCAL_TOOL_SLUGS,
     type InitAnswers,
     nextQuestion,
-    PRESETS,
     planFiles,
+    PRESETS,
     SECRET_STEPS,
     slugify,
     validateAnswer,
 } from "#lib/init-flow"
+import { countRules, LOCAL_TOOL_SLUGS, parseWorkspaceFile, rulesBlocksOnly } from "@dispach/core"
+import { describe, expect, test } from "bun:test"
 
 const ANSWERS: InitAnswers = {
     user: "Moeen",

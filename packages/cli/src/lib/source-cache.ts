@@ -29,6 +29,9 @@
  * at all, rather than an empty repo that looks like a source with no skills in it.
  */
 
+import { cacheDir, cacheRoot, type SourceSpec } from "#lib/sources"
+import { spawnCaptureAsync } from "#lib/spawn"
+import { estimateTokens, HarnessError, parseSkillFile } from "@dispach/core"
 import {
     existsSync,
     mkdirSync,
@@ -40,9 +43,6 @@ import {
     writeFileSync,
 } from "node:fs"
 import { join, relative } from "node:path"
-import { estimateTokens, HarnessError, parseSkillFile } from "@castellan/core"
-import { cacheDir, cacheRoot, type SourceSpec } from "#lib/sources"
-import { spawnCaptureAsync } from "#lib/spawn"
 
 const SKILL_FILE = "SKILL.md"
 

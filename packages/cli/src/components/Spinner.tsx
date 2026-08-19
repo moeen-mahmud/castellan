@@ -7,9 +7,9 @@
  * completes in single-digit milliseconds and would only flash.
  */
 
+import { SPINNER_FRAMES, SPINNER_INTERVAL_MS, THEME } from "#lib/theme"
 import { Text } from "ink"
 import { useEffect, useState } from "react"
-import { SPINNER_FRAMES, SPINNER_INTERVAL_MS, THEME } from "#lib/theme"
 
 export interface SpinnerProps {
     readonly label: string

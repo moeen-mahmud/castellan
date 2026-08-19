@@ -3,12 +3,12 @@
  * requires credentials, and a broken agent is listed with its problem rather than hidden.
  */
 
+import { agentsDir, listAgents, resolveAgentRef, sandboxRoot, storePath } from "#lib/sandbox"
+import { BRAND, HarnessError } from "@dispach/core"
 import { describe, expect, test } from "bun:test"
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { BRAND, HarnessError } from "@castellan/core"
-import { agentsDir, listAgents, resolveAgentRef, sandboxRoot, storePath } from "#lib/sandbox"
 
 // Resolution is cwd-sensitive by design (the filesystem wins), so every test pins an empty cwd
 // rather than inheriting whatever happens to be in the repo checkout.

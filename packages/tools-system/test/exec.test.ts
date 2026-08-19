@@ -10,15 +10,15 @@
  * takes longer than a couple of seconds even on a loaded machine.
  */
 
+import { toolContext } from "@dispach/core"
 import { expect, test } from "bun:test"
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { toolContext } from "@castellan/core"
 import {
     DEFAULT_TIMEOUT_MS,
-    EXEC_SPEC,
     effectiveTimeout,
+    EXEC_SPEC,
     execHandler,
     MAX_TIMEOUT_MS,
 } from "../src/exec.ts"

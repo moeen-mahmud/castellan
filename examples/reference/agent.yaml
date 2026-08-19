@@ -10,7 +10,7 @@
 #
 # `docs/02-SPEC-MANIFEST.md` is the binding reference. This file is the worked copy.
 
-apiVersion: castellan/v1
+apiVersion: dispach/v1
 id: reference
 name: Milo (Reference Assistant)
 
@@ -194,7 +194,7 @@ tools:
   #
   # providers:
   #
-  #   # @castellan/tools-system — shell and files.
+  #   # @dispach/tools-system — shell and files.
   #   #
   #   # `exec` takes command, workdir, timeoutMs, pty and background. It takes no `env` argument on
   #   # purpose: a per-call environment map is invisible to the policy rules, which match the command
@@ -207,7 +207,7 @@ tools:
   #     protect:          # extra paths they refuse. Widening only — nothing removes a protection
   #       - "*.pem"
   #
-  #   # @castellan/tools-web — the public internet, read-only.
+  #   # @dispach/tools-web — the public internet, read-only.
   #   #
   #   # `web_search` returns results and needs a key; `web_fetch` returns one page as text and needs
   #   # nothing. Both are trust: untrusted — their output is text a stranger wrote, so it is delimited
@@ -222,7 +222,7 @@ tools:
   #     apiKeyEnv: TAVILY_API_KEY    # the variable's name, never the key
   #     maxBytes: 2000000            # stop reading a page here, mid-response, before extraction
   #
-  #   # @castellan/tools-composio — a remote catalogue, called over HTTP and never through MCP.
+  #   # @dispach/tools-composio — a remote catalogue, called over HTTP and never through MCP.
   #   #
   #   # Three meta tools resolve from this provider with no cache and no request, so an agent can
   #   # reach a new app without anyone opening a dashboard:
@@ -235,7 +235,7 @@ tools:
   #   # executes an arbitrary discovered slug: that would make every task two-hop, which is what
   #   # pinning at load exists to avoid.
   #   #
-  #   # A slug typed in by hand still needs `castellan tools ./agent.yaml --warm` first: resolution
+  #   # A slug typed in by hand still needs `dispach tools ./agent.yaml --warm` first: resolution
   #   # happens during boot where no network call is permitted, so an unwarmed slug fails the load.
   #   composio:
   #     apiKeyEnv: COMPOSIO_API_KEY
@@ -263,7 +263,7 @@ tools:
   #
   # NEITHER confinement binds `exec`: a shell carries its target inside a string no path check can
   # look inside. "Only inside workspace/" is a true statement only for an agent with no shell — which
-  # is what `castellan init --system write` generates. And no amount of SSRF checking in `web_fetch`
+  # is what `dispach init --system write` generates. And no amount of SSRF checking in `web_fetch`
   # changes what a policy that allows `exec` allows: `curl` is in there too.
 
   # ── tools.search is about finding a TOOL, not searching the web ──
@@ -399,7 +399,7 @@ knowledge:
 #
 # Channels connect **after** `runtime.ready`, never before, and a channel that cannot connect never
 # blocks readiness: it reports `agent.channel.error` and the process keeps serving. Only
-# `castellan serve` starts them — `run` builds the same runtime with them switched off.
+# `dispach serve` starts them — `run` builds the same runtime with them switched off.
 # `enabled: false` here only so this file stays runnable with no bot token — a *disabled* channel
 # is never constructed, so its factory never asks for one. Set TELEGRAM_BOT_TOKEN and flip it.
 channels:
@@ -414,7 +414,7 @@ channels:
   # WhatsApp is Phase 4's non-goal — the type is not registered, so this would fail at load.
   # - type: whatsapp
   #   id: wa
-  #   authDir: ./.castellan/wa-auth
+  #   authDir: ./.dispach/wa-auth
 
 # A delivery target names a channel's **id**, not its type. Checked at load rather than at the
 # first scheduled run, which is otherwise where it surfaces.
@@ -427,7 +427,7 @@ server:
   enabled: true
   host: 127.0.0.1                  # a non-loopback bind refuses to start without a token
   port: 7420
-  tokenEnv: CASTELLAN_API_TOKEN
+  tokenEnv: DISPACH_API_TOKEN
 
 # ── Phase 8: schedules ────────────────────────────────────────────────────────────────────
 # Validated at write time rather than fire time. `deliver` is required — `{channel,to}` or the
@@ -448,6 +448,6 @@ server:
 # at runtime.
 #
 # plugins:
-#   - "@castellan/channel-telegram"
+#   - "@dispach/channel-telegram"
 #   - spec: "./plugins/custom-metrics"
 #     config: { endpoint: "http://localhost:9090" }

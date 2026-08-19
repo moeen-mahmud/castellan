@@ -1,12 +1,12 @@
-# Castellan
+# Dispach
 
 A lightweight, model-agnostic AI agent runtime.
 
-Castellan turns a stateless OpenAI-compatible `/chat/completions` endpoint into an agent that
+Dispach turns a stateless OpenAI-compatible `/chat/completions` endpoint into an agent that
 lives in messaging channels, uses tools, remembers, runs on a schedule, and delegates to
 other agents. Bun-first TypeScript, Apache-2.0.
 
-> A castellan holds and governs a keep on behalf of its lord — commands the garrison,
+> A dispach holds and governs a keep on behalf of its lord — commands the garrison,
 > controls the gate, keeps the place running when nobody is watching.
 
 ## Status
@@ -24,7 +24,7 @@ An agent harness is a runtime layer with four necessary and sufficient elements:
 3. **Context management** — assembly, budgeting, progressive compaction
 4. **Control mechanisms** — phases, limits, cancellation, scheduling
 
-Anything outside those four is a plugin, not core. Castellan is not an orchestration graph,
+Anything outside those four is a plugin, not core. dispach is not an orchestration graph,
 a workflow engine, a RAG pipeline, a vector database, or a model gateway.
 
 ## Design commitments
@@ -52,9 +52,9 @@ Full rationale for every decision, including the negative ones, is in `docs/00-D
 ## Quickstart
 
 ```bash
-castellan init          # an interactive wizard: your name, the agent's name, an endpoint
-castellan run milo      # agents live in ~/.castellan/agents — run them by name, from anywhere
-castellan run           # or just this: picks from your agents, or walks you through creating one
+dispach init          # an interactive wizard: your name, the agent's name, an endpoint
+dispach run milo      # agents live in ~/.dispach/agents — run them by name, from anywhere
+dispach run           # or just this: picks from your agents, or walks you through creating one
 ```
 
 `init` writes a complete starter agent — a reference-style manifest, a SOUL.md identity pair, an
@@ -75,18 +75,18 @@ the two would fight over your bot.
 `serve` still dies with its terminal. On macOS:
 
 ```bash
-castellan daemon install milo   # checks it will boot, then installs a LaunchAgent
-castellan daemon status         # running? how many restarts? why did it stop?
-castellan daemon restart milo   # after editing agent.yaml or .env
-castellan daemon logs milo
+dispach daemon install milo   # checks it will boot, then installs a LaunchAgent
+dispach daemon status         # running? how many restarts? why did it stop?
+dispach daemon restart milo   # after editing agent.yaml or .env
+dispach daemon logs milo
 ```
 
 If you want everything off — services *and* a `serve` you left in a tab three days ago — there is
 one switch that needs to know nothing:
 
 ```bash
-castellan stop            # every agent; --dry-run lists what it would stop first
-castellan stop milo       # or just one
+dispach stop            # every agent; --dry-run lists what it would stop first
+dispach stop milo       # or just one
 ```
 
 It asks each process to stop rather than killing it, because the graceful path is the only one that
@@ -128,7 +128,7 @@ Requires Bun. Node 22+ is supported as a soft goal, tested in CI, never a merge 
 
 Process start → `runtime.ready` in under **1000 ms**, enforced in CI at 1200 ms.
 
-_Measured number and reproduction steps land in Phase 11, alongside `scripts/bench-boot.ts`._
+*Measured number and reproduction steps land in Phase 11, alongside `scripts/bench-boot.ts`.*
 
 ## Rebranding
 
@@ -143,7 +143,7 @@ bun scripts/rename-brand.ts acme --dry
 
 Stated plainly, because the alternative is someone assuming otherwise:
 
-> Castellan plugins run in-process with full privileges. The `permissions` block is
+> Dispach plugins run in-process with full privileges. The `permissions` block is
 > documentation, not a sandbox. Install plugins you trust, the same way you treat any npm
 > dependency. Real isolation requires separate processes or V8 isolates, both of which cost
 > the startup time and simplicity this project exists to preserve. If you need to run

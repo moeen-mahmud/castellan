@@ -16,7 +16,6 @@
  * to prevent.
  */
 
-import { bm25Selector, HarnessError, nearest, type ScoredSkill, type Skill } from "@castellan/core"
 import { EXIT_FAILURE, EXIT_OK } from "#lib/const"
 import { bullet, indent, keyValue, section } from "#lib/render"
 import {
@@ -37,6 +36,7 @@ import {
     removeSource,
     type SourceSpec,
 } from "#lib/sources"
+import { bm25Selector, HarnessError, nearest, type ScoredSkill, type Skill } from "@dispach/core"
 
 export const SOURCES_ACTIONS = ["list", "add", "remove", "update", "search"] as const
 

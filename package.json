@@ -1,12 +1,12 @@
 {
-    "name": "castellan-monorepo",
+    "name": "dispach-monorepo",
     "private": true,
     "type": "module",
     "license": "Apache-2.0",
     "author": "Moeen Mahmud",
     "repository": {
         "type": "git",
-        "url": "git+https://github.com/moeen-mahmud/castellan.git"
+        "url": "git+https://github.com/moeen-mahmud/dispach.git"
     },
     "workspaces": [
         "packages/*"
@@ -15,7 +15,7 @@
         "node": ">=22"
     },
     "scripts": {
-        "build": "bun run --filter='@castellan/core' build && bun run --filter='@castellan/tools-*' build && bun run --filter='@castellan/channel-*' build && bun run --filter='@castellan/server' build && bun run --filter='@castellan/cli' build && bun scripts/rewrite-dts-extensions.ts",
+        "build": "bun run --filter='@dispach/core' build && bun run --filter='@dispach/tools-*' build && bun run --filter='@dispach/channel-*' build && bun run --filter='@dispach/server' build && bun run --filter='@dispach/cli' build && bun scripts/rewrite-dts-extensions.ts",
         "typecheck": "bun run --filter='*' typecheck",
         "test": "bun test",
         "test:node": "node --test packages/core/test/*.test.ts",

@@ -12,8 +12,8 @@
  * needs authorisation the turn does not have by default.
  */
 
-import type { Tool, ToolContext, ToolHandler } from "@castellan/core"
-import { type BackendId, backend, readError, type SearchHit } from "./backends.ts"
+import type { Tool, ToolContext, ToolHandler } from "@dispach/core"
+import { backend, readError, type BackendId, type SearchHit } from "./backends.ts"
 import { webSearchKeyMissing } from "./errors.ts"
 import type { FetchLike } from "./fetch.ts"
 import { WEB_PROVIDER_ID } from "./paths.ts"

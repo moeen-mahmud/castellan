@@ -17,9 +17,6 @@
  * None of this is required to use the runtime: ⌥⏎ works everywhere without it.
  */
 
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
-import { dirname, join } from "node:path"
-import { BRAND } from "@castellan/core"
 import { ambientEnv } from "#lib/ambient"
 import { EXIT_FAILURE, EXIT_OK } from "#lib/const"
 import { bullet, indent, keyValue, section, tildify } from "#lib/render"
@@ -31,6 +28,9 @@ import {
     type TerminalRecipe,
     withBinding,
 } from "#lib/terminal"
+import { BRAND } from "@dispach/core"
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { dirname, join } from "node:path"
 
 export interface TerminalSetupOptions {
     readonly dryRun?: boolean

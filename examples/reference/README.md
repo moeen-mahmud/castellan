@@ -5,8 +5,8 @@ works; this is the opposite end — the worked copy of `docs/02-SPEC-MANIFEST.md
 
 ```bash
 cp .env.example .env    # then fill in one preset
-castellan validate ./agent.yaml
-castellan run ./agent.yaml
+dispach validate ./agent.yaml
+dispach run ./agent.yaml
 ```
 
 ## How to read it
@@ -60,8 +60,8 @@ a mutating tool that cannot succeed teaches the model to retry until the step bu
 Uncomment the `composio:` block inside `tools.providers`, add its slugs to `pinned`, then:
 
 ```bash
-castellan tools ./agent.yaml --warm    # fetch the schemas into .castellan/tools.cache.json
-castellan tools ./agent.yaml           # see the catalogue the model will get
+dispach tools ./agent.yaml --warm    # fetch the schemas into .dispach/tools.cache.json
+dispach tools ./agent.yaml           # see the catalogue the model will get
 ```
 
 The warm step is required rather than convenient. Resolution happens during boot, where no network

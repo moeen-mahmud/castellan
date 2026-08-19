@@ -16,9 +16,9 @@
  * signal arriving while something unref'd holds the loop open.
  */
 
-import { once } from "node:events"
 import { EXIT_FAILURE, EXIT_SIGTERM, LEAVE_ALT_SCREEN, RESET_STYLE, SHOW_CURSOR } from "#lib/const"
 import type { TerminalHandles } from "#lib/schema"
+import { once } from "node:events"
 
 /**
  * The real streams. Spelled out rather than passing `process` itself, which has no `in`/`out` —

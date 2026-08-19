@@ -26,7 +26,7 @@ import {
     type ToolProvider,
     type ToolProviderContext,
     type ToolSpec,
-} from "@castellan/core"
+} from "@dispach/core"
 import { cachePath, readCache, writeCache } from "./cache.ts"
 import { ComposioClient, type FetchLike } from "./client.ts"
 import {

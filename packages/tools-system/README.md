@@ -1,10 +1,10 @@
-# @castellan/tools-system
+# @dispach/tools-system
 
 The agent acting on the machine it runs on: a shell, and a file family that exists so permissions can
 actually work. Governed by `tools.policy` and the trust gate from the first line of code rather than
 from a later hardening pass.
 
-`castellan init --system none|read|write|full` generates a working set and its permission rules.
+`dispach init --system none|read|write|full` generates a working set and its permission rules.
 **`write` is files without a shell** — the only level in which "confined to the workspace" is a true
 statement, for the reason in *Where writes may go* below.
 

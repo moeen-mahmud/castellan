@@ -6,11 +6,11 @@
  * only purpose is to disable a check are refused whatever the policy says.
  */
 
+import { toolContext } from "@dispach/core"
 import { expect, test } from "bun:test"
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { toolContext } from "@castellan/core"
 import {
     CONFIG_READ_SPEC,
     CONFIG_SET_SPEC,
@@ -20,7 +20,7 @@ import {
 } from "../src/config.ts"
 import { setInSource } from "../src/yaml-edit.ts"
 
-const MANIFEST = `apiVersion: castellan/v1
+const MANIFEST = `apiVersion: dispach/v1
 id: cfg
 name: Cfg
 

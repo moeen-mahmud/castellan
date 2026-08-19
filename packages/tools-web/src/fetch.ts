@@ -21,7 +21,7 @@
  * observation. Tested on bytes read for exactly that reason.
  */
 
-import type { Tool, ToolContext, ToolHandler } from "@castellan/core"
+import type { Tool, ToolContext, ToolHandler } from "@dispach/core"
 import {
     webContentUnusable,
     webRequestFailed,

@@ -1,4 +1,4 @@
-# CLAUDE.md — Castellan
+# CLAUDE.md — Dispach
 
 Standing brief for coding agents working in this repository. Read this first, every session.
 
@@ -6,8 +6,8 @@ Standing brief for coding agents working in this repository. Read this first, ev
 
 ## What this is
 
-**Castellan** is a lightweight, model-agnostic AI agent runtime. Apache-2.0.
-`github.com/moeen-mahmud/castellan`.
+**Dispach** is a lightweight, model-agnostic AI agent runtime. Apache-2.0.
+`github.com/moeen-mahmud/dispach`.
 
 It turns a stateless OpenAI-compatible `/chat/completions` endpoint into an agent that lives
 in messaging channels, uses tools, remembers, runs on a schedule, and delegates to other
@@ -43,7 +43,7 @@ framework explainers, go straight to the specific thing.
 2. **`packages/core` imports nothing from sibling packages.** CI enforces this. Core depends
    on the standard library, a YAML parser, and a schema validator. Nothing else.
 3. **No brand strings outside `packages/core/src/brand.ts` and `package.json` files.** No
-   directory, type, interface, or variable contains "castellan". A rename must be one commit.
+   directory, type, interface, or variable contains "dispach". A rename must be one commit.
 4. **No network I/O before `runtime.ready`.** This single rule is why this project exists —
    the runtime it replaces blocks roughly four minutes on network calls during hook
    initialisation. Anything needing the network happens after readiness and reports status
@@ -124,13 +124,13 @@ inbound (channel | API | schedule)
 - **Memory is FTS5, not embeddings.** Prove lexical insufficient before paying for vectors.
 - **Composio is called directly, never through MCP.** MCP is a fine integration protocol and
   a poor internal architecture.
-- **System access is in scope. Castellan is a harness, not a channel-resident assistant** — peer to
+- **System access is in scope. dispach is a harness, not a channel-resident assistant** — peer to
   OpenClaw, Hermes Agent and Claude Code. It runs shell commands and touches files because that is
   what a harness does; channels are one surface it is reached through, not the limit of what it does.
   Shell lives in `packages/tools-system` and never in core: core is what an embedder runs *other
   people's* agents on, and a shell tool there is one every provisioned agent gets with no way to
   decline it.
-- **A policy decides *whether* a command runs; a sandbox decides *where*.** Castellan ships the
+- **A policy decides *whether* a command runs; a sandbox decides *where*.** dispach ships the
   policy — `tools.policy`, enforced, with a hardline floor below every override. Containment is a
   deployment concern and stays one. Describing the permission layer without that sentence makes it
   read as a boundary it is not.
@@ -172,7 +172,7 @@ Full detail: `docs/01-ARCHITECTURE.md`.
 
 ```
 packages/core/       the loop, context, tools, skills, memory, store, schedule, plugins
-packages/cli/        `castellan` binary — lib/ plumbing, components/ Ink, pure reducers at top level
+packages/cli/        `dispach` binary — lib/ plumbing, components/ Ink, pure reducers at top level
 packages/server/     HTTP/SSE/WS surface
 packages/channel-*/  Telegram, WhatsApp
 packages/tools-*/    system (shell, files), Composio, web, MCP
@@ -794,11 +794,11 @@ Never claim a performance property without a number in `evals/` and a script to 
   right for a slug someone typed in by hand.
 - **Composio's router is for discovery; schemas come from `GET /tools/{slug}`.** Every router-side
   schema surface is thin — `tool_schemas` in a search result *and* `COMPOSIO_GET_TOOL_SCHEMAS* both
-  return `tool_slug` for `slug`, `input_schema` for `input_parameters`, and **no `tags` at all**.
+  return`tool_slug` for `slug`,`input_schema` for `input_parameters`, and **no`tags` at all**.
   Caching one fails three ways silently: a pinned tool reaches the model with **no arguments**;
   everything is assumed mutating for want of a `readOnlyHint`, so reading your own inbox serialises
   and holds a write slot; and the map does not reliably hold every slug the same response
-  recommends. The first live search tagged all eight hits "(changes things)", `OUTLOOK_GET_MAIL_TIPS`
+  recommends. The first live search tagged all eight hits "(changes things)",`OUTLOOK_GET_MAIL_TIPS`
   included.
 - **A discovered tool becomes a pinned tool, never an executed one.** `composio_search` finds a slug
   and caches its schema, `config_set` writes it into `tools.pinned`, and a restart makes it ordinary
@@ -873,7 +873,7 @@ Never claim a performance property without a number in `evals/` and a script to 
   a broken channel; a factory that ran anyway and refused for a missing token would make switching
   one off impossible. Its `type` is still checked.
 - **`bun run build` before testing a workspace package from `src`.** Running `packages/cli/src/index.ts`
-  still resolves `@castellan/channel-telegram` to its `dist`, so a transport change is invisible until
+  still resolves `@dispach/channel-telegram` to its `dist`, so a transport change is invisible until
   that package is rebuilt. Recorded for `core` and the tool packages already; it is a property of
   every workspace dependency, and it cost a confused debugging round here.
 - **`Bun.serve`'s `idleTimeout` defaults to 10 seconds and will kill your SSE streams.** The

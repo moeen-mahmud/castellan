@@ -10,7 +10,7 @@
  * host — the request failing repeatedly is itself the port scan.
  */
 
-import { ConfigError, ToolError } from "@castellan/core"
+import { ConfigError, ToolError } from "@dispach/core"
 
 export function webUrlUnparseable(raw: string, cause: string): ToolError {
     return new ToolError({

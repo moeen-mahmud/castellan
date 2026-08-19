@@ -6,7 +6,7 @@
  * not a second error vocabulary.
  */
 
-import { BRAND, ConfigError, ToolError } from "@castellan/core"
+import { BRAND, ConfigError, ToolError } from "@dispach/core"
 
 export function composioKeyMissing(envVar: string): ConfigError {
     return new ConfigError({

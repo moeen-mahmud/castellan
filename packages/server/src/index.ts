@@ -1,5 +1,5 @@
 /**
- * `@castellan/server` — the wire protocol in `docs/04-SPEC-WIRE.md`.
+ * `@dispach/server` — the wire protocol in `docs/04-SPEC-WIRE.md`.
  *
  * ```ts
  * const running = await serve({ runtime, host: "127.0.0.1", port: 7420, token })
@@ -11,13 +11,13 @@
  */
 
 export { createHandler, type HandlerOptions } from "./handler.ts"
-export { type Route, type RouteMatch, Router } from "./router.ts"
-export { isLoopback, type RunningServer, type ServeOptions, serve } from "./serve.ts"
+export { Router, type Route, type RouteMatch } from "./router.ts"
+export { isLoopback, serve, type RunningServer, type ServeOptions } from "./serve.ts"
 export {
     encodeFrame,
     HEARTBEAT_MS,
+    sseResponse,
     type SseFrame,
     type SseStreamOptions,
-    sseResponse,
 } from "./sse.ts"
 export { attachWebSocket, type WebSocketBridge, type WsSession } from "./ws.ts"

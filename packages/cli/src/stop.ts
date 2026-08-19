@@ -17,13 +17,13 @@
  * after a grace period, and it says out loud what may have been left behind.
  */
 
-import { homedir } from "node:os"
-import { BRAND, HarnessError, processAlive, readManifestHeader, SqliteStore } from "@castellan/core"
 import { EXIT_FAILURE, EXIT_OK } from "#lib/const"
 import { labelFor } from "#lib/launchd"
 import { bullet, keyValue, type Row } from "#lib/render"
 import { storePath } from "#lib/sandbox"
 import { type Exec, resolveServiceManager, type ServiceManager } from "#lib/service"
+import { BRAND, HarnessError, processAlive, readManifestHeader, SqliteStore } from "@dispach/core"
+import { homedir } from "node:os"
 
 /** How long a process gets to shut down cleanly before the last resort. */
 const GRACE_MS = 12_000

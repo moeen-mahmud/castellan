@@ -5,9 +5,9 @@
  * a flag the help promises cannot be missing from the parser. A test asserts exactly that.
  */
 
-import { BRAND } from "@castellan/core"
 import { COMMANDS, flagsFor, GLOBAL_FLAGS } from "#lib/commands"
 import type { CommandSpec, FlagSpec } from "#lib/schema"
+import { BRAND } from "@dispach/core"
 
 const FLAG_COLUMN = 24
 const ENV_COLUMN = 22

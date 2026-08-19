@@ -63,7 +63,7 @@ export interface PolicyConfig {
  * The default, and why it is `allow` rather than `ask`.
  *
  * **Pinning is the primary authorization here.** Unlike a coding agent that starts with a shell and
- * the whole filesystem, a Castellan agent has exactly the tools its manifest pinned — an author who
+ * the whole filesystem, a dispach agent has exactly the tools its manifest pinned — an author who
  * wrote `tools.local: [now, memory_write]` has already said what this agent may do. Defaulting to
  * `ask` would re-ask that question on every call, and since most runs are unattended (a schedule, a
  * channel, a pipe) `onNoApprover` would then answer it `deny` and the agent would do nothing at all.

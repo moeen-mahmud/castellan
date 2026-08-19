@@ -11,7 +11,7 @@
  * getting it wrong toward permanent silently abandons a reply that would have gone through.
  */
 
-import type { ErrorDetail } from "@castellan/core"
+import type { ErrorDetail } from "@dispach/core"
 
 /** Telegram's envelope. `ok: false` carries a human string and sometimes a `parameters` block. */
 export interface TelegramResponse<T> {

@@ -24,7 +24,7 @@
  * "no default", not "default to null".
  */
 
-import type { JsonSchemaNode, JsonType, ToolParameters, ToolSpec } from "@castellan/core"
+import type { JsonSchemaNode, JsonType, ToolParameters, ToolSpec } from "@dispach/core"
 import { composioSchemaUnsupported } from "./errors.ts"
 
 /** The fields of Composio's tool object this runtime reads. Everything else is ignored. */

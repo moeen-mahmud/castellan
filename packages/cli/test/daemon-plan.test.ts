@@ -7,7 +7,6 @@
  * different ways; as a table they are nine assertions.
  */
 
-import { describe, expect, test } from "bun:test"
 import {
     type Attention,
     attentionFrom,
@@ -19,6 +18,7 @@ import {
     type ServiceFacts,
     summariseStatus,
 } from "#lib/daemon-plan"
+import { describe, expect, test } from "bun:test"
 
 const BASE: PreflightFacts = {
     platform: "darwin",
@@ -230,7 +230,7 @@ describe("status verdicts", () => {
  * it working are different questions, and only the second is why anyone typed the command.
  */
 describe("things a healthy service is saying that you need to hear", () => {
-    const DENIED = `Castellan serving on http://127.0.0.1:7420
+    const DENIED = `dispach serving on http://127.0.0.1:7420
   tg: connected — @milothecat_bot, long-poll
   tg: denied — Sender "@moeen_mahmud" is not in channel "tg"'s allowFrom list.`
 
@@ -260,16 +260,16 @@ describe("things a healthy service is saying that you need to hear", () => {
     test("a denial from a previous run is not reported after a restart", () => {
         const restarted = `${DENIED}
 stopping
-Castellan serving on http://127.0.0.1:7420
+dispach serving on http://127.0.0.1:7420
   tg: connected — @milothecat_bot, long-poll`
         expect(attentionFrom(restarted)).toEqual([])
         expect(currentRun(restarted)).not.toContain("denied")
     })
 
     test("a healthy log says nothing", () => {
-        expect(
-            attentionFrom("Castellan serving on http://127.0.0.1:7420\n  tg: connected"),
-        ).toEqual([])
+        expect(attentionFrom("dispach serving on http://127.0.0.1:7420\n  tg: connected")).toEqual(
+            [],
+        )
     })
 
     test("every finding carries a fix", () => {

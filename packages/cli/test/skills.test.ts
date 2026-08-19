@@ -7,12 +7,12 @@
  * the other side by pinning the action list against the help.
  */
 
+import { skillsCommand } from "#skills"
+import { BRAND } from "@dispach/core"
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
-import { BRAND } from "@castellan/core"
-import { skillsCommand } from "#skills"
 
 const dirs: string[] = []
 let written = ""

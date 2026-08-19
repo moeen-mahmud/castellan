@@ -14,11 +14,11 @@
  * the cache never runs. This command is how the cache gets its first contents.
  */
 
-import { loadManifest, Runtime, resolveProviders } from "@castellan/core"
 import { ambientEnv } from "#lib/ambient"
 import { EXIT_FAILURE, EXIT_OK } from "#lib/const"
 import { CHANNEL_IDS, CHANNELS, PROVIDER_IDS, scriptRunner, TOOL_PROVIDERS } from "#lib/providers"
 import { toolsReport, toolsView } from "#lib/session-commands"
+import { loadManifest, resolveProviders, Runtime } from "@dispach/core"
 
 export interface ToolsOptions {
     readonly manifestPath: string

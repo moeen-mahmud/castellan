@@ -11,6 +11,9 @@
  * non-zero exit tells them apart.
  */
 
+import { ambientEnv } from "#lib/ambient"
+import { EXIT_FAILURE, EXIT_OK } from "#lib/const"
+import { CHANNEL_IDS, PROVIDER_IDS } from "#lib/providers"
 import {
     checkAuthoring,
     type ErrorDetail,
@@ -19,10 +22,7 @@ import {
     resolveCapabilities,
     resolveWorkspace,
     ruleBudgetFailure,
-} from "@castellan/core"
-import { ambientEnv } from "#lib/ambient"
-import { EXIT_FAILURE, EXIT_OK } from "#lib/const"
-import { CHANNEL_IDS, PROVIDER_IDS } from "#lib/providers"
+} from "@dispach/core"
 
 export interface WorkspaceOptions {
     readonly manifestPath: string

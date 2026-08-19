@@ -6,11 +6,11 @@
  * model endpoint, and the only tests that need a socket are the ones about sockets.
  */
 
+import { Runtime } from "@dispach/core"
 import { afterAll, describe, expect, test } from "bun:test"
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { Runtime } from "@castellan/core"
 import { createHandler } from "../src/handler.ts"
 import { Router } from "../src/router.ts"
 import { isLoopback, serve } from "../src/serve.ts"
@@ -19,7 +19,7 @@ import { encodeFrame } from "../src/sse.ts"
 const TOKEN = "test-token-abcdef"
 const ENV = { MODEL_API_KEY: "sk-test" }
 
-const MANIFEST = `apiVersion: castellan/v1
+const MANIFEST = `apiVersion: dispach/v1
 id: assistant
 name: Assistant
 model:

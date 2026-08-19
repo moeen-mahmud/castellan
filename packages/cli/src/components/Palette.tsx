@@ -11,10 +11,10 @@
  * command table — and the cursor lives in the screen root; this owns no keyboard.
  */
 
-import { Box, Text } from "ink"
 import type { Palette as PaletteModel } from "#lib/palette"
 import { clip, viewport } from "#lib/rows"
 import { GLYPH, THEME } from "#lib/theme"
+import { Box, Text } from "ink"
 
 export interface PaletteProps {
     readonly palette: PaletteModel

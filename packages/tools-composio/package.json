@@ -1,12 +1,12 @@
 {
-    "name": "@castellan/tools-composio",
+    "name": "@dispach/tools-composio",
     "version": "0.1.0",
     "description": "Composio tool provider — direct HTTP, no MCP transport.",
     "license": "Apache-2.0",
     "author": "Moeen Mahmud",
     "repository": {
         "type": "git",
-        "url": "git+https://github.com/moeen-mahmud/castellan.git",
+        "url": "git+https://github.com/moeen-mahmud/dispach.git",
         "directory": "packages/tools-composio"
     },
     "type": "module",
@@ -28,6 +28,6 @@
         "access": "public"
     },
     "dependencies": {
-        "@castellan/core": "workspace:*"
+        "@dispach/core": "workspace:*"
     }
 }

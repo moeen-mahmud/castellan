@@ -1,5 +1,5 @@
 /**
- * `@castellan/tools-web` — searching the web and reading one page of it.
+ * `@dispach/tools-web` — searching the web and reading one page of it.
  *
  * Two tools, both read-only, both `untrusted` by declaration rather than by default. The interesting
  * part of this package is not the fetching, which is a GET; it is `address.ts` and `guard.ts`, which
@@ -8,59 +8,49 @@
  */
 
 export {
-    type AddressKind,
-    type AddressVerdict,
     classifyAddress,
     classifyIPv4,
     classifyIPv6,
     parseIPv4,
-    parseIPv6,
+    parseIPv6, type AddressKind,
+    type AddressVerdict
 } from "./address.ts"
 export {
-    BACKEND_IDS,
+    backend, BACKEND_IDS,
     type Backend,
-    type BackendId,
-    backend,
-    type SearchHit,
+    type BackendId, type SearchHit
 } from "./backends.ts"
 export {
     decodeEntities,
     extract,
     extractTitle,
     htmlToText,
-    isTextual,
+    isTextual
 } from "./extract.ts"
 export {
     DEFAULT_MAX_BYTES,
     DEFAULT_MAX_CHARS,
     effectiveTimeout,
-    FETCH_SPEC,
-    type FetchLike,
-    type FetchOptions,
-    fetchTool,
+    FETCH_SPEC, fetchTool,
     MAX_REDIRECTS,
-    readCapped,
+    readCapped, type FetchLike,
+    type FetchOptions
 } from "./fetch.ts"
 export {
     assertFetchable,
-    checkUrlShape,
-    type LookupLike,
-    parseUrl,
-    systemLookup,
+    checkUrlShape, parseUrl,
+    systemLookup, type LookupLike
 } from "./guard.ts"
 export { WEB_PROVIDER_ID } from "./paths.ts"
 export {
-    WEB_TOOL_SLUGS,
-    WebProvider,
-    type WebProviderOptions,
-    webFromConfig,
+    WEB_TOOL_SLUGS, webFromConfig, WebProvider,
+    type WebProviderOptions
 } from "./provider.ts"
 export {
     clampResults,
     DEFAULT_MAX_RESULTS,
     MAX_MAX_RESULTS,
     render,
-    SEARCH_SPEC,
-    type SearchOptions,
-    searchTool,
+    SEARCH_SPEC, searchTool, type SearchOptions
 } from "./search.ts"
+

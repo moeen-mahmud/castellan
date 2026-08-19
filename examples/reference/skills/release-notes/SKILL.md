@@ -3,7 +3,7 @@ name: release-notes
 description: Draft release notes from a range of git commits, grouped by change type with breaking changes called out first. Use when asked to write a changelog, summarise what shipped, or prepare notes for a tag or version.
 license: Apache-2.0
 metadata:
-  castellan-when-not-to-use: >
+  dispach-when-not-to-use: >
     Not for deciding *what* to release or for bumping a version — that is a judgement about
     readiness, not a summary of history. Not for a single commit either; just read it.
 ---

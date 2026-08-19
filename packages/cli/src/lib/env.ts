@@ -6,8 +6,8 @@
  * so the interesting logic — `resolveMode` especially — is a pure function of its inputs.
  */
 
-import { BRAND } from "@castellan/core"
 import type { EnvFacts } from "#lib/types"
+import { BRAND } from "@dispach/core"
 
 /**
  * `NO_COLOR` is honoured when present and non-empty, per no-color.org. An exported-but-empty

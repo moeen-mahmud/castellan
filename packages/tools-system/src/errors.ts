@@ -6,7 +6,7 @@
  * not a second error vocabulary.
  */
 
-import { ConfigError, ToolError } from "@castellan/core"
+import { ConfigError, ToolError } from "@dispach/core"
 
 export function execCommandEmpty(): ToolError {
     return new ToolError({

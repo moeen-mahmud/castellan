@@ -32,9 +32,9 @@
  * one and reporting success.
  */
 
+import { stripControl, type Tool, type ToolHandler } from "@dispach/core"
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises"
 import { dirname, isAbsolute, resolve } from "node:path"
-import { stripControl, type Tool, type ToolHandler } from "@castellan/core"
 import {
     fileEditAmbiguous,
     fileEditNoMatch,

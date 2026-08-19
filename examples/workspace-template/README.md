@@ -3,7 +3,7 @@
 The files an agent carries with it. Copy this directory, fill in the `{{PLACEHOLDERS}}`, point
 `agent.yaml` at it.
 
-> The tiered loader (Phase 3.5) reads these directly. `castellan init` scaffolds a new agent from
+> The tiered loader (Phase 3.5) reads these directly. `dispach init` scaffolds a new agent from
 > this exact set — this directory is the human-edited source of truth, and a CLI test fails if the
 > embedded copies drift from it. `agent.workspace.yaml` is a fragment to paste into an
 > `agent.yaml`, not a manifest of its own.
@@ -64,7 +64,7 @@ the identity file, `AGENTS.md`, `POLICY.md` and `REMINDER.md` together — the m
 know they came from different files. Over budget, the fix is to **delete rules or move them into code**, never to
 reformat them.
 
-Measure your model's rate rather than assuming 90%; small models run lower. `castellan eval rules`
+Measure your model's rate rather than assuming 90%; small models run lower. `dispach eval rules`
 does it with a verifiable-instruction probe.
 
 ## What does not belong here

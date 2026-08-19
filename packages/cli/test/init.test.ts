@@ -6,21 +6,21 @@
  * directory actually loads. Every assertion here goes through the real loader.
  */
 
-import { describe, expect, test } from "bun:test"
-import { existsSync, mkdtempSync, readFileSync, statSync } from "node:fs"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { initCommand } from "#init"
+import { EXIT_OK } from "#lib/const"
+import { PROVIDER_IDS, TOOL_PROVIDERS } from "#lib/providers"
 import {
     BRAND,
     checkAuthoring,
     HarnessError,
     loadManifest,
-    Runtime,
     resolveWorkspace,
-} from "@castellan/core"
-import { initCommand } from "#init"
-import { EXIT_OK } from "#lib/const"
-import { PROVIDER_IDS, TOOL_PROVIDERS } from "#lib/providers"
+    Runtime,
+} from "@dispach/core"
+import { describe, expect, test } from "bun:test"
+import { existsSync, mkdtempSync, readFileSync, statSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 
 function scratch(): string {
     return join(mkdtempSync(join(tmpdir(), "init-test-")), "agent")

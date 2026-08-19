@@ -6,10 +6,10 @@
  * pure and tested — this hook only owns the subscription, the abort controller, and the promise.
  */
 
-import type { Agent, AnyEvent, EventBus } from "@castellan/core"
-import { useCallback, useEffect, useReducer, useRef } from "react"
 import type { TranscriptState } from "#lib/types"
 import { reduce, type TranscriptAction } from "#transcript"
+import type { Agent, AnyEvent, EventBus } from "@dispach/core"
+import { useCallback, useEffect, useReducer, useRef } from "react"
 
 export interface UseTurn {
     readonly state: TranscriptState

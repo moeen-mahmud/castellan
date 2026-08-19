@@ -1,7 +1,7 @@
-import { describe, expect, test } from "bun:test"
 import { resolveMode } from "#lib/output"
 import type { ModeInputs } from "#lib/schema"
 import type { EnvFacts } from "#lib/types"
+import { describe, expect, test } from "bun:test"
 
 const QUIET_ENV: EnvFacts = {
     noColor: false,
@@ -50,7 +50,7 @@ describe("precedence, highest first", () => {
     })
 
     test("a piped stdin is plain even when stdout is a terminal", () => {
-        // `echo hi | castellan run …` has nothing to drive an input line with.
+        // `echo hi | dispach run …` has nothing to drive an input line with.
         expect(mode({ stdinIsTTY: false })).toBe("plain")
     })
 

@@ -1,12 +1,12 @@
 {
-    "name": "@castellan/tools-web",
+    "name": "@dispach/tools-web",
     "version": "0.1.0",
     "description": "Web search and page fetching — read-only, untrusted by construction.",
     "license": "Apache-2.0",
     "author": "Moeen Mahmud",
     "repository": {
         "type": "git",
-        "url": "git+https://github.com/moeen-mahmud/castellan.git",
+        "url": "git+https://github.com/moeen-mahmud/dispach.git",
         "directory": "packages/tools-web"
     },
     "type": "module",
@@ -28,6 +28,6 @@
         "access": "public"
     },
     "dependencies": {
-        "@castellan/core": "workspace:*"
+        "@dispach/core": "workspace:*"
     }
 }

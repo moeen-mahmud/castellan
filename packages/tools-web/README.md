@@ -1,4 +1,4 @@
-# @castellan/tools-web
+# @dispach/tools-web
 
 Two read-only tools: `web_search` and `web_fetch`.
 

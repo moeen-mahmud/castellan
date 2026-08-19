@@ -7,11 +7,11 @@
  * hundred and said nothing about the other three hundred and fifty.
  */
 
+import { toolContext } from "@dispach/core"
 import { expect, test } from "bun:test"
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { toolContext } from "@castellan/core"
 import { execHandler } from "../src/exec.ts"
 import {
     DEFAULT_READ_LINES,
@@ -25,7 +25,7 @@ import {
 import { PROTECTED_NAMES, protectedReason } from "../src/protect.ts"
 import { SystemProvider } from "../src/provider.ts"
 import { resolveRoots, whereYouWork } from "../src/root.ts"
-import { GLOB_SPEC, GREP_SPEC, globHandler, grepHandler, MAX_GLOB_RESULTS } from "../src/search.ts"
+import { GLOB_SPEC, globHandler, GREP_SPEC, grepHandler, MAX_GLOB_RESULTS } from "../src/search.ts"
 import { ShellSessions } from "../src/session.ts"
 import { globToRegExp, SKIPPED_DIRS, walk } from "../src/walk.ts"
 

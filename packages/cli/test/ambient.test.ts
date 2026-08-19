@@ -9,16 +9,16 @@
  * happened to be standing in is not an operator's explicit export.
  */
 
-import { describe, expect, test } from "bun:test"
 import { ambientEnv, demotedKeys } from "#lib/ambient"
+import { describe, expect, test } from "bun:test"
 
 /** Two directories with `.env` files, without touching disk. */
 function dirs(map: Record<string, Record<string, string>>) {
     return (dir: string) => map[dir] ?? {}
 }
 
-const AGENT = "/home/me/.castellan/agents/milo"
-const CHECKOUT = "/work/castellan"
+const AGENT = "/home/me/.dispach/agents/milo"
+const CHECKOUT = "/work/dispach"
 
 describe("ambientEnv", () => {
     test("the agent's own .env beats a .env in the directory you launched from", () => {

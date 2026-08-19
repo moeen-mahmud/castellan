@@ -17,9 +17,9 @@
  * both. `HarnessError.details` already renders that shape.
  */
 
-import { BRAND, type ErrorDetail, HarnessError } from "@castellan/core"
 import { COMMANDS, commandsAccepting, findCommand, flagsFor, GLOBAL_FLAGS } from "#lib/commands"
 import type { FlagSpec, FlagValue, FlagValues, ParseResult } from "#lib/schema"
+import { BRAND, type ErrorDetail, HarnessError } from "@dispach/core"
 
 /** Anything wrong with the command line itself. Distinct from anything wrong with a manifest. */
 export class UsageError extends HarnessError {}

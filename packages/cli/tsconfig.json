@@ -11,7 +11,7 @@
         "jsx": "react-jsx",
 
         "paths": {
-            "@castellan/core": ["../core/src/index.ts"]
+            "@dispach/core": ["../core/src/index.ts"]
         }
     },
     "include": ["src/**/*.ts", "src/**/*.tsx", "test/**/*.ts", "test/**/*.tsx"]

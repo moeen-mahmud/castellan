@@ -15,17 +15,6 @@
  * sequence `validate` runs — so a template bug is this command's failure, never the user's first.
  */
 
-import { existsSync, mkdirSync, writeFileSync } from "node:fs"
-import { basename, dirname, join, resolve } from "node:path"
-import {
-    BRAND,
-    HarnessError,
-    loadManifest,
-    resolveCapabilities,
-    resolveWorkspace,
-    ruleBudgetFailure,
-    VERSION,
-} from "@castellan/core"
 import { installRefs } from "#browse"
 import { daemonCommand } from "#daemon"
 import { EXIT_FAILURE, EXIT_OK } from "#lib/const"
@@ -49,6 +38,17 @@ import { resolveModeFromProcess } from "#lib/output"
 import { CHANNEL_IDS, PROVIDER_IDS } from "#lib/providers"
 import { agentsDir } from "#lib/sandbox"
 import type { InitOptions } from "#lib/schema"
+import {
+    BRAND,
+    HarnessError,
+    loadManifest,
+    resolveCapabilities,
+    resolveWorkspace,
+    ruleBudgetFailure,
+    VERSION,
+} from "@dispach/core"
+import { existsSync, mkdirSync, writeFileSync } from "node:fs"
+import { basename, dirname, join, resolve } from "node:path"
 
 /** Which flag supplies each step, for the refusal that names what is missing. */
 const FLAG_FOR: Record<InitStep, string> = {

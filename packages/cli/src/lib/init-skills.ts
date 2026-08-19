@@ -32,16 +32,6 @@
  * skill that stops the agent starting would be strictly worse than installing none.
  */
 
-import { rmSync } from "node:fs"
-import { isAbsolute, join, resolve } from "node:path"
-import {
-    bm25Selector,
-    HarnessError,
-    loadManifest,
-    loadSkills,
-    resolveCapabilities,
-    type Skill,
-} from "@castellan/core"
 import { EXIT_OK } from "#lib/const"
 import type { InitAnswers } from "#lib/init-flow"
 import { forgetOrigin } from "#lib/origins"
@@ -56,6 +46,16 @@ import {
 } from "#lib/source-cache"
 import { loadSources } from "#lib/sources"
 import { skillsCommand } from "#skills"
+import {
+    bm25Selector,
+    HarnessError,
+    loadManifest,
+    loadSkills,
+    resolveCapabilities,
+    type Skill,
+} from "@dispach/core"
+import { rmSync } from "node:fs"
+import { isAbsolute, join, resolve } from "node:path"
 
 export interface FindSkillOptions {
     readonly answers: InitAnswers

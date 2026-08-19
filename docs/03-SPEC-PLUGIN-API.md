@@ -1,6 +1,6 @@
 # 03 — Plugin API Specification
 
-Plugins are how Castellan varies. Core ships the loop, the context manager, the SQLite
+Plugins are how dispach varies. Core ships the loop, the context manager, the SQLite
 store, and the chat-completions transport; every channel, tool provider, alternative store,
 skill source, and cross-cutting behaviour arrives as a plugin — including the first-party
 ones. If a first-party package needs something the plugin API can't express, the API is
@@ -11,12 +11,12 @@ wrong and gets fixed. No private back doors.
 ## The contract
 
 ```ts
-import type { Plugin, PluginContext } from "@castellan/core"
+import type { Plugin, PluginContext } from "@dispach/core"
 
 export default {
   name: "telegram",
   version: "0.1.0",
-  castellanApi: "^0.1",
+  dispachApi: "^0.1",
   permissions: [
     { kind: "network", hosts: ["api.telegram.org"] },
     { kind: "env", vars: ["TELEGRAM_BOT_TOKEN"] },
@@ -32,7 +32,7 @@ export default {
 | --- | --- | --- |
 | `name` | yes | Unique within a runtime. Collision is a load failure. |
 | `version` | yes | Semver. Reported in `plugin.loaded` events. |
-| `castellanApi` | yes | Semver **range**. Host refuses to load on mismatch, naming both versions and the range. |
+| `dispachApi` | yes | Semver **range**. Host refuses to load on mismatch, naming both versions and the range. |
 | `permissions` | no | Declarative. Advisory in v1 — recorded, surfaced, unenforced. |
 | `configSchema` | no | Zod schema. Manifest `config` is validated against it before `setup` runs. |
 | `setup` | yes | Runs once at boot. **Must not await network I/O.** |
@@ -303,7 +303,7 @@ can adapt, rather than an exception that kills the turn.
 
 ## Permissions vocabulary
 
-Declarative in v1. Recorded at load, surfaced by `castellan plugins` and in the
+Declarative in v1. Recorded at load, surfaced by `dispach plugins` and in the
 `plugin.loaded` event. Not enforced.
 
 ```ts
@@ -321,7 +321,7 @@ scramble. That trade is stated in the README.
 
 **The honest position, printed in the README verbatim:**
 
-> Castellan plugins run in-process with full privileges. The `permissions` block is
+> dispach plugins run in-process with full privileges. The `permissions` block is
 > documentation, not a sandbox. Install plugins you trust, the same way you treat any npm
 > dependency. Real isolation requires separate processes or V8 isolates, both of which cost
 > the startup time and simplicity this project exists to preserve. If you need to run
@@ -331,7 +331,7 @@ scramble. That trade is stated in the README.
 
 ## Authoring checklist
 
-- [ ] `castellanApi` range is accurate and narrow
+- [ ] `dispachApi` range is accurate and narrow
 - [ ] `setup()` does no network I/O and returns under 200 ms
 - [ ] `configSchema` covers every field, secrets referenced by env var name
 - [ ] Every tool declares `whenNotToUse`
@@ -340,8 +340,8 @@ scramble. That trade is stated in the README.
 - [ ] Middleware calls `next()` and respects `ctx.signal`
 - [ ] `onEvent` never throws and never blocks
 - [ ] Permissions declared honestly
-- [ ] `bun test` passes against `@castellan/core`'s plugin conformance suite
+- [ ] `bun test` passes against `@dispach/core`'s plugin conformance suite
 
-Core ships `@castellan/core/testing` with `conformance(plugin)` — a suite asserting boot
+Core ships `@dispach/core/testing` with `conformance(plugin)` — a suite asserting boot
 budget, version gating, config validation, and, for channels, idempotent send. Every
 first-party plugin runs it in CI.

@@ -6,14 +6,14 @@
  * with a real process for the half that genuinely needs one.
  */
 
+import type { Exec } from "#lib/service"
+import { stopCommand } from "#stop"
+import { BRAND, SqliteStore } from "@dispach/core"
 import { describe, expect, test } from "bun:test"
 import { spawn } from "node:child_process"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { BRAND, SqliteStore } from "@castellan/core"
-import type { Exec } from "#lib/service"
-import { stopCommand } from "#stop"
 
 const HOME_VAR = `${BRAND.envPrefix}HOME`
 

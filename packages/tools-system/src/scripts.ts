@@ -18,10 +18,10 @@
  * Killing it to be tidy would throw the work away and still need the same reaper.
  */
 
+import type { ScriptRunner, ScriptRunRequest, ScriptRunResult } from "@dispach/core"
 import { statSync } from "node:fs"
 import { mkdir, rm } from "node:fs/promises"
 import { delimiter, join } from "node:path"
-import type { ScriptRunner, ScriptRunRequest, ScriptRunResult } from "@castellan/core"
 import { readOutput } from "./output.ts"
 import { spillDir } from "./paths.ts"
 import { runCommand } from "./run.ts"

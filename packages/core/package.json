@@ -1,12 +1,12 @@
 {
-    "name": "@castellan/core",
+    "name": "@dispach/core",
     "version": "0.1.0",
     "description": "Lightweight, model-agnostic AI agent runtime \u2014 the loop, context, tools, and control.",
     "license": "Apache-2.0",
     "author": "Moeen Mahmud",
     "repository": {
         "type": "git",
-        "url": "git+https://github.com/moeen-mahmud/castellan.git",
+        "url": "git+https://github.com/moeen-mahmud/dispach.git",
         "directory": "packages/core"
     },
     "type": "module",

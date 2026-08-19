@@ -24,8 +24,8 @@
  * conclusion drawn from a sample it was never told was a sample.
  */
 
+import { stripControl, type Tool, type ToolHandler } from "@dispach/core"
 import { readFile } from "node:fs/promises"
-import { stripControl, type Tool, type ToolHandler } from "@castellan/core"
 import { grepPatternInvalid } from "./errors.ts"
 import { resolvePath } from "./files.ts"
 import { SYSTEM_PROVIDER_ID } from "./paths.ts"

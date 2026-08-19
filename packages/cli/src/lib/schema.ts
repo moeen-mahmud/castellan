@@ -3,7 +3,6 @@
  * receives. Domain shapes live in `types.ts`.
  */
 
-import type { Agent, EventBus } from "@castellan/core"
 import type { BrowseRow, InstallReport } from "#lib/browse"
 import type { Slice } from "#lib/scroll"
 import type { SessionRowSource } from "#lib/sessions-view"
@@ -18,6 +17,7 @@ import type {
     TurnStats,
     TurnStatus,
 } from "#lib/types"
+import type { Agent, EventBus } from "@dispach/core"
 
 // ─── the command table ───────────────────────────────────────────────────────────────────
 

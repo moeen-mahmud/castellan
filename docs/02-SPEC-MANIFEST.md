@@ -6,11 +6,11 @@ this file or referenced from it.
 Two equal construction paths:
 
 ```bash
-castellan run ./agent.yaml
+dispach run ./agent.yaml
 ```
 
 ```ts
-import { Runtime, defineAgent } from "@castellan/core"
+import { Runtime, defineAgent } from "@dispach/core"
 const runtime = await Runtime.create({ agents: [defineAgent({ /* same shape */ })] })
 ```
 
@@ -22,7 +22,7 @@ YAML-only feature and no TS-only feature.
 ## Full example
 
 ```yaml
-apiVersion: castellan/v1
+apiVersion: dispach/v1
 id: assistant
 name: Moeen's Assistant
 
@@ -99,7 +99,7 @@ channels:
     allowFrom: ["@moeen"]
   - type: whatsapp
     id: wa
-    authDir: ./.castellan/wa-auth
+    authDir: ./.dispach/wa-auth
 
 delivery:
   default: tg
@@ -113,8 +113,8 @@ schedules:
     session: isolated
 
 plugins:
-  - "@castellan/channel-telegram"
-  - "@castellan/tools-composio"
+  - "@dispach/channel-telegram"
+  - "@dispach/tools-composio"
   - spec: "./plugins/custom-metrics"
     config: { endpoint: "http://localhost:9090" }
 
@@ -126,7 +126,7 @@ limits:
 server:
   enabled: true
   port: 7420
-  tokenEnv: CASTELLAN_API_TOKEN
+  tokenEnv: DISPACH_API_TOKEN
 ```
 
 ---
@@ -137,7 +137,7 @@ server:
 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `apiVersion` | `"castellan/v1"` | yes | Refused if unknown. Never silently upgraded. |
+| `apiVersion` | `"dispach/v1"` | yes | Refused if unknown. Never silently upgraded. |
 | `id` | string | yes | Slug. Unique within a runtime. Used in session keys and API paths. |
 | `name` | string | no | Display only. |
 | `extends` | string | no | Path to a base manifest. Shallow merge, arrays replace. |
@@ -331,10 +331,9 @@ surprise mid-turn. It is a warning and not a failure because "run one command an
 legitimate shape for an agent, and nothing can tell that apart from an oversight. A `deny` rule does
 not clear it: `deny` authorizes nothing.
 
-
 ### The `system` provider
 
-Shell execution, from `@castellan/tools-system`. Registered by the `castellan` binary; a manifest
+Shell execution, from `@dispach/tools-system`. Registered by the `dispach` binary; a manifest
 still has to select it and pin the tool, because availability and grant are separate.
 
 ```yaml
@@ -348,7 +347,7 @@ tools:
 ```
 
 Eight tools: `exec`, `file_read`, `file_write`, `file_edit`, `glob`, `grep`, `config_read`,
-`config_set`. `castellan init --system none|read|write|full` generates a working set and its
+`config_set`. `dispach init --system none|read|write|full` generates a working set and its
 permission rules; `write` is files **without** a shell, which is the only configuration in which
 "confined to the workspace" is a true statement — see below.
 
@@ -470,7 +469,6 @@ provider cannot know what its upstream API will return, so the default is the on
 harmlessly. An untrusted observation reaches the model delimited and labelled as data, and cannot
 silently drive a mutating call in the same turn. The delimiters are advisory; the write gate is not.
 
-
 Both dialects render the *same* `ToolSpec`, and both put the same guidance in front of the model —
 summary, `whenToUse`, `whenNotToUse`, and a state-change warning for a mutating tool. Under `nlt` that
 is prose in context slot 1; under `native` it is the wire format's `function.description`, and the
@@ -486,16 +484,16 @@ process runs:
 Runtime.create({ agents: ["./agent.yaml"], toolProviders: { composio: composioFromConfig } })
 ```
 
-The `castellan` binary registers `composio` already, so a manifest naming it works from the CLI with
+The `dispach` binary registers `composio` already, so a manifest naming it works from the CLI with
 no code.
 
 Resolution happens at agent load, inside the boot sequence, where **no network I/O is permitted**. A
-remote provider therefore resolves from `.castellan/tools.cache.json` and catches up after
+remote provider therefore resolves from `.dispach/tools.cache.json` and catches up after
 `runtime.ready`, reporting through the `tools.refreshed` event. Measured on a three-tool Composio
 manifest: boot returns in 27 ms and the refresh takes 1,474 ms, so awaiting it would make boot sixty
 times slower.
 
-The consequence is that a cold agent must be warmed once — `castellan tools <manifest> --warm`. An
+The consequence is that a cold agent must be warmed once — `dispach tools <manifest> --warm`. An
 empty cache fails the load naming the slugs and that command, rather than making the call it is not
 allowed to make. A warmed agent boots and serves its catalogue with no API key present at all.
 
@@ -639,14 +637,14 @@ manifest are left alone — the manifest owns manifest schedules only.
 
 ```yaml
 plugins:
-  - "@castellan/channel-telegram"          # shorthand, no config
+  - "@dispach/channel-telegram"          # shorthand, no config
   - spec: "./plugins/custom-metrics"       # relative path
     config: { endpoint: "http://localhost:9090" }
 ```
 
 Resolved at boot from `node_modules` or a relative path. **Never installed at runtime.**
 Load order is manifest order; middleware composes outermost-first. A plugin whose
-`castellanApi` range does not satisfy the host refuses to load and names both versions.
+`dispachApi` range does not satisfy the host refuses to load and names both versions.
 
 ### `limits`
 
@@ -664,7 +662,7 @@ Load order is manifest order; middleware composes outermost-first. A plugin whos
 | `enabled` | false | Library use needs no server. |
 | `port` | 7420 | |
 | `host` | `127.0.0.1` | Binds loopback by default. Public binding is explicit. |
-| `tokenEnv` | `CASTELLAN_API_TOKEN` | Bearer token env var name. Server refuses to start on a non-loopback host without a token. |
+| `tokenEnv` | `DISPACH_API_TOKEN` | Bearer token env var name. Server refuses to start on a non-loopback host without a token. |
 
 ---
 
@@ -673,7 +671,7 @@ Load order is manifest order; middleware composes outermost-first. A plugin whos
 A runtime-level file lists agents and declares the team:
 
 ```yaml
-apiVersion: castellan/v1
+apiVersion: dispach/v1
 kind: Runtime
 agents:
   - ./agents/supervisor.yaml
@@ -693,8 +691,8 @@ team — nesting is permitted but each level must be declared explicitly.
 
 Enforced by `manifest/validate.ts`, all failing at load with a field path and a fix hint:
 
-1. `apiVersion` must be exactly `castellan/v1`.
-2. Secrets must be `*Env` references. A literal-looking key (`sk-`, `Bearer `, 32+ char hex) in a value fails.
+1. `apiVersion` must be exactly `dispach/v1`.
+2. Secrets must be `*Env` references. A literal-looking key (`sk-`, `Bearer`, 32+ char hex) in a value fails.
 3. `context.thresholds` must be strictly ascending and within `(0, 1)`. They are fractions of the
    prompt budget, `window - reserveOutput`.
 4. `tools.budget.reserveWrite` must be less than `budget.max`.
@@ -705,7 +703,7 @@ Enforced by `manifest/validate.ts`, all failing at load with a field path and a 
 9. Every `channels[].id` referenced by `delivery` must exist.
 10. `context.files` must all exist and be readable.
 11. `reserveOutput` must be less than `window`.
-12. Plugin `castellanApi` ranges must satisfy the host version.
+12. Plugin `dispachApi` ranges must satisfy the host version.
 
 Rule 2 exists because a manifest is a file people paste into issues.
 
@@ -729,7 +727,7 @@ ambient environment happened to describe. Expansion still works everywhere; it i
 `.env` next to the manifest is loaded if present. Real environment always wins — an operator's
 explicit export has to beat a committed file, or a container cannot configure the agent it runs.
 
-Precedence under the `castellan` binary is **export → the agent's own `.env` → a `.env` in the
+Precedence under the `dispach` binary is **export → the agent's own `.env` → a `.env` in the
 directory the command was run from**. The last of those is demoted by the CLI before core sees it: a
 `.env` file configures its own project, and an agent living in the home sandbox is not part of that
 project. An embedder gets core's plain rule, where a container's environment wins.

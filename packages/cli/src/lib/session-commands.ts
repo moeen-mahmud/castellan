@@ -16,7 +16,7 @@
  * rich path from answering the same keystroke differently.
  */
 
-import { nearest } from "@castellan/core"
+import { nearest } from "@dispach/core"
 
 export type SessionCommandKind = "help" | "status" | "restart" | "tools" | "reset" | "exit"
 

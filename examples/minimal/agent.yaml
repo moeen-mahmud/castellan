@@ -3,7 +3,7 @@
 # Everything endpoint-specific comes from the environment, so this one file works unchanged
 # against OpenAI, an Anthropic-compatible base URL, and any host serving open weights — which is
 # the point. See README.md in this directory for the env presets.
-apiVersion: castellan/v1
+apiVersion: dispach/v1
 id: minimal
 name: Vela (Minimal Assistant)
 

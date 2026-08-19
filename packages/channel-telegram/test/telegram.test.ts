@@ -7,8 +7,8 @@
  * real thing, and all of it is one wrong branch away from silent message loss.
  */
 
+import type { ChannelHost, RawInbound } from "@dispach/core"
 import { describe, expect, mock, test } from "bun:test"
-import type { ChannelHost, RawInbound } from "@castellan/core"
 import { TelegramApi, TelegramApiError } from "../src/api.ts"
 import { telegramChannel } from "../src/index.ts"
 import { TelegramTransport, toInbound } from "../src/transport.ts"

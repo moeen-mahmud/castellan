@@ -18,7 +18,6 @@
  * without a command, reporting failure for the one thing that had worked.
  */
 
-import { HarnessError, VERSION } from "@castellan/core"
 import { agentsCommand } from "#agents"
 import { browseCommand } from "#browse"
 import { daemonCommand } from "#daemon"
@@ -42,6 +41,7 @@ import { terminalSetupCommand } from "#terminal-setup"
 import { toolsCommand } from "#tools"
 import { validateCommand } from "#validate"
 import { workspaceCommand } from "#workspace"
+import { HarnessError, VERSION } from "@dispach/core"
 
 function report(error: unknown): number {
     if (error instanceof HarnessError) {

@@ -1,12 +1,12 @@
 {
-    "name": "@castellan/server",
+    "name": "@dispach/server",
     "version": "0.1.0",
     "description": "HTTP, SSE and WebSocket surface — the wire protocol in 04-SPEC-WIRE.md.",
     "license": "Apache-2.0",
     "author": "Moeen Mahmud",
     "repository": {
         "type": "git",
-        "url": "git+https://github.com/moeen-mahmud/castellan.git",
+        "url": "git+https://github.com/moeen-mahmud/dispach.git",
         "directory": "packages/server"
     },
     "type": "module",
@@ -28,6 +28,6 @@
         "access": "public"
     },
     "dependencies": {
-        "@castellan/core": "workspace:*"
+        "@dispach/core": "workspace:*"
     }
 }

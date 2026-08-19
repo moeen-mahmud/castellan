@@ -1,10 +1,10 @@
-# Castellan — Planning Documents
+# Dispach — Planning Documents
 
-Design and implementation plan for **Castellan**, a lightweight, model-agnostic agent
-runtime. Apache-2.0. Repo: `github.com/moeen-mahmud/castellan` (moves to HelicanHQ later).
+Design and implementation plan for **Dispach**, a lightweight, model-agnostic agent
+runtime. Apache-2.0. Repo: `github.com/moeen-mahmud/dispach` (moves to HelicanHQ later).
 VelaOps is its first consumer, not its owner.
 
-> A castellan holds and governs a keep on behalf of its lord — commands the garrison,
+> A dispach holds and governs a keep on behalf of its lord — commands the garrison,
 > controls the gate, keeps the place running when nobody is watching. The runtime hosts
 > agents, gates their tool access, and runs unattended. VelaOps owns the keep.
 
@@ -50,7 +50,7 @@ total budgets, the rule guard, `context.files` as a deprecated alias, `promptSty
 `examplesIn` placement, `SOUL.md` gating with `soul distill`, `knowledge/`, the `workspace`
 command, `eval rules`, and `evals/prompt-style/` with committed numbers behind the `examplesIn`
 and `intensity` defaults. Phase 3.7 is in: `init` scaffolds a validated starter agent from the
-workspace templates. Phase 3.8 is in: agents live in the `~/.castellan` sandbox and run by bare
+workspace templates. Phase 3.8 is in: agents live in the `~/.dispach` sandbox and run by bare
 name, bare `run` opens a picker, `init` is an Ink wizard generating the SOUL.md identity pair, the
 AGENTS.md operations file, and a reference-style manifest, and the chat/wizard/picker surfaces share one TUI kit
 (`cli/src/lib/theme.ts` + `components/`). Still design-only: Phase 3.6 and everything from

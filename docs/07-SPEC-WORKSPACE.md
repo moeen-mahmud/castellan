@@ -310,7 +310,7 @@ or two rules at the recency position, where attention is strongest; duplicating 
 
 This is the general shape of a problem worth naming: **published prompting guidance is
 written for frontier models, and a significant fraction of it inverts at 3–8B.** Anywhere
-Castellan encodes vendor advice, it encodes it as a capability rather than a constant.
+Dispach encodes vendor advice, it encodes it as a capability rather than a constant.
 
 Phase 3 supplied a worked example of the cost of getting this wrong, from the other
 direction. NLT's preamble carried a metasyntactic placeholder — `field: value` under the
@@ -434,9 +434,9 @@ tokens and buys no reliable compliance.
 ## Validation
 
 ```bash
-castellan validate  ./agent.yaml       # does it load?
-castellan workspace ./agent.yaml       # is it written well?
-castellan soul distill ./SOUL.md       # scaffold the compact identity, for a person to fill
+dispach validate  ./agent.yaml       # does it load?
+dispach workspace ./agent.yaml       # is it written well?
+dispach soul distill ./SOUL.md       # scaffold the compact identity, for a person to fill
 ```
 
 The split is deliberate. `validate` reports mechanical facts — frontmatter validity, per-file and

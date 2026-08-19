@@ -13,11 +13,11 @@
  * a rendering import costs more than the whole command.
  */
 
-import { telegramChannel } from "@castellan/channel-telegram"
-import type { ChannelFactory, ScriptRunner, ToolProviderFactory } from "@castellan/core"
-import { composioFromConfig } from "@castellan/tools-composio"
-import { SystemScriptRunner, systemFromConfig } from "@castellan/tools-system"
-import { webFromConfig } from "@castellan/tools-web"
+import { telegramChannel } from "@dispach/channel-telegram"
+import type { ChannelFactory, ScriptRunner, ToolProviderFactory } from "@dispach/core"
+import { composioFromConfig } from "@dispach/tools-composio"
+import { SystemScriptRunner, systemFromConfig } from "@dispach/tools-system"
+import { webFromConfig } from "@dispach/tools-web"
 
 export const TOOL_PROVIDERS: Readonly<Record<string, ToolProviderFactory>> = {
     composio: composioFromConfig,

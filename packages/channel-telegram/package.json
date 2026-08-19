@@ -1,12 +1,12 @@
 {
-    "name": "@castellan/channel-telegram",
+    "name": "@dispach/channel-telegram",
     "version": "0.1.0",
     "description": "Telegram channel — raw Bot API over fetch, long-poll and webhook.",
     "license": "Apache-2.0",
     "author": "Moeen Mahmud",
     "repository": {
         "type": "git",
-        "url": "git+https://github.com/moeen-mahmud/castellan.git",
+        "url": "git+https://github.com/moeen-mahmud/dispach.git",
         "directory": "packages/channel-telegram"
     },
     "type": "module",
@@ -28,6 +28,6 @@
         "access": "public"
     },
     "dependencies": {
-        "@castellan/core": "workspace:*"
+        "@dispach/core": "workspace:*"
     }
 }

@@ -1,17 +1,17 @@
 {
-    "name": "@castellan/cli",
+    "name": "@dispach/cli",
     "version": "0.1.0",
     "description": "Command line interface for the agent runtime.",
     "license": "Apache-2.0",
     "author": "Moeen Mahmud",
     "repository": {
         "type": "git",
-        "url": "git+https://github.com/moeen-mahmud/castellan.git",
+        "url": "git+https://github.com/moeen-mahmud/dispach.git",
         "directory": "packages/cli"
     },
     "type": "module",
     "bin": {
-        "castellan": "./dist/index.js"
+        "dispach": "./dist/index.js"
     },
     "files": [
         "dist",
@@ -29,16 +29,16 @@
     },
     "scripts": {
         "dev": "bun run ./src/index.ts",
-        "build": "bun build ./src/index.ts --outdir dist --target node --format esm --splitting --sourcemap=linked --external '@castellan/core' --external ink --external react --external 'react/*' --banner '#!/usr/bin/env node' && tsc -p tsconfig.build.json",
+        "build": "bun build ./src/index.ts --outdir dist --target node --format esm --splitting --sourcemap=linked --external '@dispach/core' --external ink --external react --external 'react/*' --banner '#!/usr/bin/env node' && tsc -p tsconfig.build.json",
         "typecheck": "tsc -p tsconfig.json"
     },
     "dependencies": {
-        "@castellan/channel-telegram": "workspace:*",
-        "@castellan/core": "workspace:*",
-        "@castellan/server": "workspace:*",
-        "@castellan/tools-composio": "workspace:*",
-        "@castellan/tools-system": "workspace:*",
-        "@castellan/tools-web": "workspace:*",
+        "@dispach/channel-telegram": "workspace:*",
+        "@dispach/core": "workspace:*",
+        "@dispach/server": "workspace:*",
+        "@dispach/tools-composio": "workspace:*",
+        "@dispach/tools-system": "workspace:*",
+        "@dispach/tools-web": "workspace:*",
         "ink": "7.1.1",
         "react": "19.2.8"
     },

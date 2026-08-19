@@ -44,10 +44,10 @@ import {
     mechanicalDigest,
     micro,
     reset,
+    snip,
     STAGE_ORDER,
     type StageName,
     type StageOutcome,
-    snip,
     trim,
 } from "./stages.ts"
 

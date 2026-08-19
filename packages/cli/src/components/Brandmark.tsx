@@ -18,9 +18,9 @@
  * Presentational and controlled: it owns no keyboard, no state, and no opinion about when it is shown.
  */
 
-import { Box, Text } from "ink"
 import type { BrandmarkProps } from "#lib/schema"
 import { THEME } from "#lib/theme"
+import { Box, Text } from "ink"
 
 export function Brandmark({ lines }: BrandmarkProps) {
     // Row numbers computed before the map, so the key is a position rather than a callback index. Position is

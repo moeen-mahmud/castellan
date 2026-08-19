@@ -35,9 +35,9 @@
  * killed by pid leaves `b` and `c` running; killed by group, nothing survives.
  */
 
+import { subcommands } from "@dispach/core"
 import { type ChildProcess, spawn } from "node:child_process"
 import { open, readFile } from "node:fs/promises"
-import { subcommands } from "@castellan/core"
 import { execPtyUnavailable, execSpawnFailed, execTooManyBackground } from "./errors.ts"
 
 export type RunEnding = "finished" | "backgrounded" | "killed"

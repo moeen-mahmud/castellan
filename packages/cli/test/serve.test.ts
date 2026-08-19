@@ -17,13 +17,13 @@
  * a fact on disk rather than a hope about ordering, and it fails loudly if this regresses.
  */
 
+import { BRAND, SqliteStore } from "@dispach/core"
 import { describe, expect, test } from "bun:test"
 import { spawn } from "node:child_process"
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { BRAND, SqliteStore } from "@castellan/core"
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const BINARY = join(HERE, "..", "dist", "index.js")

@@ -31,7 +31,7 @@
  * schemas go to the cache, which is where resolution reads them from anyway.
  */
 
-import type { Tool, ToolContext, ToolSpec } from "@castellan/core"
+import type { Tool, ToolContext, ToolSpec } from "@dispach/core"
 import { composioNoMatch } from "./errors.ts"
 import { type ComposioTool, isMutating, isUnannotated } from "./map.ts"
 

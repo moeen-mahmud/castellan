@@ -20,7 +20,7 @@ import {
     newTurnId,
     type Runtime,
     VERSION,
-} from "@castellan/core"
+} from "@dispach/core"
 import { Router } from "./router.ts"
 import { sseResponse } from "./sse.ts"
 

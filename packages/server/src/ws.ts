@@ -15,8 +15,8 @@
  * owns identity, which this runtime deliberately does not.
  */
 
-import type { AnyEvent, Runtime } from "@castellan/core"
-import { newTurnId } from "@castellan/core"
+import type { AnyEvent, Runtime } from "@dispach/core"
+import { newTurnId } from "@dispach/core"
 
 /** Per-connection state, handed to the socket by `Bun.serve`'s upgrade. */
 export interface WsSession {

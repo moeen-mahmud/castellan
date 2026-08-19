@@ -16,32 +16,6 @@
  * The command answers about the runtime, not about a subset of it.
  */
 
-import {
-    cpSync,
-    existsSync,
-    mkdirSync,
-    readdirSync,
-    readFileSync,
-    rmSync,
-    statSync,
-    writeFileSync,
-} from "node:fs"
-import { basename, isAbsolute, join, relative, resolve } from "node:path"
-import {
-    checkSkillAuthoring,
-    type ErrorDetail,
-    HarnessError,
-    isSkillName,
-    loadManifest,
-    loadSkills,
-    nearest,
-    parseSkillFile,
-    resolveCapabilities,
-    type Skill,
-    type SkillsConfig,
-    whenNotToUseKey,
-} from "@castellan/core"
-import { setInSource } from "@castellan/tools-system"
 import { ambientEnv } from "#lib/ambient"
 import { EXIT_FAILURE, EXIT_OK } from "#lib/const"
 import { forgetOrigin, type Origin, readOrigins, recordOrigins } from "#lib/origins"
@@ -56,6 +30,32 @@ import {
 } from "#lib/source-cache"
 import { loadSources, parseSkillRef, type SkillRef, type SourceSpec } from "#lib/sources"
 import { fillTemplate, SKILL_TEMPLATE } from "#lib/templates"
+import {
+    checkSkillAuthoring,
+    type ErrorDetail,
+    HarnessError,
+    isSkillName,
+    loadManifest,
+    loadSkills,
+    nearest,
+    parseSkillFile,
+    resolveCapabilities,
+    type Skill,
+    type SkillsConfig,
+    whenNotToUseKey,
+} from "@dispach/core"
+import { setInSource } from "@dispach/tools-system"
+import {
+    cpSync,
+    existsSync,
+    mkdirSync,
+    readdirSync,
+    readFileSync,
+    rmSync,
+    statSync,
+    writeFileSync,
+} from "node:fs"
+import { basename, isAbsolute, join, relative, resolve } from "node:path"
 
 /** A skill found in a fetched source, with everything provenance needs. */
 interface Located {

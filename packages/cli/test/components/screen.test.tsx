@@ -5,23 +5,23 @@
  * not: what is on the screen.
  */
 
-import { describe, expect, test } from "bun:test"
-import { Text } from "ink"
-import { createElement as h } from "react"
 import { Screen, screenWidth } from "#components/Screen"
 import { MAX_SCREEN_COLUMNS, MIN_SCREEN_COLUMNS } from "#lib/const"
 import {
     headerLines,
     hintLine,
     QUIT_HINT,
-    type ScreenHeader,
     screenColumns,
     screenRows,
     titleLine,
+    type ScreenHeader,
 } from "#lib/screen"
+import { describe, expect, test } from "bun:test"
+import { Text } from "ink"
+import { createElement as h } from "react"
 import { overflowing, renderFrame, width } from "../helpers/frame.tsx"
 
-const HEADER: ScreenHeader = { title: "castellan 0.1.0", summary: "sources · 2 registered" }
+const HEADER: ScreenHeader = { title: "dispach 0.1.0", summary: "sources · 2 registered" }
 
 describe("the harness itself", () => {
     test("a mounted component's text reaches the frame", () => {
@@ -40,7 +40,7 @@ describe("the harness itself", () => {
 describe("the header", () => {
     test("names the agent and the model when a screen acts on one", () => {
         const lines = headerLines({ ...HEADER, agent: { name: "milo", model: "qwen3.5:9b" } }, 80)
-        expect(lines[0]?.text).toBe("castellan 0.1.0")
+        expect(lines[0]?.text).toBe("dispach 0.1.0")
         expect(lines[1]?.kind).toBe("summary")
         expect(lines[1]?.text).toContain("milo")
         expect(lines[1]?.text).toContain("qwen3.5:9b")
@@ -69,7 +69,7 @@ describe("the header", () => {
     test("every line is clipped to the width", () => {
         const lines = headerLines(
             {
-                title: "castellan 0.1.0",
+                title: "dispach 0.1.0",
                 summary: "a summary long enough to need cutting at a narrow terminal width",
                 agent: { name: "an-agent-with-a-long-name", model: "some/very-long-model-id" },
                 warnings: ["a warning that also goes on for a while and must be cut"],
@@ -115,7 +115,7 @@ describe("the rendered frame", () => {
             h(Screen, { header: HEADER, footer: [QUIT_HINT] }, h(Text, {}, "the body")),
             { columns: 80 },
         )
-        const header = frame.lines.findIndex((line) => line.includes("castellan 0.1.0"))
+        const header = frame.lines.findIndex((line) => line.includes("dispach 0.1.0"))
         const body = frame.lines.findIndex((line) => line.includes("the body"))
         const footer = frame.lines.findIndex((line) => line.includes("q back"))
         expect(header).toBeGreaterThanOrEqual(0)
@@ -152,7 +152,7 @@ describe("the rendered frame", () => {
                     Screen,
                     {
                         header: {
-                            title: "castellan 0.1.0",
+                            title: "dispach 0.1.0",
                             summary:
                                 "443 skills across 2 sources, all of them cached on this machine",
                             agent: { name: "milo", model: "qwen3.5:9b" },

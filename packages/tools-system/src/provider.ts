@@ -11,7 +11,7 @@
  * Core is what an embedder runs *other people's* agents on — VelaOps provisions a container per
  * agent. A shell tool in core is a shell tool every provisioned agent has, with no way for the
  * platform to decline it. As a package it is a line in the embedder's provider table: present in
- * `castellan run`, absent wherever it should be.
+ * `dispach run`, absent wherever it should be.
  *
  * ## Trust
  *
@@ -34,7 +34,7 @@ import {
     type ToolAvailability,
     type ToolProvider,
     type ToolProviderContext,
-} from "@castellan/core"
+} from "@dispach/core"
 import { configTools } from "./config.ts"
 import { execTool } from "./exec.ts"
 import { fileTools } from "./files.ts"

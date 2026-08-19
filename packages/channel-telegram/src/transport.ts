@@ -21,7 +21,7 @@ import type {
     SendResult,
     WebhookDelivery,
     WebhookOutcome,
-} from "@castellan/core"
+} from "@dispach/core"
 import { TelegramApi, TelegramApiError, type TelegramMessage, type TelegramUpdate } from "./api.ts"
 
 /** Telegram's own cap, in UTF-16 code units — the unit `String.length` counts in. */

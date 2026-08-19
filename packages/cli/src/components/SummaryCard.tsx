@@ -2,8 +2,8 @@
  * The confirm screen's answer recap: labels dim and right-padded, values plain, in a card.
  */
 
-import { Box, Text } from "ink"
-import { BORDER_STYLE, THEME } from "#lib/theme"
+import { BORDER_STYLE, THEME } from "#lib/theme";
+import { Box, Text } from "ink";
 
 export interface SummaryCardProps {
     readonly rows: readonly { readonly label: string; readonly value: string }[]

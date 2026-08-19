@@ -12,7 +12,7 @@
  */
 
 import type { ChatMessage } from "../model/provider.ts"
-import { type ContextBlock, SLOT, skillHeader, VOLATILE_HEADER } from "./blocks.ts"
+import { type ContextBlock, skillHeader, SLOT, VOLATILE_HEADER } from "./blocks.ts"
 import { estimateMessageTokens, estimateTokens } from "./tokens.ts"
 
 export interface AssembleInput {

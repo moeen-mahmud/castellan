@@ -4,7 +4,7 @@ description: Profile a CSV file — row and column counts, types, null rates, an
 license: Apache-2.0
 compatibility: Requires python3
 metadata:
-  castellan-when-not-to-use: >
+  dispach-when-not-to-use: >
     Not for cleaning or transforming the file, and not for answering a question *from* the data —
     this only describes what is in it. For a file that is already understood, skip straight to the query.
 ---

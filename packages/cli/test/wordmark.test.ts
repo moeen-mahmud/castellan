@@ -6,8 +6,8 @@
  * *any* name renders — a rename has to stay one commit.
  */
 
-import { describe, expect, test } from "bun:test"
 import { drawable, wordmark } from "#lib/wordmark"
+import { describe, expect, test } from "bun:test"
 
 const ROOMY = { columns: 140, rows: 20 }
 
@@ -72,7 +72,7 @@ describe("the tiers", () => {
     test("nothing ever exceeds the space it was given", () => {
         for (const columns of [20, 40, 53, 60, 80, 100, 140]) {
             for (const rows of [1, 3, 5, 20]) {
-                const mark = wordmark("Castellan", { columns, rows })
+                const mark = wordmark("dispach", { columns, rows })
                 expect(mark.lines.length).toBeLessThanOrEqual(rows)
                 expect(widest(mark.lines)).toBeLessThanOrEqual(columns)
                 expect(mark.width).toBe(widest(mark.lines))
@@ -90,7 +90,7 @@ describe("the tiers", () => {
     })
 
     test("trailing space is trimmed, so centring on the width centres the ink", () => {
-        const mark = wordmark("Castellan", ROOMY)
+        const mark = wordmark("dispach", ROOMY)
         for (const line of mark.lines) expect(line).toBe(line.replace(/\s+$/, ""))
     })
 
@@ -99,7 +99,7 @@ describe("the tiers", () => {
     })
 
     test("a rename is one commit — any name renders", () => {
-        for (const name of ["Kit", "Hermes", "Warden", "A", "Castellan", "some-agent.2"]) {
+        for (const name of ["Kit", "Hermes", "Warden", "A", "dispach", "some-agent.2"]) {
             const mark = wordmark(name, ROOMY)
             expect(mark.lines.length).toBeGreaterThan(0)
             expect(mark.width).toBeGreaterThan(0)

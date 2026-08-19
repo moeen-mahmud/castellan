@@ -1,6 +1,6 @@
 # 01 — Architecture
 
-## What Castellan is
+## What Dispach is
 
 A runtime layer that turns a stateless chat-completions endpoint into an agent that lives
 in messaging channels, uses tools, remembers, and runs on a schedule.
@@ -22,7 +22,7 @@ sufficient elements:
 Anything outside those four is a plugin, not core. Use this every time scope creep argues
 with you.
 
-## What Castellan is not
+## What dispach is not
 
 Not an orchestration graph. Not a workflow engine. Not a RAG pipeline. Not a vector
 database. Not a browser automator — `web_fetch` reads one page by explicit URL with no JavaScript
@@ -37,7 +37,7 @@ Directory names contain no brand string, so a rename touches `brand.ts` and `pac
 only.
 
 ```
-castellan/
+dispach/
 ├── package.json                 # bun workspaces root
 ├── bunfig.toml
 ├── biome.json
@@ -45,16 +45,16 @@ castellan/
 ├── CLAUDE.md                    # standing brief for coding agents
 ├── docs/
 ├── packages/
-│   ├── core/                    @castellan/core
-│   ├── cli/                     @castellan/cli          bin: castellan
-│   ├── server/                  @castellan/server
-│   ├── channel-telegram/        @castellan/channel-telegram
-│   ├── channel-whatsapp/        @castellan/channel-whatsapp   (Baileys)
-│   ├── tools-composio/          @castellan/tools-composio
-│   ├── tools-system/            @castellan/tools-system       shell + files
-│   ├── tools-web/               @castellan/tools-web          search + fetch
-│   ├── tools-mcp/               @castellan/tools-mcp
-│   └── compat-openclaw/         @castellan/compat-openclaw
+│   ├── core/                    @dispach/core
+│   ├── cli/                     @dispach/cli          bin: dispach
+│   ├── server/                  @dispach/server
+│   ├── channel-telegram/        @dispach/channel-telegram
+│   ├── channel-whatsapp/        @dispach/channel-whatsapp   (Baileys)
+│   ├── tools-composio/          @dispach/tools-composio
+│   ├── tools-system/            @dispach/tools-system       shell + files
+│   ├── tools-web/               @dispach/tools-web          search + fetch
+│   ├── tools-mcp/               @dispach/tools-mcp
+│   └── compat-openclaw/         @dispach/compat-openclaw
 ├── examples/
 │   ├── minimal/                 # smallest thing that runs: one model, no tools
 │   ├── reference/               # every agent.yaml field; future phases commented with their phase
@@ -299,7 +299,7 @@ Progressive, five stages, each strictly more aggressive. Never a single lossy su
 | Stage | Trigger | Action | Loss |
 | --- | --- | --- | --- |
 | **S0 observe** | every step | record usage, emit `context.pressure` | none |
-| **S1 trim** | 0.60 | any single observation over `observationMaxTokens` → head+tail excerpt, full body written to `.castellan/artifacts/<id>`, replaced by a pointer the agent can re-read | recoverable |
+| **S1 trim** | 0.60 | any single observation over `observationMaxTokens` → head+tail excerpt, full body written to `.dispach/artifacts/<id>`, replaced by a pointer the agent can re-read | recoverable |
 | **S2 snip** | 0.70 | drop superseded observations — same `tool + argsHash`, keep only the latest | low |
 | **S3 micro** | 0.80 | summarise the oldest N turn-pairs into a digest delta using the `compactor` model | moderate |
 | **S4 collapse** | 0.88 | replace all but the last K turns with the digest plus pinned blocks | high |
@@ -326,7 +326,7 @@ Tools are resolved **at agent load**, not per turn:
    providers actually consulted, the manifest field, and the nearest available match.
 4. Enforce `budget.max` (default 24) with `budget.reserveWrite` (default 6) held for
    tools annotated as mutating.
-5. Cache resolved schemas to `.castellan/tools.cache.json`; refresh asynchronously after ready.
+5. Cache resolved schemas to `.dispach/tools.cache.json`; refresh asynchronously after ready.
 
 The two budget rules read as one and are different in kind. Pinning **more slugs than the cap** is a
 configuration error — the manifest asked for something arithmetically impossible, and only its author
@@ -507,7 +507,7 @@ lossy in both directions, so the loop would have to guess which tool a reply mea
 
 ### The web tools
 
-`@castellan/tools-web` ships `web_search` (one signature over Tavily, Brave or Exa) and `web_fetch`
+`@dispach/tools-web` ships `web_search` (one signature over Tavily, Brave or Exa) and `web_fetch`
 (one GET, extracted to text). Both read-only, both `trust: "untrusted"` by declaration.
 
 The fetching is a GET; the substance is `address.ts` and `guard.ts`, which decide what the agent may
@@ -819,9 +819,9 @@ Measured for one agent, three plugins, twenty skills, on 2 vCPU.
 
 **Hard rules:**
 
-- **No network I/O before step 8.** This is the single rule that separates Castellan from
+- **No network I/O before step 8.** This is the single rule that separates Dispach from
   OpenClaw, whose gateway blocks roughly four minutes on hook handlers making network calls
-  during initialisation.
+  during initialization.
 - No filesystem walk deeper than the skills directory, and only frontmatter is read.
 - No plugin may `await` a network call in `setup()`. The loader times each one and warns
   past 200 ms.

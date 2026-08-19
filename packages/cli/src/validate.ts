@@ -8,7 +8,10 @@
  * renderer costs ~170-210 ms to import under Node, which would be most of this command's runtime.
  */
 
-import { isAbsolute, resolve } from "node:path"
+import { ambientEnv } from "#lib/ambient"
+import { EXIT_FAILURE, EXIT_OK } from "#lib/const"
+import { CHANNEL_IDS, CHANNELS, PROVIDER_IDS } from "#lib/providers"
+import type { ValidateOptions } from "#lib/schema"
 import {
     buildChannels,
     HarnessError,
@@ -17,11 +20,8 @@ import {
     resolveCapabilities,
     resolveWorkspace,
     ruleBudgetFailure,
-} from "@castellan/core"
-import { ambientEnv } from "#lib/ambient"
-import { EXIT_FAILURE, EXIT_OK } from "#lib/const"
-import { CHANNEL_IDS, CHANNELS, PROVIDER_IDS } from "#lib/providers"
-import type { ValidateOptions } from "#lib/schema"
+} from "@dispach/core"
+import { isAbsolute, resolve } from "node:path"
 
 export function validateCommand(options: ValidateOptions): number {
     try {

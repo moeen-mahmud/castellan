@@ -1,4 +1,4 @@
-# @castellan/tools-composio
+# @dispach/tools-composio
 
 Composio as a tool provider, over plain HTTP. No MCP transport, no SDK, no sidecar.
 
@@ -18,8 +18,8 @@ tools:
 `provider: composio` + `providerConfig:` spelling still loads and warns; setting both is refused.
 
 ```bash
-castellan tools ./agent.yaml --warm   # fetch schemas into the cache — do this first
-castellan tools ./agent.yaml          # show the catalogue the model will see
+dispach tools ./agent.yaml --warm   # fetch schemas into the cache — do this first
+dispach tools ./agent.yaml          # show the catalogue the model will see
 ```
 
 ## The cache is the point
@@ -32,7 +32,7 @@ So the two paths are kept strictly apart:
 
 | | when | network |
 | --- | --- | --- |
-| `resolve()` | boot, before `runtime.ready` | **never** — reads `.castellan/tools.cache.json` |
+| `resolve()` | boot, before `runtime.ready` | **never** — reads `.dispach/tools.cache.json` |
 | `refresh()` | after `runtime.ready`, detached | yes, then rewrites the cache |
 
 Measured on a three-tool manifest: `Runtime.create` returns in **27 ms**, and the refresh that
@@ -113,5 +113,5 @@ Composio's MCP surface 405s the GET stream leg and stalls past 120 seconds. Both
 properties, so going direct deletes the proxy sidecar, the held-open SSE connection, and the rebind
 bug along with it. Decision 4.6.
 
-The package depends on `@castellan/core` and nothing else. Every request goes through one injectable
+The package depends on `@dispach/core` and nothing else. Every request goes through one injectable
 `fetch`, so all of it — including the failure paths — is tested without a network.

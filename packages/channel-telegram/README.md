@@ -1,4 +1,4 @@
-# @castellan/channel-telegram
+# @dispach/channel-telegram
 
 The Telegram channel: raw Bot API over `fetch`, long-poll or webhook, no client library.
 
@@ -12,7 +12,7 @@ channels:
 ```
 
 ```ts
-import { telegramChannel } from "@castellan/channel-telegram"
+import { telegramChannel } from "@dispach/channel-telegram"
 
 const runtime = await Runtime.create({
     agents: ["./agent.yaml"],
@@ -21,7 +21,7 @@ const runtime = await Runtime.create({
 })
 ```
 
-The `castellan` binary registers this for you. A library embedder registers what it wants.
+The `dispach` binary registers this for you. A library embedder registers what it wants.
 
 ## Fields
 

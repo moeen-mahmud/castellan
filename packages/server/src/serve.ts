@@ -11,7 +11,7 @@
  * connection failure a client would read as a network problem.
  */
 
-import { HarnessError } from "@castellan/core"
+import { HarnessError } from "@dispach/core"
 import { createHandler, type HandlerOptions } from "./handler.ts"
 import { HEARTBEAT_MS } from "./sse.ts"
 import { attachWebSocket, type WsSession } from "./ws.ts"

@@ -723,7 +723,7 @@ test("a multi-line shell value survives a colon in it", () => {
     const parsed = parseNlt(
         [
             "ACTION: exec",
-            "command: ps aux | grep castellan",
+            "command: ps aux | grep dispach",
             'echo "--- ports ---"',
             "lsof -nP -iTCP:7420 -sTCP:LISTEN",
             "END",

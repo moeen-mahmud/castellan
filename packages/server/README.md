@@ -1,9 +1,9 @@
-# @castellan/server
+# @dispach/server
 
 The HTTP, SSE and WebSocket surface described in `docs/04-SPEC-WIRE.md`. Framework-free.
 
 ```ts
-import { serve } from "@castellan/server"
+import { serve } from "@dispach/server"
 
 const running = await serve({ runtime, host: "127.0.0.1", port: 7420, token })
 console.log(running.url)
@@ -12,7 +12,7 @@ console.log(running.url)
 Or mount it inside something you already run — `createHandler` is a plain function:
 
 ```ts
-import { createHandler } from "@castellan/server"
+import { createHandler } from "@dispach/server"
 
 const handler = createHandler({ runtime, token })
 const response = await handler(new Request("http://x/v1/health"))
@@ -24,8 +24,8 @@ That shape is the point. Every route is testable by constructing a `Request` and
 From the CLI:
 
 ```bash
-castellan serve ./agent.yaml            # reads the manifest's server block
-castellan serve ./agent.yaml --port 8080 --host 0.0.0.0
+dispach serve ./agent.yaml            # reads the manifest's server block
+dispach serve ./agent.yaml --port 8080 --host 0.0.0.0
 ```
 
 ## Authentication

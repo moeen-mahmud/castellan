@@ -29,7 +29,7 @@ import {
     type ToolAvailability,
     type ToolProvider,
     type ToolProviderContext,
-} from "@castellan/core"
+} from "@dispach/core"
 import { BACKEND_IDS, type BackendId, backend } from "./backends.ts"
 import { webConfigInvalid } from "./errors.ts"
 import { DEFAULT_MAX_BYTES, type FetchLike, fetchTool } from "./fetch.ts"
@@ -45,7 +45,7 @@ import { searchTool } from "./search.ts"
  * which is a thing to do to someone, not a thing to do by default. Sites that block this are sites
  * that have said what they want.
  */
-const USER_AGENT = "castellan-agent/0.1 (+https://github.com/moeen-mahmud/castellan)"
+const USER_AGENT = "dispach-agent/0.1 (+https://github.com/moeen-mahmud/dispach)"
 
 export interface WebProviderOptions {
     readonly env: Readonly<Record<string, string | undefined>>

@@ -1,5 +1,5 @@
 /**
- * `@castellan/channel-telegram` — the Telegram channel, registered by type name.
+ * `@dispach/channel-telegram` — the Telegram channel, registered by type name.
  *
  * ```ts
  * Runtime.create({ agents: ["./agent.yaml"], channels: { telegram: telegramChannel } })
@@ -17,21 +17,21 @@
  * ```
  */
 
-import { type ChannelFactory, ConfigError } from "@castellan/core"
+import { type ChannelFactory, ConfigError } from "@dispach/core"
 import { TelegramApi } from "./api.ts"
 import { type TelegramMode, TelegramTransport } from "./transport.ts"
 
+export { TelegramApi, TelegramApiError } from "./api.ts"
 export type {
     TelegramChat,
     TelegramMe,
     TelegramMessage,
     TelegramResponse,
     TelegramUpdate,
-    TelegramUser,
+    TelegramUser
 } from "./api.ts"
-export { TelegramApi, TelegramApiError } from "./api.ts"
-export type { TelegramMode, TelegramTransportOptions } from "./transport.ts"
 export { TelegramTransport, toInbound } from "./transport.ts"
+export type { TelegramMode, TelegramTransportOptions } from "./transport.ts"
 
 /**
  * Construct a Telegram transport from a manifest entry.

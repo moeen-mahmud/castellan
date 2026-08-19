@@ -1,6 +1,6 @@
 # 06 — VelaOps Integration
 
-VelaOps is Castellan's first consumer and its most demanding one. That is useful — a
+VelaOps is Dispach's first consumer and its most demanding one. That is useful — a
 runtime with one real production consumer beats a runtime with none — and dangerous,
 because the pressure to let VelaOps' concerns bleed into core will be constant, and you are
 the only person who can refuse.
@@ -11,11 +11,11 @@ This document exists to make that refusal mechanical rather than a judgement cal
 
 ## The boundary
 
-**Castellan is the process inside `velaops-{agentId}`. Nothing else.**
+**Dispach is the process inside `velaops-{agentId}`. Nothing else.**
 
 Everything in `apps/engine` stays where it is: the provisioner, `docker.ts`, `terminal.ts`,
 `stream-hub.ts`, `litellm.ts`, `agent-keys.ts`, Traefik routing, MinIO backups,
-`docker-socket-proxy`. Castellan replaces exactly one thing: the OpenClaw gateway process.
+`docker-socket-proxy`. Dispach replaces exactly one thing: the OpenClaw gateway process.
 
 ### What must never enter core
 
@@ -24,12 +24,12 @@ Write this list somewhere you'll see it during code review:
 | VelaOps concern | Where it stays | Why |
 | --- | --- | --- |
 | Per-agent RSA-3072 `.pem` challenge | `lib/agent-keys.ts` | VelaOps' isolation model, not a runtime concern |
-| LiteLLM virtual keys, budgets, 25% markup | `lib/litellm.ts` | Castellan sees a base URL and a token |
+| LiteLLM virtual keys, budgets, 25% markup | `lib/litellm.ts` | Dispach sees a base URL and a token |
 | Traefik labels, subdomain routing | `docker.ts` | Deployment topology |
 | MinIO backup envelopes | `lib/backup.ts` | Storage policy |
 | `velaops-net` DNS assumptions | compose | Network topology |
 | Billing, entitlements, tier quotas | engine | Business logic |
-| Better Auth sessions, user identity | engine | Castellan has no user model |
+| Better Auth sessions, user identity | engine | Dispach has no user model |
 | `[boot-phase]` marker **format** | compat adapter | Core emits structured events; the adapter formats them |
 
 The last one is the pattern for all of these. Core emits `runtime.ready` with a `phases`
@@ -43,11 +43,11 @@ never heard of VelaOps, it belongs in the adapter or the engine.
 
 ## Migration strategy
 
-Add `agents.runtime` — `'openclaw' | 'castellan'` — plus a second agent image tag. Both
+Add `agents.runtime` — `'openclaw' | 'dispach'` — plus a second agent image tag. Both
 runtimes coexist per-agent. There is no cutover event.
 
 ```
-Week 1   Phase 12 ships. runtime='castellan' on your own agent only.
+Week 1   Phase 12 ships. runtime='dispach' on your own agent only.
 Week 2-4 Dogfood. Every gotcha in 02-GOTCHAS.md gets checked against the new runtime.
 Week 5+  Opt-in for new agents. Existing agents untouched.
 Later    Default for new agents. Existing agents migrate on request.
@@ -62,7 +62,7 @@ even that is deferred.
 
 ## The compat adapter
 
-`@castellan/compat-openclaw` translates. It is not part of the public protocol and it is
+`@dispach/compat-openclaw` translates. It is not part of the public protocol and it is
 deletable the day you're willing to touch `openclaw-ws.ts` and `openclaw-sync.ts`.
 
 **Surface it must reproduce** (from `01-SYSTEM-CONTEXT.md` §8 and `02-GOTCHAS.md`):
@@ -95,7 +95,7 @@ cron jobs (SQLite)                →  schedules
 ```
 
 The two bootstrap caps are worth care. In OpenClaw, raising only the per-file cap starved
-`MEMORY.md`. Castellan has one budget with explicit per-slot accounting, so the translation
+`MEMORY.md`. Dispach has one budget with explicit per-slot accounting, so the translation
 is lossy in the direction of correctness — record it as a deviation and verify `MEMORY.md`
 actually lands in context via `GET /v1/agents/:id/context`.
 
@@ -105,7 +105,7 @@ actually lands in context via `GET /v1/agents/:id/context`.
 
 `02-GOTCHAS.md` is an executable spec for Phase 12. Each row is a test that must pass.
 
-| VelaOps gotcha | Castellan behaviour to verify |
+| VelaOps gotcha | dispach behaviour to verify |
 | --- | --- |
 | Model field only accepts `openclaw/main` | Adapter rewrites; native manifest takes a real id |
 | Config silently rolls back on version skew | `apiVersion` mismatch fails loudly at boot |
@@ -141,7 +141,7 @@ deviation.
 Not the pitch — the specific things that become possible once the runtime is yours.
 
 **Container weight.** The current agent container runs the gateway, a Python embed-service
-with model weights, the Baileys bridge, the Teams channel, and `composio-proxy`. Castellan
+with model weights, the Baileys bridge, the Teams channel, and `composio-proxy`. dispach
 is one process. FTS5 replaces the embed-service, which is the single largest per-agent cost
 line and the reason `EMBED_MODEL` exists. Direct Composio deletes `composio-proxy`. One
 ingress port also resolves the unverified whatsapp-bridge/Teams 3978 collision flagged in
@@ -155,7 +155,7 @@ makes aggressive auto-pause viable, which is where the margin is.
 slow enough to need narration. Removing it is the visible proof the runtime changed.
 
 **Model routing stops being a hot-patch.** `POST /api/agents/:id/model` currently
-hot-patches `openclaw.json`. Against Castellan it's a manifest field.
+hot-patches `openclaw.json`. Against Dispach it's a manifest field.
 
 **Upgrades stop being a treadmill.** `pnpm check:openclaw` guards a version pin on a
 runtime you don't control. That constant disappears.
@@ -164,14 +164,14 @@ runtime you don't control. That constant disappears.
 
 ## What VelaOps must keep doing
 
-Castellan does not replace these, and requests to make it do so should be declined:
+Dispach does not replace these, and requests to make it do so should be declined:
 
 - **Identity and auth.** No user model. Better Auth stays authoritative.
 - **Cost control.** No budgets, no markup, no quotas. LiteLLM stays.
 - **Isolation.** No opinion on containers. The `.pem` model stays.
 - **Provisioning.** No agent lifecycle management. That is literally VelaOps.
 - **Persistence beyond its own tables.** Core emits events; the engine subscribes and writes
-  `sub_agent_invocations` and `tool_calls`. Castellan never writes to the `velaops` database.
+  `sub_agent_invocations` and `tool_calls`. dispach never writes to the `velaops` database.
 
 That last one is the cleanest boundary in the whole design. Core owns its SQLite file inside
 the container. Everything the platform wants to know arrives over `GET /v1/events`.
@@ -181,10 +181,10 @@ the container. Everything the platform wants to know arrives over `GET /v1/event
 ## Operational notes
 
 **Verification stays Docker Compose.** The VelaOps standing mandate is unchanged for
-engine-side work. Castellan itself has `bun test`, and those are different questions.
+engine-side work. dispach itself has `bun test`, and those are different questions.
 
 **Version pinning inverts.** Today `OPENCLAW_RUNTIME_VERSION` pins a foreign runtime and
-`check:openclaw` asserts agreement. With Castellan, VelaOps pins a git SHA or version range
+`check:openclaw` asserts agreement. With dispach, VelaOps pins a git SHA or version range
 of its own dependency. Same discipline, but a bump is now a decision rather than an
 emergency.
 

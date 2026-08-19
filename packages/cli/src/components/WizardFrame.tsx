@@ -4,9 +4,9 @@
  * shows whatever the reducer computed rather than a number that quietly stops being true.
  */
 
+import { BORDER_STYLE, GLYPH, THEME } from "#lib/theme"
 import { Box, Text } from "ink"
 import type { ReactNode } from "react"
-import { BORDER_STYLE, GLYPH, THEME } from "#lib/theme"
 
 export interface WizardFrameProps {
     readonly step: number

@@ -1,10 +1,10 @@
 # 04 — Wire Protocol
 
-The HTTP surface exposed by `@castellan/server`. Deliberately boring: HTTP + JSON for
+The HTTP surface exposed by `@dispach/server`. Deliberately boring: HTTP + JSON for
 control, SSE for streaming, WebSocket only where genuinely bidirectional. **`curl` must be
 sufficient to drive everything.**
 
-This is Castellan's *own* protocol. The OpenClaw-compatible surface VelaOps currently
+This is Dispach's *own* protocol. The OpenClaw-compatible surface VelaOps currently
 speaks is a separate adapter documented in `06-VELAOPS-INTEGRATION.md`, and it is not part
 of this spec.
 
@@ -332,9 +332,9 @@ Without this, that's guesswork against a prompt you can't see.
 API caller. Where output goes is a property of the request, not the agent.
 
 **Why no batch endpoint.** Fan-out is the caller's job. A batch endpoint is a queue with
-extra steps, and Castellan is not a queue.
+extra steps, and Dispach is not a queue.
 
-**Why no auth beyond a bearer token.** Castellan is a runtime, not a multi-tenant service.
+**Why no auth beyond a bearer token.** Dispach is a runtime, not a multi-tenant service.
 Identity, RBAC, and per-user scoping belong to whatever embeds it — VelaOps has Better
 Auth, its own session store, and per-agent `.pem` keys already. Duplicating that here would
-create two sources of truth for authorisation, which is worse than none.
+create two sources of truth for authorization, which is worse than none.

@@ -18,26 +18,6 @@
  * terminal.
  */
 
-import {
-    closeSync,
-    existsSync,
-    mkdirSync,
-    openSync,
-    readFileSync,
-    readSync,
-    statSync,
-} from "node:fs"
-import { homedir } from "node:os"
-import { dirname, join, resolve } from "node:path"
-import {
-    BRAND,
-    buildChannels,
-    HarnessError,
-    loadManifest,
-    processAlive,
-    readManifestHeader,
-    SqliteStore,
-} from "@castellan/core"
 import { ambientEnv } from "#lib/ambient"
 import { EXIT_FAILURE, EXIT_OK, LOG_POLL_MS } from "#lib/const"
 import {
@@ -65,6 +45,26 @@ import { CHANNEL_IDS, CHANNELS, PROVIDER_IDS } from "#lib/providers"
 import { bytes, indent, keyValue, tildify } from "#lib/render"
 import { sandboxRoot, storePath } from "#lib/sandbox"
 import { type Exec, resolveServiceManager, unsupported } from "#lib/service"
+import {
+    BRAND,
+    buildChannels,
+    HarnessError,
+    loadManifest,
+    processAlive,
+    readManifestHeader,
+    SqliteStore,
+} from "@dispach/core"
+import {
+    closeSync,
+    existsSync,
+    mkdirSync,
+    openSync,
+    readFileSync,
+    readSync,
+    statSync,
+} from "node:fs"
+import { homedir } from "node:os"
+import { dirname, join, resolve } from "node:path"
 
 export const DAEMON_ACTIONS = [
     "install",

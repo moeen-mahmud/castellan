@@ -20,11 +20,11 @@
  * function the catalogue list uses, because "keep the interesting row visible" is one rule.
  */
 
-import { Box, Text } from "ink"
 import { lineInfo } from "#editor"
 import { viewport } from "#lib/rows"
 import { THEME } from "#lib/theme"
 import type { EditorState } from "#lib/types"
+import { Box, Text } from "ink"
 
 export interface LineCursorProps {
     readonly editor: EditorState

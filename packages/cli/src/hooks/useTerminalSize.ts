@@ -6,9 +6,9 @@
  * fallback is applied here rather than at each call site.
  */
 
+import { FALLBACK_COLUMNS, FALLBACK_ROWS } from "#lib/const"
 import { useStdout } from "ink"
 import { useEffect, useState } from "react"
-import { FALLBACK_COLUMNS, FALLBACK_ROWS } from "#lib/const"
 
 interface Size {
     readonly columns: number
