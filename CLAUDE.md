@@ -1326,3 +1326,55 @@ Never claim a performance property without a number in `evals/` and a script to 
   wrong skill displaces the right one, a wrong memory spends twenty tokens — and because a rule refusing
   single-term queries would refuse "frankfurt?" too. Do not "fix" it with a constant; it is a property of
   a normalised score.
+- **A bounded window that renders `wrap="truncate"` and wraps nothing is truncating, and Ink measures the
+  box from its *content*.** `LineCursor` did both halves of that, so a long message made the composer wider
+  than the terminal and the wrapping became whichever terminal was running it: at 100 columns VS Code cut
+  the line at the border and took the caret with it — you could not see what you were typing — while Warp
+  wrapped the over-wide row onto the right-hand border. One cause, two symptoms, neither reproducible in the
+  other terminal, which is why it was reported as two bugs. Give a box an explicit `width` and wrap the text
+  yourself. Two details that are not optional: the wrap has to report **source offsets**, because a row's
+  text is not a slice of its line — a break consumes the space and a hanging indent is re-applied to rows
+  that never held one — so a caret cannot be placed from the finished strings; and it wraps to `columns - 1`,
+  because the caret is an inverse cell and needs a cell at the end of a row that exactly fills the window.
+- **`ROLE_PREFIX` is a hanging indent, so a long label makes the longest item the narrowest.** The reasoning
+  prefix was fourteen columns, re-applied to every row after the first, on the one item that is routinely
+  forty rows long — 86 columns of a 100-column terminal. The label belongs on a row of its own. And a 23-row
+  reasoning block for a one-sentence answer fills a thirty-row terminal on its own, so it folds to a count
+  with ⌥r to open it: folding is applied when items become **rows**, never when they are committed, or
+  `--show-reasoning` stops being honourable after the fact.
+- **`live` accumulates across steps, so committing it once at `turn.end` destroys the turn's chronology.**
+  A multi-step turn came out "every tool row, then all the reasoning, then all the text" — the reasoning
+  that *decided* to call a tool printed below that tool's result, and step one's reasoning concatenated onto
+  step two's with nothing marking the join (`…look for it in my workspace.The user is asking me to…`).
+  `model.result` fires once per model call and is therefore the boundary; no new event was needed. Related:
+  the turn's stats then need a `turnFrom` floor recorded at `turn.start`, or a turn that produced no text
+  hangs its cost on the *previous* turn's reply and that reply reads as having cost twice.
+- **When a constraint is lifted, the code written around it does not announce itself.** `tool.result`
+  appended a second item because `<Static>` had already written the first and editing a written node
+  silently does nothing — and the comment said exactly that, a phase after `<Static>` was removed. Four rows
+  per tool call where one would do. Grep for the comment explaining a workaround, not for the workaround.
+  Pair a result to its call on `callId`: calls overlap, so "the last tool row" is not the row it belongs to.
+- **Ink hands a mouse report to `useInput` as text, and strips one leading escape from the chunk.** With
+  tracking on, a wheel notch reached the insert branch and its report was typed into the message — so a
+  guard is not an optimisation, and it must claim clicks and releases too, because a click that falls
+  through is the same bug with a different button. Two measured facts, each a debugging round: the strip
+  happens at `ink/build/hooks/use-input.js:97`, so the **first** report in a chunk arrives bare and the rest
+  keep their escape — requiring the prefix matched none of them; and the notch **count** matters, because a
+  flick of the wheel is coalesced into one chunk and honouring one report moves a single row. Recognise X10
+  as well as SGR: a terminal that ignored the SGR request replies in X10, whose bytes are routinely above
+  127. The cost is stated rather than hidden — tracking is what stops the terminal handling the mouse, so
+  drag-select is gone while a session is mounted, and shift bypasses it in every terminal worth naming.
+- **Read the raw bytes off the pty, not only the rendered screen.** `DISABLE_MOUSE` shipped with its second
+  escape as the literal text `ESC`, because a substitution had caught one per string and not both. Every
+  symptom is silent: the sequence is *printed* somewhere in the frame, the terminal is left in an encoding
+  nobody asked for, and the wheel still appears to work because the parser accepts both encodings. A
+  rendered grid cannot show it; `repr()` of the last few hundred bytes shows it immediately. A test now
+  asserts each constant holds exactly two escape **bytes** and no `ESC` letters.
+- **A `flexGrow` spacer above the composer is right with a conversation and wrong without one.** On the
+  landing screen the transcript held a five-line banner in a fourteen-row window, so twelve blank rows sat
+  between the banner and the input on a thirty-row terminal — a third of the screen, reading as half-empty
+  rather than as a prompt waiting for you. The slack goes *below* the composer while landing. In the same
+  frame the banner's first row duplicated the sticky header exactly, brand, version, agent and model, three
+  rows apart: the rich path drops it and anything genuinely absent from the header (`window`) moves down a
+  line. The plain path keeps the row, because it has no header and that is the only place the version
+  appears — so the fix belongs at the `seed()` call, not in the line builder both paths share.

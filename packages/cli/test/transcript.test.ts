@@ -287,7 +287,7 @@ describe("tool rows", () => {
     function call(slug: string, mutating = false): TranscriptAction {
         return {
             kind: "event",
-            event: ev("tool.call", { slug, callId: "c1", argsHash: "deadbeef", mutating }),
+            event: ev("tool.call", { slug, callId: `${slug}-1`, argsHash: "deadbeef", mutating }),
         }
     }
 
@@ -296,7 +296,7 @@ describe("tool rows", () => {
             kind: "event",
             event: ev("tool.result", {
                 slug,
-                callId: "c1",
+                callId: `${slug}-1`,
                 trust: "trusted",
                 ok,
                 latencyMs: 12,
@@ -324,23 +324,53 @@ describe("tool rows", () => {
         )
     })
 
-    test("the result is its own row rather than an edit of the call's", () => {
-        // `<Static>` has already written the call row. Editing a written node silently does nothing,
-        // so the outcome has to arrive as a new item.
+    test("the result completes the call's own row rather than adding a second", () => {
+        // It *was* a second row, because `<Static>` had already written the first and editing a written
+        // node silently does nothing. `<Static>` went in Phase 5.5 and the buffer is ours, so a call is
+        // one row — which with the blank between items was four rows per tool call and is now one.
         const state = run([START, call("now"), result("now")])
-        expect(state.items).toHaveLength(2)
-        expect(state.items[1]?.text).toBe("now — ok · 12 ms")
+        expect(state.items).toHaveLength(1)
+        expect(state.items[0]?.text).toBe("now — ok · 12 ms")
+        expect(state.items[0]?.pending).toBe(undefined)
+    })
+
+    test("a call is pending until its own result arrives, and pairs by id", () => {
+        // Two calls in flight: matching "the last tool row" would complete the wrong one.
+        const both = run([START, call("read_a"), call("read_b")])
+        expect(both.items.every((item) => item.pending === true)).toBe(true)
+
+        const first = reduce(both, {
+            kind: "event",
+            event: ev("tool.result", {
+                slug: "read_a",
+                callId: "read_a-1",
+                trust: "trusted",
+                ok: true,
+                latencyMs: 12,
+                bytes: 40,
+                truncated: false,
+            }),
+        })
+        expect(first.items[0]?.text).toBe("read_a — ok · 12 ms")
+        expect(first.items[1]?.pending).toBe(true)
+    })
+
+    test("a result for a call nobody saw is appended rather than dropped", () => {
+        // An observation nothing can account for is exactly the thing worth seeing.
+        const state = run([START, result("orphan")])
+        expect(state.items).toHaveLength(1)
+        expect(state.items[0]?.text).toBe("orphan — ok · 12 ms")
     })
 
     test("a failed call is an error row, not a tool row", () => {
         const state = run([START, call("now"), result("now", false)])
-        expect(state.items[1]?.role).toBe("error")
-        expect(state.items[1]?.text).toContain("failed")
+        expect(state.items[0]?.role).toBe("error")
+        expect(state.items[0]?.text).toContain("failed")
     })
 
     test("a trimmed observation is visible on the row", () => {
         const state = run([START, call("big"), result("big", true, true)])
-        expect(state.items[1]?.text).toContain("observation trimmed")
+        expect(state.items[0]?.text).toContain("observation trimmed")
     })
 
     test("a repair is a note naming what could not be used", () => {
@@ -638,5 +668,209 @@ describe("phase changes", () => {
     test("one tool reads as one, not 1 tools", () => {
         const state = run([{ kind: "event", event: ev("phase.changed", { to: "x", tools: 1 }) }])
         expect(state.items[0]?.text).toContain("1 tool available")
+    })
+})
+
+describe("a multi-step turn reads in the order it happened", () => {
+    /**
+     * The defect: `live` accumulated across every step and was committed once at `turn.end`, so a turn came
+     * out shaped "every tool row, then all the reasoning, then all the text". The reasoning that *decided*
+     * to call a tool was printed below that tool's result, and step one's reasoning was concatenated onto
+     * step two's with nothing marking the join — a live turn read `…look for it in my workspace.The user is
+     * asking me to…`. `model.result` is emitted once per model call, so it is the boundary; no new event
+     * was needed to find it.
+     */
+    function step(): TranscriptAction {
+        return {
+            kind: "event",
+            event: ev("model.result", {
+                outputTokens: 10,
+                promptTokens: 100,
+                finishReason: "tool_calls",
+                latencyMs: 200,
+            }),
+        }
+    }
+    function call(slug: string): TranscriptAction {
+        return {
+            kind: "event",
+            event: ev("tool.call", { slug, callId: `${slug}-1`, argsHash: "d", mutating: false }),
+        }
+    }
+    function done(slug: string): TranscriptAction {
+        return {
+            kind: "event",
+            event: ev("tool.result", {
+                slug,
+                callId: `${slug}-1`,
+                trust: "trusted",
+                ok: true,
+                latencyMs: 5,
+                bytes: 9,
+                truncated: false,
+            }),
+        }
+    }
+
+    test("reasoning sits above the tool it explains, not below the tool's result", () => {
+        const state = run([
+            START,
+            chunk("I should read the file.", "reasoning"),
+            step(),
+            call("file_read"),
+            done("file_read"),
+            chunk("Now I know.", "reasoning"),
+            chunk("Here is the answer.", "text"),
+            step(),
+            end("final"),
+        ])
+        expect(state.items.map((item) => item.role)).toEqual([
+            "reasoning",
+            "tool",
+            "reasoning",
+            "assistant",
+        ])
+        expect(state.items[0]?.text).toBe("I should read the file.")
+        expect(state.items[1]?.text).toBe("file_read — ok · 5 ms")
+    })
+
+    test("two steps of reasoning are two items, never one run-on", () => {
+        const state = run([
+            START,
+            chunk("first thought.", "reasoning"),
+            step(),
+            chunk("second thought.", "reasoning"),
+            step(),
+            end("final"),
+        ])
+        const reasoning = state.items.filter((item) => item.role === "reasoning")
+        expect(reasoning).toHaveLength(2)
+        expect(reasoning[0]?.text).toBe("first thought.")
+        expect(reasoning[1]?.text).toBe("second thought.")
+    })
+
+    test("a tool call flushes what was streamed before it, even with no step boundary", () => {
+        // Some endpoints emit the call without a `model.result` in between. The reasoning still belongs
+        // above the call.
+        const state = run([START, chunk("let me look.", "reasoning"), call("glob"), done("glob")])
+        expect(state.items.map((item) => item.role)).toEqual(["reasoning", "tool"])
+    })
+
+    test("the turn's cost lands on the reply it belongs to", () => {
+        const state = run([
+            START,
+            chunk("thinking.", "reasoning"),
+            step(),
+            chunk("the answer.", "text"),
+            step(),
+            end("final"),
+        ])
+        const reply = state.items.find((item) => item.role === "assistant")
+        expect(reply?.text).toBe("the answer.")
+        expect(reply?.stats?.promptTokens).toBe(10)
+        // Not on the reasoning above it, and not on a row of its own.
+        expect(state.items.filter((item) => item.stats !== undefined)).toHaveLength(1)
+    })
+
+    test("a turn with no reply of its own does not claim the previous turn's", () => {
+        // Without the `turnFrom` floor the statistics would be attached to whatever reply came before,
+        // which reads as that reply having cost twice.
+        const first = run([START, chunk("answered."), step(), end("final")])
+        const second = run([START, call("glob"), done("glob"), end("final")], first)
+        const replies = second.items.filter((item) => item.role === "assistant")
+        expect(replies).toHaveLength(1)
+        expect(replies[0]?.stats?.promptTokens).toBe(10)
+        // The turn that produced nothing says so, rather than borrowing.
+        expect(second.items.at(-1)?.text).toBe("the model returned no text")
+    })
+
+    test("a cancelled turn still commits what it had streamed", () => {
+        const state = run([START, chunk("half an ans"), { kind: "cancelling" }, end("stopped")])
+        expect(state.items.map((item) => item.role)).toEqual(["assistant"])
+        expect(state.items[0]?.text).toBe("half an ans")
+        expect(state.status).toBe("idle")
+    })
+
+    test("the live buffer is cleared at each boundary, so nothing is committed twice", () => {
+        const state = run([START, chunk("once."), step(), step(), end("final")])
+        expect(state.items.filter((item) => item.role === "assistant")).toHaveLength(1)
+        expect(state.live).toBe(undefined)
+    })
+})
+
+describe("reasoning becomes a header and an indented body", () => {
+    /**
+     * `ROLE_PREFIX.reasoning` was `· reasoning · ` — fourteen columns — and a prefix is re-applied as a
+     * hanging indent on every row after the first. So the longest item in a conversation was also the
+     * narrowest: 86 columns of a 100-column terminal, on the one thing that is routinely forty rows long.
+     * The label moved to a row of its own, where it costs one row once instead of fourteen columns per row.
+     */
+    const long = Array.from({ length: 40 }, (_, at) => `thought number ${at}`).join(" ")
+    const withReasoning = run([START, chunk(long, "reasoning"), chunk("done."), end("final")])
+
+    test("the body gets nearly the whole width, not width minus a label", () => {
+        const rows = transcriptRows(withReasoning.items, {
+            showReasoning: true,
+            quiet: true,
+            columns: 60,
+            expandReasoning: true,
+        })
+        const body = rows.filter((row) => row.role === "reasoning" && row.text.startsWith("  t"))
+        expect(body.length).toBeGreaterThan(0)
+        for (const row of body) expect(row.text.length).toBeLessThanOrEqual(60)
+        // Two columns of indent, not fourteen.
+        expect(body[0]?.text.startsWith("  thought")).toBe(true)
+    })
+
+    test("a long block folds to a count and says how to see the rest", () => {
+        const rows = transcriptRows(withReasoning.items, {
+            showReasoning: true,
+            quiet: true,
+            columns: 60,
+        })
+        const label = rows.find((row) => row.text.includes("· reasoning ·"))
+        expect(label?.text).toContain("expands")
+        expect(rows.some((row) => row.text.includes("more row"))).toBe(true)
+    })
+
+    test("expanding shows every row and drops the fold notice", () => {
+        const folded = transcriptRows(withReasoning.items, {
+            showReasoning: true,
+            quiet: true,
+            columns: 60,
+        })
+        const whole = transcriptRows(withReasoning.items, {
+            showReasoning: true,
+            quiet: true,
+            columns: 60,
+            expandReasoning: true,
+        })
+        expect(whole.length).toBeGreaterThan(folded.length)
+        expect(whole.some((row) => row.text.includes("more row"))).toBe(false)
+        expect(whole.find((row) => row.text.includes("· reasoning ·"))?.text).not.toContain(
+            "expands",
+        )
+    })
+
+    test("a short block is not folded and carries no expand hint", () => {
+        const short = run([START, chunk("brief.", "reasoning"), chunk("done."), end("final")])
+        const rows = transcriptRows(short.items, {
+            showReasoning: true,
+            quiet: true,
+            columns: 60,
+        })
+        expect(rows.find((row) => row.text.includes("· reasoning ·"))?.text).toBe(
+            "· reasoning · 1 row",
+        )
+        expect(rows.some((row) => row.text.includes("more row"))).toBe(false)
+    })
+
+    test("hidden reasoning renders no header either", () => {
+        const rows = transcriptRows(withReasoning.items, {
+            showReasoning: false,
+            quiet: true,
+            columns: 60,
+        })
+        expect(rows.some((row) => row.text.includes("reasoning"))).toBe(false)
     })
 })

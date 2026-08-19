@@ -81,10 +81,18 @@ export const ROLE_COLOR: Record<TranscriptRole, string | undefined> = {
     banner: undefined,
 }
 
+/**
+ * What each role puts before its text, and re-applies as a hanging indent on every row after the first.
+ *
+ * That second half is why `reasoning` is **two columns** rather than the `\u00b7 reasoning \u00b7 ` it used to be.
+ * A prefix is an indent, so the longest block in the transcript was also the narrowest — 86 columns of a
+ * 100-column terminal, on the one item that is routinely forty rows long. The label moved to a header row
+ * of its own, where it costs one row once instead of fourteen columns per row.
+ */
 export const ROLE_PREFIX: Record<TranscriptRole, string> = {
     user: "› ",
     assistant: "",
-    reasoning: "· reasoning · ",
+    reasoning: "  ",
     note: "· ",
     error: "✖ ",
     tool: "  · ",

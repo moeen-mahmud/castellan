@@ -408,6 +408,34 @@ describe("WizardApp", () => {
         expect(frame.text).toMatch(/\d+ of \d+/)
     })
 
+    test("opens with the brand mark, which degrades rather than crowding the questions", () => {
+        // `init` used to open on a boxed one-line title and nothing else — the wordmark was exclusive to
+        // `run`, so the first surface a person ever sees was the one with no identity on it.
+        //
+        // The mark is *rendered* from the brand rather than written down (hard rule 3), so what is asserted
+        // is that it draws at all and that it gives way on a terminal too short for it — a picture is never
+        // worth a question that has scrolled off the screen.
+        const tall = mount(
+            h(WizardApp, { title: "Setup", given: {}, defaults: {}, onDone: () => {} }),
+            { columns: 100, rows: 30 },
+        )
+        const drawn = tall.frame()
+        tall.unmount()
+        expect(drawn.lines[0]).toContain("█")
+        expect(overflowing(drawn, 100)).toEqual([])
+        expect(drawn.text).toMatch(/\d+ of \d+/)
+
+        const short = mount(
+            h(WizardApp, { title: "Setup", given: {}, defaults: {}, onDone: () => {} }),
+            { columns: 100, rows: 16 },
+        )
+        const plain = short.frame()
+        short.unmount()
+        expect(plain.lines[0]).not.toContain("█")
+        // The questions survive the loss of the picture, which is the direction that matters.
+        expect(plain.text).toMatch(/\d+ of \d+/)
+    })
+
     test("typing an answer and pressing enter advances", async () => {
         const harness = mount(
             h(WizardApp, { title: "Setup", given: {}, defaults: {}, onDone: () => {} }),
@@ -442,7 +470,7 @@ function stubAppProps(): AppProps {
         sessionKey: "local:default",
         model: "qwen3.5:9b",
         agentName: "milo",
-        initial: { items: [], live: undefined, status: "idle", nextId: 1 },
+        initial: { items: [], live: undefined, status: "idle", nextId: 1, turnFrom: undefined },
         showReasoning: false,
         quiet: false,
     }
@@ -459,6 +487,7 @@ function longHistory(turns: number): AppProps["initial"] {
         live: undefined,
         status: "idle" as const,
         nextId: turns,
+        turnFrom: undefined,
     }
 }
 
@@ -963,6 +992,7 @@ describe("App, the landing state", () => {
             live: undefined,
             status: "idle" as const,
             nextId: 1,
+            turnFrom: undefined,
         }
         const harness = mount(h(App, { ...stubAppProps(), freshSession: true, initial: banner }), {
             columns: 100,

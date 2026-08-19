@@ -136,6 +136,13 @@ describe("the pure modules stay pure", () => {
         // brand string, so it is *rendered* from `BRAND.name` rather than written down, and the property
         // that a rename still draws is only assertable as strings.
         "lib/wordmark.ts",
+        // Phase 5.6's two. `composer.ts` is where the caret sits once the input box wraps its own text —
+        // pure because the render and the frame arithmetic both call it, and a disagreement between them
+        // is a composer drawn under the status line. `mouse.ts` is what a wheel notch means; pure because
+        // Ink hands a mouse report over as *text*, so the only thing standing between a scroll and a
+        // corrupted message is a function over a string.
+        "lib/composer.ts",
+        "lib/mouse.ts",
     ]
 
     test("they import no renderer and no node built-ins", () => {

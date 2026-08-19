@@ -21,13 +21,13 @@
  * every non-interactive command under a tenth of a second.
  */
 
+import { Runtime } from "@dispach/core"
 import { ambientEnv } from "#lib/ambient"
 import { EXIT_FAILURE, EXIT_OK } from "#lib/const"
 import { CHANNELS, scriptRunner, TOOL_PROVIDERS } from "#lib/providers"
 import { keyValue } from "#lib/render"
 import { storePath } from "#lib/sandbox"
 import type { MemoryOptions } from "#lib/schema"
-import { Runtime } from "@dispach/core"
 
 /** Enough of a passage to recognize it, on one line. */
 const PREVIEW_CHARS = 96

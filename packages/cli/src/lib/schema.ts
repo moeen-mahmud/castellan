@@ -373,6 +373,14 @@ export interface PromptProps {
     readonly editor: EditorState
     readonly busy: boolean
     /**
+     * The screen's width. The box takes it explicitly and the text is wrapped to what is left inside it.
+     *
+     * Not optional, and that is the point: a composer with no width lets Ink measure the box from its
+     * content, which makes a long message wider than the terminal and hands the wrapping to whichever
+     * terminal is running it — cut in one, ragged over the border in another.
+     */
+    readonly columns: number
+    /**
      * Shown dim, with the cursor on its first character, while the buffer is empty.
      *
      * Only the splash passes one. In the transcript the prompt sits under a conversation that already

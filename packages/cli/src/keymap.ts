@@ -8,6 +8,7 @@
  */
 
 import { lineInfo } from "#editor"
+import { mouseInput } from "#lib/mouse"
 import type { EditorState, Intent, KeyState } from "#lib/types"
 
 export interface KeyContext {
@@ -127,6 +128,18 @@ function ctrlIntent(letter: string, context: KeyContext): Intent {
 }
 
 export function keyToIntent(input: string, key: KeyState, context: KeyContext): Intent {
+    // The mouse, before anything else, and unconditionally.
+    //
+    // Ink has no idea what a mouse report is and hands it over as text: with tracking on, one wheel notch
+    // reached the insert branch and typed the report into the message. So every report is claimed here —
+    // the wheel becomes a scroll and everything else becomes nothing at all, because a click that falls
+    // through is the same bug with a different button.
+    const mouse = mouseInput(input)
+    if (mouse !== undefined) {
+        if (mouse.rows === 0) return { kind: "none" }
+        return { kind: "scroll", move: mouse.rows < 0 ? "up" : "down", times: Math.abs(mouse.rows) }
+    }
+
     if (key.ctrl) return ctrlIntent(input.toLowerCase(), context)
 
     // ─── option chords ───────────────────────────────────────────────────────────────────
@@ -137,6 +150,8 @@ export function keyToIntent(input: string, key: KeyState, context: KeyContext): 
     //   ⌥←  Apple Terminal `ESC b`      → input "b" + meta      iTerm2 `CSI 1;3D` → leftArrow + meta
     //   ⌥→  Apple Terminal `ESC f`      → input "f" + meta      iTerm2 `CSI 1;3C` → rightArrow + meta
     //   ⌥⌫  `ESC DEL`                   → backspace + meta
+    //   ⌥d  `ESC d`                     → input "d" + meta
+    //   ⌥r  `ESC r`                     → input "r" + meta
     //   ⌥⏎  `ESC CR`                    → return + meta
     //   ⇧⏎  kitty protocol `CSI 13;2u`  → return + shift        (only once the terminal is taught)
     //
@@ -154,6 +169,9 @@ export function keyToIntent(input: string, key: KeyState, context: KeyContext): 
         if (key.rightArrow || input === "f") return { kind: "wordRight" }
         if (key.backspace) return { kind: "killWord" }
         if (input === "d") return { kind: "killWordForward" }
+        // Reasoning is folded to a few rows by default, and this is how the rest of it is read. Same
+        // shape as ⌥d — a letter with meta — so it works wherever the chords above already do.
+        if (input === "r") return { kind: "reasoning" }
         // An unclaimed option chord does nothing. Falling through would reach the insert branch and
         // type the bare letter, so ⌥s would silently put an "s" in the message. Composed characters
         // (é, ∆) are unaffected: macOS sends those as the character itself, with no meta flag.

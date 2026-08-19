@@ -3,11 +3,13 @@ import { LEAVE_ALT_SCREEN, RESET_STYLE } from "#lib/const"
 import {
     finish,
     markAltScreen,
+    markMouse,
     markTerminalDirty,
     onExit,
     resetForTests,
     restoreTerminal,
 } from "#lib/exit"
+import { DISABLE_MOUSE } from "#lib/mouse"
 import type { TerminalHandles } from "#lib/schema"
 
 interface Fake extends TerminalHandles {
@@ -202,5 +204,47 @@ describe("exit codes", () => {
             // Restore, or this test would fail the suite it belongs to.
             process.exitCode = previous
         }
+    })
+})
+
+describe("mouse tracking", () => {
+    test("is switched off when the session asked for it", () => {
+        // Left on, the shell that gets the terminal back emits a report on every click and scroll into a
+        // prompt that has no idea what they are. That failure outlives the process, which is why the
+        // teardown runs from the exit hook rather than only from a clean unmount.
+        resetForTests({ dirty: false })
+        markMouse()
+        const terminal = fakeTerminal({ outIsTTY: true, inIsTTY: true })
+        restoreTerminal(terminal)
+        expect(terminal.written.join("")).toContain(DISABLE_MOUSE)
+    })
+
+    test("is left alone by a surface that never asked", () => {
+        // Only the chat claims mouse reports. A surface that disabled tracking it never enabled would be
+        // sending a sequence about a state it knows nothing about.
+        resetForTests({ dirty: false })
+        markAltScreen()
+        const terminal = fakeTerminal({ outIsTTY: true, inIsTTY: true })
+        restoreTerminal(terminal)
+        expect(terminal.written.join("")).not.toContain(DISABLE_MOUSE)
+    })
+
+    test("switches off before the buffer swap", () => {
+        // Same reason as the style reset: the request was made against this buffer.
+        resetForTests({ dirty: false })
+        markAltScreen()
+        markMouse()
+        const terminal = fakeTerminal({ outIsTTY: true, inIsTTY: true })
+        restoreTerminal(terminal)
+        const output = terminal.written.join("")
+        expect(output.indexOf(DISABLE_MOUSE)).toBeLessThan(output.indexOf(LEAVE_ALT_SCREEN))
+    })
+
+    test("a pipe gets nothing — plain output stays byte-identical", () => {
+        resetForTests({ dirty: false })
+        markMouse()
+        const terminal = fakeTerminal({ outIsTTY: false, inIsTTY: false })
+        restoreTerminal(terminal)
+        expect(terminal.written.join("")).toBe("")
     })
 })

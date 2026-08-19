@@ -18,6 +18,7 @@
 
 import { once } from "node:events"
 import { EXIT_FAILURE, EXIT_SIGTERM, LEAVE_ALT_SCREEN, RESET_STYLE, SHOW_CURSOR } from "#lib/const"
+import { DISABLE_MOUSE } from "#lib/mouse"
 import type { TerminalHandles } from "#lib/schema"
 
 /**
@@ -36,6 +37,7 @@ let guardsInstalled = false
 let restored = false
 let dirty = false
 let altScreen = false
+let mouse = false
 let signalsClaimed = false
 
 /**
@@ -65,6 +67,21 @@ export function markTerminalDirty(): void {
 export function markAltScreen(): void {
     dirty = true
     altScreen = true
+}
+
+/**
+ * The session asked the terminal to report the mouse, so the terminal has to be told to stop.
+ *
+ * Separate from `markAltScreen` because only the chat reads mouse reports. A surface that enabled
+ * tracking without claiming every report would have them typed into it as text, which is what Ink does
+ * with one — so the flag follows whoever handles them rather than whoever took the screen.
+ *
+ * Left on, the shell that gets the terminal back emits a report on every click and scroll, into a prompt
+ * that has no idea what they are. That is the failure worth being loud about: it outlives the process.
+ */
+export function markMouse(): void {
+    dirty = true
+    mouse = true
 }
 
 /**
@@ -110,17 +127,25 @@ export function restoreTerminal(handles: TerminalHandles = processHandles()): vo
     // it arrives, so resetting after the swap leaves the app's last colour on the shell's screen and
     // dutifully resets the one being thrown away.
     handles.out.write(`${RESET_STYLE}${SHOW_CURSOR}`)
+    // Before the buffer swap, for the same reason the style reset is: the request was made against this
+    // buffer and the shell must not be left with a terminal that reports clicks at it.
+    if (mouse) handles.out.write(DISABLE_MOUSE)
     if (altScreen) handles.out.write(LEAVE_ALT_SCREEN)
 }
 
 /** Test seam. Nothing in `src/` outside this module calls it. */
 export function resetForTests(
-    options: { readonly dirty?: boolean; readonly altScreen?: boolean } = {},
+    options: {
+        readonly dirty?: boolean
+        readonly altScreen?: boolean
+        readonly mouse?: boolean
+    } = {},
 ): void {
     teardowns.length = 0
     restored = false
     dirty = options.dirty ?? true
     altScreen = options.altScreen ?? false
+    mouse = options.mouse ?? false
     signalsClaimed = false
 }
 

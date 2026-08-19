@@ -7,21 +7,27 @@
  * the placeholder renders dim with the cursor on its first character — the affordance every modern CLI
  * uses for "press enter to accept this".
  *
- * ## Why it renders lines rather than a line
+ * ## Why it renders rows rather than lines
  *
  * The chat buffer became multi-line in Phase 5.5, and the alternative to generalising this was a second
  * component for the composer — which would be a second cursor implementation, the exact thing this file
- * was extracted to prevent. So it renders a column of lines with a caller-supplied `gutter`, and a
- * single-line field is the one-line case of that.
+ * was extracted to prevent. So it renders a column of rows with a caller-supplied `gutter`, and a
+ * single-line field is the one-row case of that.
+ *
+ * A **row is not a line**, and conflating them was the defect. Nothing here wrapped: each logical line was
+ * handed to Ink with `wrap="truncate"`, so a message wider than the box was cut and the caret went with it
+ * — you could not see what you were typing. `composerLayout` now decides the rows and where the caret sits
+ * on them, `wrap="truncate"` is a backstop rather than the layout, and `chat-frame.promptRows` counts the
+ * same rows this draws.
  *
  * Two consequences worth stating. The cursor is never drawn *on* a newline: the line break is structure
- * rather than a character, so the caret sits at the end of one line or the start of the next, which is
- * where a person expects it. And the view scrolls to follow the cursor through `viewport()` — the same
+ * rather than a character, so the caret sits at the end of one row or the start of the next, which is
+ * where a person expects it. And the view scrolls to follow the caret through `viewport()` — the same
  * function the catalogue list uses, because "keep the interesting row visible" is one rule.
  */
 
 import { Box, Text } from "ink"
-import { lineInfo } from "#editor"
+import { composerLayout } from "#lib/composer"
 import { viewport } from "#lib/rows"
 import { THEME } from "#lib/theme"
 import type { EditorState } from "#lib/types"
@@ -42,15 +48,31 @@ export interface LineCursorProps {
     readonly gutter?: string
     /** Visible rows before the view starts scrolling to follow the cursor. */
     readonly maxRows?: number
+    /**
+     * Columns available for the text, the gutter included.
+     *
+     * Required for anything that can hold a long message. Omitted, nothing wraps and a line wider than
+     * whatever draws this is truncated by Ink at a width nobody chose — which is what this component did
+     * everywhere until Phase 5.6.
+     */
+    readonly columns?: number
 }
 
-export function LineCursor({ editor, placeholder, secret, gutter = "", maxRows }: LineCursorProps) {
-    const pad = " ".repeat([...gutter].length)
+export function LineCursor({
+    editor,
+    placeholder,
+    secret,
+    gutter = "",
+    maxRows,
+    columns,
+}: LineCursorProps) {
+    const lead = [...gutter].length
+    const pad = " ".repeat(lead)
 
     if (editor.value === "" && placeholder !== undefined && placeholder !== "") {
         const chars = [...placeholder]
         return (
-            <Text dimColor>
+            <Text dimColor wrap="truncate">
                 <Text color={THEME.accent}>{gutter}</Text>
                 <Text inverse>{chars[0] ?? " "}</Text>
                 {chars.slice(1).join("")}
@@ -58,12 +80,16 @@ export function LineCursor({ editor, placeholder, secret, gutter = "", maxRows }
         )
     }
 
-    const lines = editor.value.split("\n")
-    const { line: cursorLine, column } = lineInfo(editor)
-    const window = maxRows ?? lines.length
-    const { from, to } = viewport(lines.length, cursorLine, Math.max(1, window))
+    // The gutter is drawn on the first row and matched by a blank on every row after it, so the text
+    // stays in one column — which means the text itself only ever gets what is left.
+    const { rows: all, caretRow } = composerLayout(
+        editor,
+        Math.max(1, (columns ?? Number.MAX_SAFE_INTEGER) - lead),
+    )
+    const window = maxRows ?? all.length
+    const { from, to } = viewport(all.length, caretRow, Math.max(1, window))
     const hiddenAbove = from
-    const hiddenBelow = lines.length - to
+    const hiddenBelow = all.length - to
 
     return (
         <Box flexDirection="column">
@@ -72,29 +98,29 @@ export function LineCursor({ editor, placeholder, secret, gutter = "", maxRows }
                     {pad}… {hiddenAbove} line{hiddenAbove === 1 ? "" : "s"} above
                 </Text>
             ) : null}
-            {lines.slice(from, to).map((text, offset) => {
+            {all.slice(from, to).map((row, offset) => {
                 const at = from + offset
                 // Masked per code point, so the dot count matches what was typed rather than its byte
                 // length.
-                const chars = secret === true ? [...text].map(() => "•") : [...text]
-                const lead = at === from && hiddenAbove === 0 ? gutter : pad
-                if (at !== cursorLine) {
+                const chars = secret === true ? [...row.text].map(() => "•") : [...row.text]
+                const glyph = at === from && hiddenAbove === 0 ? gutter : pad
+                if (row.caret === undefined) {
                     return (
-                        // Keyed by index: two identical lines in a message are not the same line, and a
+                        // Keyed by index: two identical rows in a message are not the same row, and a
                         // content key would collapse them.
-                        <Text key={`line-${at}`} wrap="truncate">
-                            <Text color={THEME.accent}>{lead}</Text>
+                        <Text key={`row-${at}`} wrap="truncate">
+                            <Text color={THEME.accent}>{glyph}</Text>
                             {chars.join("")}
                         </Text>
                     )
                 }
                 return (
-                    <Text key={`line-${at}`} wrap="truncate">
-                        <Text color={THEME.accent}>{lead}</Text>
-                        {chars.slice(0, column).join("")}
+                    <Text key={`row-${at}`} wrap="truncate">
+                        <Text color={THEME.accent}>{glyph}</Text>
+                        {chars.slice(0, row.caret).join("")}
                         {/* Inverting a trailing space is how the cursor stays visible at end of line. */}
-                        <Text inverse>{chars[column] ?? " "}</Text>
-                        {chars.slice(column + 1).join("")}
+                        <Text inverse>{chars[row.caret] ?? " "}</Text>
+                        {chars.slice(row.caret + 1).join("")}
                     </Text>
                 )
             })}

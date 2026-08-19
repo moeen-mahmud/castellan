@@ -17,6 +17,7 @@
  */
 
 import type { AnyEvent } from "@dispach/core"
+import { REASONING_FOLD_ROWS } from "#lib/const"
 import { ROLE_PREFIX } from "#lib/theme"
 import type {
     TranscriptItem,
@@ -51,19 +52,50 @@ export const EMPTY_TRANSCRIPT: TranscriptState = {
     live: undefined,
     status: "idle",
     nextId: 0,
+    turnFrom: undefined,
 }
 
 function append(
     state: TranscriptState,
     role: TranscriptRole,
     text: string,
-    stats?: TurnStats,
+    extra: {
+        readonly stats?: TurnStats
+        readonly callId?: string
+        readonly pending?: boolean
+    } = {},
 ): TranscriptState {
-    const item: TranscriptItem =
-        stats === undefined
-            ? { id: `t${state.nextId}`, role, text }
-            : { id: `t${state.nextId}`, role, text, stats }
+    const item: TranscriptItem = {
+        id: `t${state.nextId}`,
+        role,
+        text,
+        ...(extra.stats === undefined ? {} : { stats: extra.stats }),
+        ...(extra.callId === undefined ? {} : { callId: extra.callId }),
+        ...(extra.pending === undefined ? {} : { pending: extra.pending }),
+    }
     return { ...state, items: [...state.items, item], nextId: state.nextId + 1 }
+}
+
+/**
+ * Commit whatever the model has streamed so far, and clear it.
+ *
+ * Called at each step boundary rather than once at the end of the turn, which is what puts the
+ * transcript back in the order things happened. Committing at `turn.end` alone produced a turn shaped
+ * "every tool row, then all the reasoning, then all the text" — so the reasoning that *decided* to call
+ * a tool was printed below the tool's result, and step one's reasoning was concatenated onto step two's
+ * with no break between them. Live output on a real turn read `…look for it in my workspace.The user is
+ * asking me to…`, two sentences from two steps with nothing marking the join.
+ *
+ * Reasoning goes in ahead of the text it produced. Whether it is *shown* is the view's business — the
+ * item is written either way, so `--show-reasoning` can be honoured after the fact.
+ */
+function flushLive(state: TranscriptState): TranscriptState {
+    const live = state.live
+    if (live === undefined) return state
+    let next = state
+    if (live.reasoning !== "") next = append(next, "reasoning", live.reasoning)
+    if (live.text !== "") next = append(next, "assistant", live.text)
+    return { ...next, live: undefined }
 }
 
 /** `data` is typed per event in core's map; narrowing by `type` first is what makes this safe. */
@@ -115,32 +147,49 @@ function reduceEvent(state: TranscriptState, event: AnyEvent): TranscriptState {
                 ...state,
                 live: { text: "", reasoning: "", last: undefined },
                 status: "thinking",
+                turnFrom: state.items.length,
             }
+
+        case "model.result":
+            // The step boundary. `model.result` is emitted once per model call, so this is where a step's
+            // reasoning and text stop growing — no new event was needed to find it.
+            return flushLive(state)
 
         case "model.chunk":
             return applyDelta(state, event.data.kind, event.data.delta)
 
         case "tool.call":
             // Committed the moment the call starts, not when it returns: a tool that takes eight
-            // seconds must not leave the screen looking like a stalled model. The row is completed by
-            // `tool.result` appending its own line rather than by editing this one — `<Static>` has
-            // already written it, and editing a written node silently does nothing.
+            // seconds must not leave the screen looking like a stalled model. Anything the model
+            // streamed before deciding to call it is flushed first, so the reasoning sits above the
+            // call it explains rather than below the call's result.
             return {
                 ...append(
-                    state,
+                    flushLive(state),
                     "tool",
                     `${event.data.slug}${event.data.mutating ? " (changes state)" : ""}`,
+                    { callId: event.data.callId, pending: true },
                 ),
                 status: state.status === "cancelling" ? "cancelling" : "working",
             }
 
         case "tool.result": {
-            const { slug, ok, latencyMs, truncated } = event.data
-            return append(
-                state,
-                ok ? "tool" : "error",
-                `${slug} — ${ok ? "ok" : "failed"} · ${latencyMs} ms${truncated ? " · observation trimmed" : ""}`,
+            const { slug, callId, ok, latencyMs, truncated } = event.data
+            const text = `${slug} — ${ok ? "ok" : "failed"} · ${latencyMs} ms${truncated ? " · observation trimmed" : ""}`
+            // The call's own row, completed. Matched on `callId` rather than on position, because calls
+            // can overlap and "the last tool row" is then not the row this result belongs to.
+            const at = state.items.findIndex(
+                (item) => item.callId === callId && item.pending === true,
             )
+            if (at === -1) {
+                // No row to complete — a result for a call this transcript never saw. Appended rather
+                // than dropped: an observation nobody can account for is exactly the thing worth seeing.
+                return append(state, ok ? "tool" : "error", text)
+            }
+            const items = [...state.items]
+            const item = items[at] as TranscriptItem
+            items[at] = { id: item.id, role: ok ? "tool" : "error", text, callId }
+            return { ...state, items }
         }
 
         case "tool.gated":
@@ -168,7 +217,6 @@ function reduceEvent(state: TranscriptState, event: AnyEvent): TranscriptState {
 
         case "turn.end": {
             const { reason, steps, tokens, durationMs } = event.data
-            const live = state.live
             const stats: TurnStats = {
                 promptTokens: tokens.prompt,
                 outputTokens: tokens.output,
@@ -177,21 +225,33 @@ function reduceEvent(state: TranscriptState, event: AnyEvent): TranscriptState {
                 reason,
             }
 
-            // Reasoning is committed as its own item, ahead of the reply it produced. Whether it is
-            // shown is the view's business; dropping it here would make --show-reasoning impossible
-            // to honour after the fact.
-            let next = state
-            if (live !== undefined && live.reasoning !== "") {
-                next = append(next, "reasoning", live.reasoning)
+            // Whatever the last step streamed but never got a `model.result` for — a cancelled turn, or
+            // one that ended on an error mid-stream. On a clean turn this is a no-op, because each step
+            // committed itself as it finished.
+            const next = flushLive(state)
+            const from = state.turnFrom ?? 0
+            // The reply this turn produced, which is where its cost belongs. Searched from the turn's own
+            // first item: without that floor, a turn that produced no text would hang its statistics on
+            // the *previous* turn's reply, which reads as that reply having cost twice.
+            let reply = -1
+            for (let at = next.items.length - 1; at >= from; at -= 1) {
+                if (next.items[at]?.role === "assistant") {
+                    reply = at
+                    break
+                }
             }
-            if (live !== undefined && live.text !== "") {
-                next = append(next, "assistant", live.text, stats)
-            } else if (reason === "final") {
-                // A clean turn that produced nothing is not a normal outcome and must not look
-                // like one.
-                next = append(next, "note", "the model returned no text", stats)
+            if (reply === -1) {
+                // A clean turn that produced nothing is not a normal outcome and must not look like one.
+                const said =
+                    reason === "final"
+                        ? append(next, "note", "the model returned no text", { stats })
+                        : next
+                return { ...said, live: undefined, status: "idle", turnFrom: undefined }
             }
-            return { ...next, live: undefined, status: "idle" }
+            const items = [...next.items]
+            const item = items[reply] as TranscriptItem
+            items[reply] = { ...item, stats }
+            return { ...next, items, live: undefined, status: "idle", turnFrom: undefined }
         }
 
         case "agent.error":
@@ -247,8 +307,7 @@ function reduceEvent(state: TranscriptState, event: AnyEvent): TranscriptState {
 
         default:
             // Boot and bookkeeping events — `runtime.ready`, `store.ready`, `model.call`,
-            // `model.result`, `context.assembled`. They belong to the banner and the status bar,
-            // not the transcript. Ignored explicitly so that a new event type added in a later
+            // `context.assembled`. They belong to the banner and the status bar, not the transcript. Ignored explicitly so that a new event type added in a later
             // phase is inert here rather than a crash.
             return state
     }
@@ -305,6 +364,8 @@ export function transcriptRows(
         readonly showReasoning: boolean
         readonly quiet: boolean
         readonly columns: number
+        /** Reasoning blocks are shown whole rather than folded to `REASONING_FOLD_ROWS`. */
+        readonly expandReasoning?: boolean
     },
 ): readonly TranscriptRow[] {
     const rows: TranscriptRow[] = []
@@ -340,6 +401,39 @@ export function transcriptRows(
         // The prefix is part of the first row's width and an indent on every row after it, so a reply
         // that wraps stays in one column instead of reading as a second message.
         const body = wrapText(item.text, Math.max(1, options.columns - [...prefix].length))
+
+        if (item.role === "reasoning") {
+            // A header row and an indented body, rather than a label wide enough to be the indent. Folded
+            // unless asked for: the block is secondary, and at full length it routinely fills the screen
+            // and pushes the reply it produced out of sight.
+            const shown =
+                options.expandReasoning === true
+                    ? body.length
+                    : Math.min(body.length, REASONING_FOLD_ROWS)
+            const folded = body.length - shown
+            rows.push({
+                key: `${item.id}:label`,
+                role: "reasoning",
+                dim: true,
+                text:
+                    folded > 0
+                        ? `· reasoning · ${body.length} rows · ⌥r expands`
+                        : `· reasoning · ${body.length} row${body.length === 1 ? "" : "s"}`,
+            })
+            for (const [n, line] of body.slice(0, shown).entries()) {
+                rows.push({ key: `${item.id}:${n}`, role: "reasoning", text: `${pad}${line}` })
+            }
+            if (folded > 0) {
+                rows.push({
+                    key: `${item.id}:folded`,
+                    role: "reasoning",
+                    dim: true,
+                    text: `${pad}… ${folded} more row${folded === 1 ? "" : "s"}`,
+                })
+            }
+            continue
+        }
+
         for (const [n, line] of body.entries()) {
             rows.push({
                 key: `${item.id}:${n}`,

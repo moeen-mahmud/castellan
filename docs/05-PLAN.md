@@ -1777,10 +1777,78 @@ width of zero, so the session picker's rows were 43 characters wide on an 80-col
 
 ### Non-goals
 
-A dashboard home screen or panes in one long-lived app — per-command screens were chosen. Mouse
-support. A live `serve` dashboard: a process a supervisor runs must never take a terminal. User
-themes (11.14 stands). `/plugin` — plugins are Phase 9 and there is nothing to show. Any new
-*runtime* dependency; 11.10 is untouched.
+A dashboard home screen or panes in one long-lived app — per-command screens were chosen. ~~Mouse
+support.~~ *(overturned in Phase 5.6: the alternate screen has no scrollback, so the wheel is the
+gesture a transcript needs most — 11.97.)* A live `serve` dashboard: a process a supervisor runs must
+never take a terminal. User themes (11.14 stands). `/plugin` — plugins are Phase 9 and there is
+nothing to show. Any new *runtime* dependency; 11.10 is untouched.
+
+---
+
+## Phase 5.6 — the chat as somebody actually reads it
+
+**Four defects reported by the owner from a real session, plus two found while fixing them.** Nothing
+here is a feature: every item is a surface that was drawn wrong, and each was reproduced over a real
+pty before being touched — the composer at 100 columns, a live multi-step turn against deepseek, and
+`init` at three terminal sizes.
+
+**The composer never wrapped.** It rendered each logical line `wrap="truncate"` and wrapped nothing,
+so Ink truncated to a width it had measured from the box's *content* — which made the box wider than
+the terminal and handed the outcome to whichever terminal was running it. VS Code cut the text at the
+border and took the caret with it; Warp wrapped the over-wide row onto the border. `lib/composer.ts`
+now decides the rows and the caret's place on them, `wrapRows` reports source offsets because a row's
+text is not a slice of its line, and one column is reserved so the caret has a cell at the end of a
+full row (11.93).
+
+**Reasoning was unreadable, in three separate ways.** Its `ROLE_PREFIX` was fourteen columns and a
+prefix is re-applied as a hanging indent, so the longest item in a conversation was also the narrowest
+(11.94). `live` accumulated across every step and was flushed once at `turn.end`, so tool rows landed
+*above* the reasoning that caused them and step one's reasoning ran into step two's with no break —
+`model.result` fires per model call and was already the boundary (11.95). And a 23-row block for a
+one-sentence answer filled the screen, so blocks fold to a count with `⌥r` to open them.
+
+**A tool call cost four rows.** `tool.result` appended a second item, with a comment explaining that
+`<Static>` had already written the first — a phase after `<Static>` was removed. One row now,
+completed in place, paired on `callId` (11.96).
+
+**The wheel scrolls.** Ink hands a mouse report over as text, so the keymap claims every report first
+and unconditionally; the notch count is honoured because a flick arrives as one chunk, and X10 is
+recognised alongside SGR. Drag-select goes while a session is mounted, which is stated rather than
+discovered — shift bypasses tracking in every terminal worth naming (11.97).
+
+**`init` opens on the wordmark, and the landing screen stops looking half-empty.** The same
+`wordmark`, budgeted so it degrades. The landing slack moved below the composer, and the banner's
+first row — an exact duplicate of the sticky header — is dropped on the rich path only (11.98).
+
+### Acceptance
+
+- [x] The composer wraps at 40/60/80/100/140 columns with nothing over the width; verified live at
+      100 and 60, and by a frame test that reads a finished render.
+- [x] `promptRows` equals the rendered line count for a wrapped message, at five widths and in the
+      landing form — the chat-frame drift test, which is what caught the newline hint being counted
+      in rows when it is a fact about lines.
+- [x] The caret is reachable at every cursor offset in a wrapped line, and never past the window.
+- [x] A live multi-step turn reads reasoning → tool → reasoning → reply → cost, with two reasoning
+      items rather than one run-on. Verified against deepseek-v4-flash.
+- [x] A turn's cost lands on its own reply; a turn with no reply does not claim the previous one's.
+- [x] A tool call is one row, pending until its own result, paired by id with two calls in flight.
+- [x] Reasoning folds over four rows, `⌥r` expands and re-folds — verified over a pty, not against
+      the parser: 52 rows opened and closed.
+- [x] No mouse report can become an insert, click and release included; the wheel moves three rows
+      per notch and re-pins at the bottom. Verified live with text in the composer, which stayed clean.
+- [x] Tracking is switched off *before* the buffer swap, and a pipe gets neither. Read out of the raw
+      pty bytes — which is how the second escape shipping as the literal text `ESC` was found.
+- [x] `init` draws the mark at 100×30, the block tier at 44×24, and gives it up at 100×18 while the
+      questions survive.
+- [x] The rich banner says the brand once; the plain REPL still prints its title row in full.
+- [x] `bun test` 2295 · `test:node` 1103 · `bench:boot` 73.7 ms · lint at the 6 pre-existing.
+
+**Non-goals.** A per-block reasoning cursor — the toggle is session-wide, because a second focus on a
+surface where the composer owns the keyboard is a worse trade than a global switch. Mouse support
+anywhere but the chat: only its keymap claims reports, and a surface that enabled tracking without
+claiming them would have Ink type them into it. Making the wizard's field box full width — it is
+65 columns on a 100-column screen and was before this phase, so it needs its own decision rather
+than being changed in passing.
 
 ## Phase 7A — Budget and the compaction ladder
 

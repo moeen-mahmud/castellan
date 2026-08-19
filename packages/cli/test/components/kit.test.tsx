@@ -191,7 +191,7 @@ describe("TextField", () => {
 describe("Prompt", () => {
     test("renders the prompt glyph and the line", () => {
         const frame = renderFrame(
-            h(Prompt, { editor: editorWith("what can you do"), busy: false }),
+            h(Prompt, { editor: editorWith("what can you do"), busy: false, columns: 80 }),
             {
                 columns: 80,
             },
@@ -202,7 +202,9 @@ describe("Prompt", () => {
     test("is drawn while a turn is running rather than disappearing", () => {
         // The box changes colour when busy; it must not vanish, or there is nothing on screen saying
         // where typing would go.
-        const frame = renderFrame(h(Prompt, { editor: EMPTY_EDITOR, busy: true }), { columns: 80 })
+        const frame = renderFrame(h(Prompt, { editor: EMPTY_EDITOR, busy: true, columns: 80 }), {
+            columns: 80,
+        })
         expect(frame.lines.length).toBeGreaterThan(0)
     })
 })
@@ -511,28 +513,65 @@ describe("LineCursor, with more than one line", () => {
 describe("Prompt, composing", () => {
     test("names the newline chord only once the message has a second line", () => {
         // A row spent on every empty prompt for something most messages never need.
-        const one = renderFrame(h(Prompt, { editor: multiline("one line"), busy: false }), {
-            columns: 80,
-        })
+        const one = renderFrame(
+            h(Prompt, { editor: multiline("one line"), busy: false, columns: 80 }),
+            {
+                columns: 80,
+            },
+        )
         expect(one.text).not.toContain("⌥⏎")
-        const two = renderFrame(h(Prompt, { editor: multiline("one\ntwo"), busy: false }), {
-            columns: 80,
-        })
+        const two = renderFrame(
+            h(Prompt, { editor: multiline("one\ntwo"), busy: false, columns: 80 }),
+            {
+                columns: 80,
+            },
+        )
         expect(two.text).toContain("⌥⏎")
+    })
+
+    test("a long message wraps inside the box instead of being cut at it", () => {
+        // The defect, in a frame. Nothing wrapped: each logical line went to Ink with `wrap="truncate"`,
+        // so at 100 columns the text was cut at the border and the caret went with it — you could not see
+        // what you were typing. Warp instead wrapped the over-wide box and put the tail on the border.
+        const message =
+            "The quick brown fox jumps over the lazy dog and keeps on jumping well past the right hand edge of this terminal window."
+        const editor = { ...EMPTY_EDITOR, value: message, cursor: message.length }
+        for (const columns of [40, 60, 80, 100]) {
+            const frame = renderFrame(h(Prompt, { editor, busy: false, columns }), { columns })
+            expect(overflowing(frame, columns)).toEqual([])
+            // Every word survives somewhere in the box, which truncation is exactly what breaks.
+            expect(frame.text).toContain("terminal window.")
+            // More than one row of text, so it really wrapped rather than fitting by luck.
+            expect(frame.lines.length).toBeGreaterThan(3)
+        }
+    })
+
+    test("the caret stays inside the box at the end of a wrapped line", () => {
+        // The reserved column. Wrapping to the full width puts the caret one past the last cell, which the
+        // terminal wraps and the border absorbs.
+        const message = "wrap me ".repeat(12).trim()
+        const editor = { ...EMPTY_EDITOR, value: message, cursor: message.length }
+        for (const columns of [40, 47, 61, 80]) {
+            const frame = renderFrame(h(Prompt, { editor, busy: false, columns }), { columns })
+            expect(overflowing(frame, columns)).toEqual([])
+        }
     })
 
     test("does not advertise shift+enter, which it cannot know works", () => {
         // Naming a chord that silently sends the message instead is worse than naming only ⌥⏎.
-        const frame = renderFrame(h(Prompt, { editor: multiline("one\ntwo"), busy: false }), {
-            columns: 80,
-        })
+        const frame = renderFrame(
+            h(Prompt, { editor: multiline("one\ntwo"), busy: false, columns: 80 }),
+            {
+                columns: 80,
+            },
+        )
         expect(frame.text).not.toContain("⇧")
         expect(frame.text).not.toContain("shift")
     })
 
     test("the box grows with the message and stays inside the terminal", () => {
         const frame = renderFrame(
-            h(Prompt, { editor: multiline("first\nsecond\nthird"), busy: false }),
+            h(Prompt, { editor: multiline("first\nsecond\nthird"), busy: false, columns: 60 }),
             { columns: 60 },
         )
         expect(frame.text).toContain("third")
@@ -769,9 +808,45 @@ describe("the chat frame's arithmetic matches what is drawn", () => {
     test("the composer, empty and composing", () => {
         for (const lines of [1, 2, 5, MAX_INPUT_ROWS, MAX_INPUT_ROWS + 4]) {
             const editor = multi(lines)
-            const frame = renderFrame(h(Prompt, { editor, busy: false }), { columns: 80 })
-            expect(promptRows(editor)).toBe(frame.lines.length)
+            const frame = renderFrame(h(Prompt, { editor, busy: false, columns: 80 }), {
+                columns: 80,
+            })
+            expect(promptRows(editor, 80)).toBe(frame.lines.length)
         }
+    })
+
+    test("the composer with a message long enough to wrap", () => {
+        // The case the row count was wrong for: nothing wrapped, so lines and rows were the same number
+        // and counting either worked. A wrapped message draws more rows than it has lines, and the frame
+        // subtracting the smaller figure put the bottom of the composer under the status line.
+        for (const columns of [40, 60, 80, 100, 140]) {
+            const editor = {
+                ...EMPTY_EDITOR,
+                value: "wrap me ".repeat(40).trim(),
+                cursor: 320,
+            }
+            const frame = renderFrame(h(Prompt, { editor, busy: false, columns }), { columns })
+            expect(promptRows(editor, columns)).toBe(frame.lines.length)
+            expect(overflowing(frame, columns)).toEqual([])
+        }
+    })
+
+    test("the composer in its landing form, which is three rows taller", () => {
+        // `roomy` was two rows and is three: a blank inside the box on each side, plus one outside it
+        // separating the box from the banner now that the landing slack sits *below* the composer rather
+        // than above it. Asserted because the number is restated here and only a render can settle it.
+        const editor = multi(1)
+        const frame = renderFrame(
+            h(Prompt, {
+                editor,
+                busy: false,
+                columns: 80,
+                roomy: true,
+                placeholder: "Ask anything…",
+            }),
+            { columns: 80 },
+        )
+        expect(promptRows(editor, 80, true)).toBe(frame.lines.length)
     })
 
     test("the composer with the cursor scrolled into a long message", () => {
@@ -779,8 +854,8 @@ describe("the chat frame's arithmetic matches what is drawn", () => {
         // the cursor is — which is why `promptRows` calls the same function rather than guessing.
         let editor = multi(MAX_INPUT_ROWS + 6)
         for (let up = 0; up < 8; up += 1) editor = applyIntent(editor, { kind: "lineUp" })
-        const frame = renderFrame(h(Prompt, { editor, busy: false }), { columns: 80 })
-        expect(promptRows(editor)).toBe(frame.lines.length)
+        const frame = renderFrame(h(Prompt, { editor, busy: false, columns: 80 }), { columns: 80 })
+        expect(promptRows(editor, 80)).toBe(frame.lines.length)
     })
 
     test("the palette, matching many, one, and nothing", () => {

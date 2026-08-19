@@ -13,6 +13,20 @@
  * the streaming writes, because both were verified against a real endpoint and a real SIGINT.
  */
 
+import { randomBytes } from "node:crypto"
+import { existsSync } from "node:fs"
+import { createInterface, type Interface } from "node:readline"
+import {
+    type Agent,
+    type AnyEvent,
+    BRAND,
+    defaultStorePath,
+    HarnessError,
+    processAlive,
+    Runtime as RuntimeClass,
+    type SessionSummary,
+    VERSION,
+} from "@dispach/core"
 import { fetchCatalogue } from "#browse"
 import { initInteractive } from "#init"
 import { ambientEnv, demotedKeys } from "#lib/ambient"
@@ -25,7 +39,15 @@ import {
     PROMPT,
     SESSION_PICKER_ROWS,
 } from "#lib/const"
-import { flushOutput, markAltScreen, markTerminalDirty, onExit, restoreTerminal } from "#lib/exit"
+import {
+    flushOutput,
+    markAltScreen,
+    markMouse,
+    markTerminalDirty,
+    onExit,
+    restoreTerminal,
+} from "#lib/exit"
+import { ENABLE_MOUSE } from "#lib/mouse"
 import { resolveModeFromProcess } from "#lib/output"
 import { CHANNELS, scriptRunner, TOOL_PROVIDERS } from "#lib/providers"
 import { keyValue } from "#lib/render"
@@ -44,20 +66,6 @@ import type { CatalogueEntry } from "#lib/source-cache"
 import type { RenderMode } from "#lib/types"
 import { type InstallOutcome, skillsCommand } from "#skills"
 import { seed } from "#transcript"
-import {
-    type Agent,
-    type AnyEvent,
-    BRAND,
-    defaultStorePath,
-    HarnessError,
-    processAlive,
-    Runtime as RuntimeClass,
-    type SessionSummary,
-    VERSION,
-} from "@dispach/core"
-import { randomBytes } from "node:crypto"
-import { existsSync } from "node:fs"
-import { createInterface, type Interface } from "node:readline"
 
 /** Opening lines: what is loaded, what session, and whether the last turn finished. */
 async function bannerLines(
@@ -83,9 +91,13 @@ async function bannerLines(
         agent.store.messages.count(agent.id, sessionKey),
     ])
 
+    // The title first, then the session. The rich path drops the title row — its one-line header restates
+    // it, and the two together put the same brand, agent and model on screen twice — so anything that is
+    // *not* in that header has to live below it. `window` moved down for exactly that reason: it is a fact
+    // about this session's budget rather than part of the title.
     const lines = [
-        `${BRAND.name} ${VERSION} · ${described.id} · ${described.model} · window ${described.window}`,
-        `session ${sessionKey} · ${resumed} message(s) · store ${storeLocation}`,
+        `${BRAND.name} ${VERSION} · ${described.id} · ${described.model}`,
+        `session ${sessionKey} · ${resumed} message(s) · window ${described.window} · store ${storeLocation}`,
         // Points at `/help` rather than listing commands: the list belongs to the table that
         // implements them, and a banner enumerating a subset is the drift this change removed.
         `ready in ${bootMs.toFixed(0)} ms · /help for commands and keys · /exit to leave`,
@@ -611,7 +623,12 @@ async function runRich(wired: Wired): Promise<RunOutcome> {
     // also the cost: the conversation is gone from the screen the moment the session ends. That is what
     // the pointer line below exists for, and what makes `^C` take two presses.
     markAltScreen()
-    process.stdout.write(ENTER_ALT_SCREEN)
+    // Tracking with the buffer swap, and only here: the chat is the one surface whose keymap claims every
+    // mouse report, and a surface that asked for them without claiming them would have Ink type them into
+    // it as text. `markMouse` is what teaches every exit route to switch it off again — including a crash,
+    // because leaving it on hands the shell a terminal that reports clicks into its prompt.
+    markMouse()
+    process.stdout.write(`${ENTER_ALT_SCREEN}${ENABLE_MOUSE}`)
 
     let restart = false
     const instance = render(
@@ -654,7 +671,11 @@ async function runRich(wired: Wired): Promise<RunOutcome> {
                 ...wired.agent.warnings.map((warning) => warning.message),
                 ...wired.agent.tools.warnings.map((warning) => warning.message),
             ],
-            initial: seed(wired.banner),
+            // Without the title row: `titleLine` above the transcript already carries the brand, the
+            // agent and the model, and printing both put one sentence on screen twice — measured at 100
+            // columns, rows 6 and 8 of a fresh session. The plain path keeps it, because there is no
+            // header there and it is the only place the version appears.
+            initial: seed(wired.banner.slice(1)),
             showReasoning: wired.showReasoning,
             quiet: wired.quiet,
             // So a slash command runs against *this* agent: without it a child would resolve whichever

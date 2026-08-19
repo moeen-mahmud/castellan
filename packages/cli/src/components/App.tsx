@@ -162,6 +162,13 @@ export function App({
     const [armed, setArmed] = useState(false)
     /** `/exit` asked; the next keystroke answers. `undefined` means nothing is being confirmed. */
     const [confirming, setConfirming] = useState(false)
+    /**
+     * Reasoning shown whole rather than folded to a count. Session-wide, and `⌥r` toggles it.
+     *
+     * Folded is the default because a real turn produced a twenty-three-row block for a one-sentence
+     * answer, which filled the terminal and left the reply itself somewhere above the fold.
+     */
+    const [expandReasoning, setExpandReasoning] = useState(false)
     // Derived from the buffer rather than stored, so the only palette state is where the cursor is.
     const palette = pane.kind === "none" ? paletteFor(editor.value) : undefined
     const [paletteIndex, setPaletteIndex] = useState(0)
@@ -176,8 +183,8 @@ export function App({
      * history on every streamed token, which is the cost `<Static>` used to remove for free.
      */
     const rows = useMemo(
-        () => transcriptRows(state.items, { showReasoning, quiet, columns }),
-        [state.items, showReasoning, quiet, columns],
+        () => transcriptRows(state.items, { showReasoning, quiet, columns, expandReasoning }),
+        [state.items, showReasoning, quiet, columns, expandReasoning],
     )
 
     /**
@@ -489,7 +496,24 @@ export function App({
                 return
             }
             if (intent.kind === "scroll") {
-                setView((current) => scroll(current, intent.move, rows.length, frame.transcript))
+                // `times` is the wheel: one chunk can carry several notches, and applying one of them makes
+                // a flick of the wheel move a single row. Folded rather than given its own move, so the
+                // clamping at both ends stays in one function.
+                const times = Math.max(1, intent.times ?? 1)
+                setView((current) => {
+                    let next = current
+                    for (let step = 0; step < times; step += 1) {
+                        next = scroll(next, intent.move, rows.length, frame.transcript)
+                    }
+                    return next
+                })
+                return
+            }
+            if (intent.kind === "reasoning") {
+                // Unfolding changes how tall the conversation is, so the window has to be told to follow
+                // the newest row again — leaving it parked would put the reader at a row that has moved.
+                setExpandReasoning((current) => !current)
+                setView(FOLLOWING)
                 return
             }
             if (intent.kind === "exit") {
@@ -634,8 +658,13 @@ export function App({
              * walks down the screen as the first few messages arrive and only settles once the transcript
              * fills the window. The place you type should not move; a spacer costs nothing when the
              * transcript is full, because there is no slack left to absorb.
+             *
+             * Not while landing, though. There the transcript holds a five-line banner in a fourteen-row
+             * window, so the spacer put twelve blank rows between the banner and the input — a third of a
+             * thirty-row terminal, reading as a half-empty screen rather than a prompt waiting for you. The
+             * slack goes *below* the composer instead, which is the spacer at the other end.
              */}
-            <Box flexGrow={1} />
+            {landing ? null : <Box flexGrow={1} />}
 
             {state.live === undefined ? null : (
                 <Live live={state.live} showReasoning={showReasoning} columns={columns} />
@@ -662,6 +691,7 @@ export function App({
             <Prompt
                 editor={editor}
                 busy={busy}
+                columns={columns}
                 {...(landing ? { roomy: true, placeholder: "Ask anything…" } : {})}
             />
             {/*
@@ -674,6 +704,9 @@ export function App({
                     {NEW_SESSION_HINT}
                 </Text>
             ) : null}
+            {/* The other end of the spacer above: on the landing screen the slack belongs under the
+                composer, so the input sits with the banner and the status line stays on the bottom edge. */}
+            {landing ? <Box flexGrow={1} /> : null}
             {/* The status line is the footer, under the input — where every reference CLI puts
                 it, and where the eye rests between keystrokes. */}
             <StatusBar

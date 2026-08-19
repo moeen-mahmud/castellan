@@ -7,16 +7,19 @@
  * Static; the transcript's constraints do not apply to a form.
  */
 
+import { BRAND } from "@dispach/core"
 import { Box, Text, useApp, useInput } from "ink"
 import { useCallback, useEffect, useReducer, useState } from "react"
 import { fetchCatalogue } from "#browse"
 import { Banner } from "#components/Banner"
+import { BRAND_INDENT, Brandmark } from "#components/Brandmark"
 import { CheckList } from "#components/CheckList"
 import { SelectList } from "#components/SelectList"
 import { Spinner } from "#components/Spinner"
 import { SummaryCard } from "#components/SummaryCard"
 import { TextField } from "#components/TextField"
 import { WizardFrame } from "#components/WizardFrame"
+import { useTerminalSize } from "#hooks/useTerminalSize"
 import { keyToCheckIntent, keyToWizardIntent } from "#keymap"
 import { type BrowseRow, chosenEntries, selectableOf } from "#lib/browse"
 import { FALLBACK_COLUMNS, FALLBACK_ROWS } from "#lib/const"
@@ -37,6 +40,16 @@ import {
     summaryRows,
     type WizardState,
 } from "#lib/wizard"
+import { wordmark } from "#lib/wordmark"
+
+/**
+ * Rows the wizard body needs before a wordmark is affordable — the field box, the answered-so-far list as
+ * it grows, the step line, and a margin. Measured against the tallest question rather than the current one:
+ * a mark that fitted on step 1 and pushed the step line off the screen on step 12 is worse than no mark.
+ */
+const WIZARD_BODY_ROWS = 16
+/** The mark never takes more than the chat's own largest tier, however tall the terminal is. */
+const WORDMARK_MAX_ROWS = 5
 
 export interface WizardAppProps {
     readonly title: string
@@ -74,6 +87,9 @@ type Catalogue =
 
 export function WizardApp({ title, given, defaults, onDone }: WizardAppProps) {
     const { exit } = useApp()
+    // The live size, so a resize re-picks the wordmark's tier rather than freezing whichever one fitted at
+    // launch. `screenColumns` is what handles a stream reporting a width of zero.
+    const size = useTerminalSize()
     const [catalogue, setCatalogue] = useState<Catalogue>({ kind: "idle" })
     const [state, dispatch] = useReducer(
         (current: WizardState, action: Parameters<typeof reduceWizard>[1]) =>
@@ -274,6 +290,13 @@ export function WizardApp({ title, given, defaults, onDone }: WizardAppProps) {
     }
 
     const counts = stepCounts(state)
+    // Rows the wizard body needs before a picture is affordable: the field box, the answered-so-far list,
+    // the step line, and a margin. Below that the mark degrades and then goes.
+    const mark = wordmark(BRAND.name, {
+        columns: screenColumns(size.columns, FALLBACK_COLUMNS) - BRAND_INDENT,
+        rows: Math.min(WORDMARK_MAX_ROWS, Math.max(0, size.rows - WIZARD_BODY_ROWS)),
+    })
+
     const hint =
         state.phase === "confirm"
             ? "enter confirm · esc back · ^C quit — nothing written"
@@ -281,10 +304,24 @@ export function WizardApp({ title, given, defaults, onDone }: WizardAppProps) {
 
     return (
         <Box flexDirection="column">
-            <Banner
-                title={title}
-                lines={["a few questions — nothing is written until you confirm"]}
-            />
+            {/*
+             * The wordmark, then a one-line header — the chat's own shape, and the same `wordmark` rather
+             * than a second mark for a second surface.
+             *
+             * It replaces a boxed title rather than sitting above one. Keeping both would put the product
+             * name on screen twice, three rows apart, which is the duplication the chat banner had until
+             * this phase — a picture of the name above a box that also spells it, three rows apart.
+             *
+             * The budget is what makes it degrade. `wordmark` walks its tiers down to a single spaced-out
+             * line and there is no floor below that, so a short or narrow terminal loses the picture rather
+             * than the questions.
+             */}
+            {mark.lines.length > 0 ? <Brandmark lines={mark.lines} /> : null}
+            <Box marginTop={mark.lines.length > 0 ? 1 : 0}>
+                <Text dimColor wrap="truncate">
+                    {title} · a few questions — nothing is written until you confirm
+                </Text>
+            </Box>
             {state.phase === "confirm" ? (
                 <Box flexDirection="column" marginTop={1}>
                     <SummaryCard rows={summaryRows(state)} />

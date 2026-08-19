@@ -92,6 +92,19 @@ export const UNDO_LIMIT = 100
  */
 export const MAX_INPUT_ROWS = 10
 
+/**
+ * Rows of a reasoning block shown before it folds to a count.
+ *
+ * Reasoning is secondary and routinely the longest item in a conversation — a real turn produced a
+ * twenty-three-row block for a one-sentence answer, which filled a thirty-row terminal on its own and made
+ * the reply itself something you had to scroll to find. Four rows is enough to see what it was thinking
+ * about; `⌥r` shows the rest.
+ *
+ * Folding is a *view* decision, applied when items become rows. The whole text is always in the item, so
+ * expanding needs no re-derivation and nothing is lost.
+ */
+export const REASONING_FOLD_ROWS = 4
+
 /** Matches `^R` shows at once. Enough to recognise one, few enough to leave the prompt on screen. */
 export const SEARCH_ROWS = 6
 

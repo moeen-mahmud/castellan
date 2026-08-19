@@ -138,6 +138,11 @@ export const KEY_BINDINGS: readonly KeyBindingSpec[] = [
     },
     { chord: "⌥↑ / ⌥↓", summary: "the same, one row at a time" },
     { chord: "⌥PgUp / ⌥PgDn", summary: "the start of the conversation / back to the newest reply" },
+    {
+        chord: "⌥r",
+        summary:
+            "show the model's reasoning whole — it is folded to a few rows so the reply stays findable",
+    },
     { chord: "esc", summary: "return to the newest reply when you have scrolled away" },
 ]
 

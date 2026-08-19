@@ -24,7 +24,8 @@
  * Pure: editor state, palette matches and live text in, row counts out.
  */
 
-import { lineInfo, searchMatches } from "#editor"
+import { searchMatches } from "#editor"
+import { composerLayout } from "#lib/composer"
 import {
     BRAND_GAP_ROWS,
     LIVE_PANE_MAX_ROWS,
@@ -43,29 +44,43 @@ const STATUS_ROWS = 1
 const SCROLL_HINT_ROWS = 1
 /** `Prompt` wraps `LineCursor` in a bordered box: one row of border above and one below. */
 const PROMPT_BORDER_ROWS = 2
+/** The same box's two border columns and its `paddingX={1}` on each side. */
+const PROMPT_PADDING = 4
+/** `PROMPT` — the `\u203a ` the composer draws before the first row and matches with a blank after it. */
+const PROMPT_GUTTER = 2
 /** `\u00b7 reasoning \u00b7 ` — the prefix `Live` puts on its first row, which narrows the wrap. */
 const LIVE_LABEL = 14
 
 /**
  * The composer, including its border and the newline hint it shows once a message has two lines.
  *
- * `roomy` is the landing form: a blank row above and below the input. It costs two rows of conversation, so
- * it is only true while there is no conversation.
+ * `roomy` is the landing form: a blank row inside the box above and below the input, and one outside it
+ * separating the box from the banner. Three rows, only ever while there is no conversation to spend them on.
  */
-export function promptRows(editor: EditorState, roomy = false): number {
-    const lines = editor.value.split("\n").length
-    const { line } = lineInfo(editor)
+export function promptRows(editor: EditorState, columns: number, roomy = false): number {
+    // Visual rows, not logical lines. Counting lines was correct only while nothing wrapped, and it went
+    // wrong in the direction that cannot be seen: a wrapped message drew more rows than the frame had
+    // subtracted, so the bottom of the composer went under the status line.
+    const { rows, caretRow } = composerLayout(
+        editor,
+        Math.max(1, columns - PROMPT_PADDING - PROMPT_GUTTER),
+    )
+    const total = rows.length
     // Through `viewport`, the function `LineCursor` itself calls, rather than a second guess at where the
     // window lands. Each side of it spends a row on a "… n lines above/below" notice when it hides
     // something, so the count has to come from the same arithmetic that decides whether it does.
-    const { from, to } = viewport(lines, line, Math.max(1, Math.min(lines, MAX_INPUT_ROWS)))
+    const { from, to } = viewport(total, caretRow, Math.max(1, Math.min(total, MAX_INPUT_ROWS)))
     return (
         PROMPT_BORDER_ROWS +
-        (roomy ? 2 : 0) +
+        (roomy ? 3 : 0) +
         (to - from) +
         (from > 0 ? 1 : 0) +
-        (lines - to > 0 ? 1 : 0) +
-        (lines > 1 ? 1 : 0)
+        (total - to > 0 ? 1 : 0) +
+        // Logical lines, not rows: the newline hint answers "how do I add another line", and a message
+        // that merely wrapped has not added one. Counting rows here made the frame one row taller than
+        // the render for every message wide enough to wrap — the same disagreement, in the other
+        // direction, as counting lines for the viewport.
+        (editor.value.includes("\n") ? 1 : 0)
     )
 }
 
@@ -157,7 +172,7 @@ export function chatFrame(inputs: {
         livePane(liveText, inputs.columns - LIVE_LABEL, LIVE_PANE_MAX_ROWS).rows +
         paletteRows(inputs.palette, inputs.paletteMaxRows) +
         searchRows(inputs.editor, inputs.searchMaxRows) +
-        promptRows(inputs.editor, inputs.landing) +
+        promptRows(inputs.editor, inputs.columns, inputs.landing) +
         (inputs.confirming ? 1 : 0) +
         (inputs.hint ? 1 : 0)
 

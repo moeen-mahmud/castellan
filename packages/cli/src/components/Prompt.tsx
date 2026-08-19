@@ -16,30 +16,42 @@
  * untouched by definition.
  */
 
+import { Box, Text } from "ink"
 import { LineCursor } from "#components/LineCursor"
 import { MAX_INPUT_ROWS, PROMPT } from "#lib/const"
 import type { PromptProps } from "#lib/schema"
 import { NEWLINE_HINT } from "#lib/session-commands"
 import { BORDER_STYLE, THEME } from "#lib/theme"
-import { Box, Text } from "ink"
 
-export function Prompt({ editor, busy, placeholder, roomy }: PromptProps) {
+export function Prompt({ editor, busy, placeholder, roomy, columns }: PromptProps) {
     const lines = editor.value.split("\n").length
+    // Two border columns and `paddingX={1}` on each side. Subtracted here rather than inside the cursor,
+    // because the box that spends them is this one.
+    const inner = Math.max(1, columns - 4)
     return (
         <Box flexDirection="column">
             <Box
                 borderStyle={BORDER_STYLE}
                 borderColor={busy ? THEME.border : THEME.borderActive}
+                // Explicit, because a `<Box>` with no width takes its *content* width — which is how a long
+                // message made the box wider than the terminal and left the wrapping to whichever terminal
+                // was running it.
+                width={columns}
                 paddingX={1}
                 // Breathing room, on the splash only. The transcript's composer stays tight because
                 // `chat-frame.ts` measures it and every row it takes is a row of conversation — and because
                 // a two-row-taller input under a live reply reads as a bigger box, not a calmer one.
                 paddingY={roomy === true ? 1 : 0}
+                // A row between the banner and the box. On the landing screen the composer sits directly
+                // under the ready line — the slack having moved below it — and without this the border
+                // touches the text above, which reads as one block rather than two things.
+                marginTop={roomy === true ? 1 : 0}
             >
                 <LineCursor
                     editor={editor}
                     gutter={PROMPT}
                     maxRows={MAX_INPUT_ROWS}
+                    columns={inner}
                     {...(placeholder === undefined ? {} : { placeholder })}
                 />
             </Box>
