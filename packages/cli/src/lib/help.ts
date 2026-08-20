@@ -30,7 +30,7 @@ function flagLine(flag: FlagSpec): string {
     return `  ${forms.padEnd(FLAG_COLUMN)}${flag.help}${trailer}`
 }
 
-const SESSION_KEY_NOTE = `Session keys are {channel}:{peerId}[:{thread}] — a bare word is refused, because outbound
+const SESSION_KEY_NOTE = `Session keys are {channel}:{peerId}[:{thread}] | A bare word is refused, because outbound
 delivery reads the channel back out of the key.`
 
 /**
