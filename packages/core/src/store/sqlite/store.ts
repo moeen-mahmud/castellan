@@ -14,6 +14,7 @@
 import type { ChatMessage, ToolCallRequest } from "../../model/provider.ts"
 import { parseSessionKey } from "../session-key.ts"
 import type {
+    AgentFootprint,
     ArtifactRecord,
     ArtifactStore,
     DeliveryRecord,
@@ -38,7 +39,7 @@ import type {
     TurnStatus,
     TurnStore,
 } from "../store.ts"
-import type { OpenOptions, SqlDatabase } from "./driver.ts"
+import type { OpenOptions, SqlDatabase, SqlStatement } from "./driver.ts"
 import { openDatabase } from "./driver.ts"
 import { type MigrationReport, migrate } from "./migrations.ts"
 
@@ -385,6 +386,11 @@ export class SqliteStore implements Store {
     readonly location: string
     /** What `migrate` did at open. Reported by boot rather than logged and forgotten. */
     readonly migrations: MigrationReport
+    // Assigned in the constructor rather than declared as methods, because they close over `q` — the
+    // prepared statements are constructor-local, the same as every store above.
+    readonly agentFootprint: (agentId: string) => Promise<AgentFootprint>
+    readonly purgeAgent: (agentId: string) => Promise<AgentFootprint>
+    readonly agentIds: () => Promise<readonly string[]>
 
     #db: SqlDatabase
     #closed = false
@@ -702,6 +708,40 @@ export class SqliteStore implements Store {
             ),
             kvDelete: db.prepare("DELETE FROM kv WHERE scope = ? AND key = ?"),
             kvAll: db.prepare("SELECT key, value FROM kv WHERE scope = ? ORDER BY key"),
+
+            // ── one agent's footprint, and its removal ──
+            //
+            // Counted per table rather than derived from `sessionList`, because three of these do not
+            // hang off a session at all: memory is deliberately session-free (migration 6), the outbox
+            // survives its session on purpose, and a lease is about a process.
+            countSessions: db.prepare("SELECT COUNT(*) AS c FROM sessions WHERE agent_id = ?"),
+            countMessages: db.prepare("SELECT COUNT(*) AS c FROM messages WHERE agent_id = ?"),
+            countTurns: db.prepare("SELECT COUNT(*) AS c FROM turns WHERE agent_id = ?"),
+            countArtifacts: db.prepare("SELECT COUNT(*) AS c FROM artifacts WHERE agent_id = ?"),
+            countOutbox: db.prepare("SELECT COUNT(*) AS c FROM outbox WHERE agent_id = ?"),
+            countOutboxPending: db.prepare(
+                "SELECT COUNT(*) AS c FROM outbox WHERE agent_id = ? AND status IN ('pending', 'inflight')",
+            ),
+            countMemorySources: db.prepare(
+                "SELECT COUNT(*) AS c FROM memory_sources WHERE agent_id = ?",
+            ),
+            // `messages`, `turns` and `artifacts` all cascade from `sessions`, so they are not deleted
+            // here — deleting them explicitly would work and would also mean two places had to agree
+            // about the cascade. The foreign keys are the single statement of it.
+            sessionsDeleteAll: db.prepare("DELETE FROM sessions WHERE agent_id = ?"),
+            outboxDeleteAll: db.prepare("DELETE FROM outbox WHERE agent_id = ?"),
+            leaseDeleteAll: db.prepare("DELETE FROM runtime_leases WHERE agent_id = ?"),
+            // A union rather than a join: an agent can own rows in any one of these and none of the
+            // others — a directory deleted while idle leaves sessions and memory with no lease, and an
+            // agent that only ever failed to boot leaves a lease with nothing else.
+            allAgentIds: db.prepare(
+                `SELECT agent_id FROM sessions
+                  UNION SELECT agent_id FROM outbox
+                  UNION SELECT agent_id FROM memory_passages
+                  UNION SELECT agent_id FROM memory_sources
+                  UNION SELECT agent_id FROM runtime_leases
+                  ORDER BY agent_id`,
+            ),
         }
 
         const ensureSession = (agentId: string, sessionKey: string): SessionRecord => {
@@ -1191,6 +1231,41 @@ export class SqliteStore implements Store {
                     .map(toMemoryPassage)
             },
         }
+
+        const count = (statement: SqlStatement, agentId: string): number =>
+            statement.get<{ c: number }>(agentId)?.c ?? 0
+
+        const footprint = (agentId: string): AgentFootprint => ({
+            sessions: count(q.countSessions, agentId),
+            messages: count(q.countMessages, agentId),
+            turns: count(q.countTurns, agentId),
+            artifacts: count(q.countArtifacts, agentId),
+            outbox: count(q.countOutbox, agentId),
+            outboxPending: count(q.countOutboxPending, agentId),
+            passages: q.memoryStats.get<{ passages: number }>(agentId)?.passages ?? 0,
+            memorySources: count(q.countMemorySources, agentId),
+            lease: q.leaseGet.get(agentId) !== undefined,
+        })
+
+        this.agentFootprint = async (agentId) => footprint(agentId)
+
+        this.purgeAgent = async (agentId) =>
+            // Counted inside the transaction, before anything is deleted: counting outside it would
+            // report a number taken at a different moment from the one the deletion acted on, which is
+            // the same class of lie as a gauge reporting pre-compaction pressure.
+            this.#db.transaction(() => {
+                const went = footprint(agentId)
+                // Sessions first, so the cascade runs while the foreign keys still resolve.
+                q.sessionsDeleteAll.run(agentId)
+                q.outboxDeleteAll.run(agentId)
+                q.memoryDeleteAll.run(agentId)
+                q.memorySourceDeleteAll.run(agentId)
+                q.leaseDeleteAll.run(agentId)
+                return went
+            })
+
+        this.agentIds = async () =>
+            q.allAgentIds.all<{ agent_id: string }>().map((row) => row.agent_id)
     }
 
     /** Which module backs this store: `bun:sqlite` or `node:sqlite`. */

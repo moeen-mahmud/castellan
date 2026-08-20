@@ -527,6 +527,48 @@ export const COMMANDS: readonly CommandSpec[] = [
     {
         // The switch that turns everything off. Separate from `daemon stop`, which needs you to
         // know the agent: this one finds the services *and* a `serve` left in a forgotten tab.
+        // The mirror of `init`: it created a directory, a manifest and a workspace, and everything since
+        // has scattered into a shared store keyed by manifest id, a log pair, and possibly a LaunchAgent.
+        // `hidden` for the same reason `stop` is — removing the agent you are talking to is worse than
+        // stopping it.
+        name: "remove",
+
+        inSession: "hidden",
+        summary: "delete a sandbox agent: its directory, sessions, memory, logs and service",
+        args: [
+            {
+                name: "agent",
+                required: false,
+                help: "sandbox agent name (a path is refused — remove only manages agents `init` made)",
+            },
+        ],
+        flags: [
+            {
+                name: "dry-run",
+                kind: "boolean",
+                help: "show exactly what would go; delete nothing",
+            },
+            {
+                name: "files-only",
+                kind: "boolean",
+                help: "delete the directory and keep the sessions, memory and logs",
+            },
+            {
+                name: "prune",
+                kind: "boolean",
+                help: "delete sessions, memory and logs that no sandbox agent claims any more",
+            },
+            { name: "all", kind: "boolean", help: "remove every agent in the sandbox" },
+            {
+                name: "yes",
+                kind: "boolean",
+                help: "skip the typed confirmation (required to delete anything non-interactively)",
+            },
+            STORE,
+            JSON_FLAG,
+        ],
+    },
+    {
         name: "stop",
 
         inSession: "hidden",

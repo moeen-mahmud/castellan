@@ -283,6 +283,7 @@ export {
 } from "./store/sqlite/migrations.ts"
 export { openMemoryStore, SqliteStore, type SqliteStoreOptions } from "./store/sqlite/store.ts"
 export type {
+    AgentFootprint,
     DeliveryRecord,
     DeliveryStatus,
     EnqueueDelivery,

@@ -2316,3 +2316,68 @@ symptom. Diagnosed against the real store rather than by reading:
 - [x] `dispach run milo --session <key>` paints the conversation — verified over a real pty at 100×30
 - [x] `bun test` 2328/0 · `test:node` 1128/0 · `bench:boot` 79 ms (ceiling 1000) · lint at the 6
   pre-existing warnings
+
+---
+
+## Phase 6.2 — collaborator setup, and removing an agent
+
+**Why this exists.** Collaborators were invited to the repository, and three things blocked them —
+one of which turned out to have a real gap behind it.
+
+1. **The README was stale in ways that actively mislead.** `## Status` said *"Phase 0 of thirteen…
+   there is no runtime behaviour yet"*, which tells a new collaborator the project does nothing;
+   `## Boot budget` deferred a number that has been measured since Phase 1. And there were **no
+   install instructions at all** — nothing said `bun link`, that the build must precede it because
+   `bin` names `dist/`, or that Node must be on `PATH` for the shebang.
+2. **Nothing deleted an agent.** Fifteen commands, none of them removal, so it was `rm -rf` plus
+   knowledge of four tables, a log pair and a launchd label. The rows left behind were unreachable:
+   `LeaseStore.orphans`' docstring admitted it and pointed at a `sessions --reap-orphans` that was
+   never built. `logs/dot.*.log` existed on the author's machine with no agent behind it.
+3. **"Is the store shared?" was a fair question with an undocumented answer.** One `store.db` per
+   sandbox root, isolated by `agent_id` on every table. Kept, and now written down — along with the
+   two things about it that had already caused or nearly caused bugs.
+
+**Deliverables**
+
+- [x] `Store.agentFootprint` / `purgeAgent` / `agentIds` — one shape for "what would go" and "what
+  went", so a listing and a deletion cannot disagree
+- [x] `remove <agent>` with `--dry-run`, `--files-only`, `--prune`, `--all`, `--yes`
+- [x] `lib/remove-plan.ts` — pure: findings, ordered steps, both listings
+- [x] `askExactly` beside `askYesNo`, and the first tests either has had
+- [x] `logPaths` moved from private in `daemon.ts` to `lib/sandbox.ts`
+- [x] README: epigraph, Status, `## Getting set up`, `## Where things live`, `## Commands`, the
+  measured boot number, and the house rules a newcomer trips over first
+- [x] The stale `--reap-orphans` docstring corrected; `kv` documented as having no consumer
+
+**Files.** `packages/core/src/store/{store,sqlite/store}.ts` · `packages/core/src/index.ts` ·
+`packages/cli/src/remove.ts` · `packages/cli/src/lib/{remove-plan,confirm,sandbox,commands}.ts` ·
+`packages/cli/src/{index,daemon}.ts` · `README.md` · `docs/00-DECISIONS.md` · `CLAUDE.md`
+
+**Non-goals**
+
+- **Per-agent databases.** `runtime_leases` is deliberately global — `stop` and `daemon status`
+  answer one question from one place — so splitting means two layouts or N opens per question.
+- **A `store:` manifest field.** A second layout in every command taking `--store`, plus a
+  `config_set` floor, for no case anyone has.
+- **Undo or a trash directory.** The listing and the typed name are the safety.
+- **`~/.dispach/sources/`.** A shared catalogue cache, not agent-owned; `sources` manages it.
+- **Renaming `agents`.** It means manifest *paths*, not the sandbox, which is a real collision — but
+  renaming a shipped command is its own decision, not one to make in passing.
+- **Restructuring the README.** Setup and correctness only; the design sections were accurate.
+
+**Acceptance**
+
+- [x] Removing one agent leaves a *second* agent's sessions, memory and outbox byte-identical
+- [x] `agentFootprint` equals what `purgeAgent` reports, on one fixture
+- [x] An agent owning only a stale lease is still named by `agentIds` — the case `orphans` cannot see
+- [x] A shared manifest id refuses, names the other directory, and `--files-only` clears it
+- [x] The directory is the last step in every configuration; a stop always precedes it
+- [x] `askExactly` rejects a near miss and a case difference; not a TTY is no in both prompts
+- [x] Live, in an isolated sandbox under `DISPACH_HOME`: two agents with real sessions and memory →
+  `remove alpha --dry-run` listed and deleted nothing → a piped run without `--yes` deleted nothing →
+  `remove alpha --yes` removed it while `beta` kept its sessions, passages and working retrieval →
+  a shared id refused → `--files-only` succeeded and said what it kept → a hand-deleted directory and
+  a stray log file were both found by `--prune` → a **running** agent was stopped gracefully (its
+  `serve` exited 0, lease released) before its directory went → at a real pty the wrong name was a
+  no-op and the right name removed it → `--all` removed both
+- [x] `bun test` 2366/0 · `test:node` 1128/0 · `bench:boot` under budget · lint at the pre-existing

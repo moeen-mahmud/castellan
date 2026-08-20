@@ -1430,3 +1430,37 @@ Never claim a performance property without a number in `evals/` and a script to 
   `ToolContext.readArtifact`, `ToolContext.memoryDir`). Corollary learned writing the tests for it: an `as
   never` cast on a test fixture defeats the check that would have caught the field name being wrong, which
   is the one place that check is cheapest.
+- **One `store.db` per sandbox root, every table keyed by `agent_id` — so isolation is a property of the
+  queries, not of the filesystem.** Which means "removing one agent leaves another's data alone" is a
+  thing to *assert*: a `DELETE` missing its `WHERE agent_id = ?` passes every test that only ever puts
+  one agent in the store, which is every test anybody writes by default. `store-purge.test.ts` populates
+  two. Two consequences already load-bearing elsewhere: `memory_fts*` shadow tables are shared, which is
+  why ranking is computed in `rank/bm25.ts` rather than through FTS5's `bm25()`; and `kv` is the one
+  table with no `agent_id` **and no consumer anywhere**, so `purgeAgent` cannot clean up after it — dead
+  vocabulary, the `includeHistory` shape again, and now documented as such on the interface.
+- **The store, the logs and the launchd label are keyed by the manifest `id`; the directory is keyed by
+  its own name.** They are usually equal and need not be. Two directories with one id share one
+  conversation history — `listAgents` already warned about it, and it is why `remove` *refuses* rather
+  than deleting: the delete would take the other agent's sessions and memory and report success. Any new
+  command that touches an agent's data has to decide which of the two names it means.
+- **A destructive command's confirmation must be the same code path as its `--dry-run`.** Two
+  derivations of "what would go" is how a confirmation comes to describe something other than what
+  happens — and for an irreversible command that means the person read it, agreed, and got something
+  else. `remove-plan.ts` renders one listing and both callers print it. Related: the bar is the agent's
+  name typed back (`askExactly`), not `y`, because a keypress against the wrong listing is one keystroke
+  from deleting conversations nothing recovers — and the listing is only worth printing if something
+  makes somebody read it. Not a TTY means no in both prompts, so a piped run without `--yes` is a no-op.
+- **A command that deletes takes a *ref*, never a path.** `run ./somewhere/agent.yaml` is a real thing
+  to want; `remove ./somewhere` is one bad tab-completion from recursively deleting whatever was on the
+  command line. `remove` refuses a path by name and points at `rm -rf` as the honest alternative.
+- **Deletion order is the safety, and the irreplaceable thing goes last.** Stop the process (the
+  graceful path is the only one that reaps backgrounded `exec` children), unload *and disable* the
+  service, purge rows, delete logs, delete the directory. Every step but the last is recoverable — an
+  agent whose rows are gone still loads and still runs — so a failure part-way leaves something that
+  works. The reverse order leaves a manifest-less agent whose data is unreachable and whose name
+  nothing can name. `removalSteps` is pure so the order is asserted without performing it.
+- **`bun link` points at the checkout, and `bin` points at `dist/`.** So a collaborator must build
+  *before* linking or the symlink dangles, and `bun run build` must build every workspace package the
+  binary imports or the command runs yesterday's provider code from a stale `dist`. Both were
+  undocumented until the README grew a setup section; the second is already a recorded hazard, and it
+  presents as "your change is correct, the test fails, and the stack trace points into `dist`".

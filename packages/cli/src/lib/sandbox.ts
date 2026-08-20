@@ -36,6 +36,25 @@ export function storePath(env?: Readonly<Record<string, string | undefined>>): s
     return join(sandboxRoot(env), "store.db")
 }
 
+/**
+ * Where a service writes its output, keyed by the agent's **manifest id**.
+ *
+ * Not by the directory name, which is what `run <ref>` takes — the same split as the store's
+ * `agent_id` and the launchd label. Two directories with one manifest id therefore share these files,
+ * which `listAgents` already warns about.
+ *
+ * Here rather than in `daemon.ts`, where it was private, because it is a fact about the sandbox layout
+ * and `remove` needs it too. Moved rather than duplicated: a second copy of a path derivation is how
+ * one command deletes a file another command is still writing to.
+ */
+export function logPaths(
+    agentId: string,
+    env?: Readonly<Record<string, string | undefined>>,
+): { readonly out: string; readonly err: string } {
+    const dir = join(sandboxRoot(env), "logs")
+    return { out: join(dir, `${agentId}.out.log`), err: join(dir, `${agentId}.err.log`) }
+}
+
 export interface SandboxAgent {
     /** The directory name — what `run <ref>` takes. Filesystem-unique by construction. */
     readonly ref: string

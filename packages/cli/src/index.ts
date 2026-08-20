@@ -24,7 +24,7 @@ import { browseCommand } from "#browse"
 import { daemonCommand } from "#daemon"
 import { initCommand } from "#init"
 import { parse } from "#lib/args"
-import { askYesNo } from "#lib/confirm"
+import { askExactly, askYesNo } from "#lib/confirm"
 import { EXIT_FAILURE, EXIT_OK } from "#lib/const"
 import { readEnv } from "#lib/env"
 import { finish, installGuards } from "#lib/exit"
@@ -32,6 +32,7 @@ import { helpText } from "#lib/help"
 import { resolveAgentRef } from "#lib/sandbox"
 import { quietAcceptedWarnings } from "#lib/warnings"
 import { memoryCommand } from "#memory"
+import { removeCommand } from "#remove"
 import { runCommand } from "#run"
 import { serveCommand } from "#serve"
 import { sessionsCommand } from "#sessions"
@@ -261,6 +262,23 @@ async function dispatch(argv: readonly string[]): Promise<number> {
                 yes: flags.bool("yes"),
                 json: flags.bool("json"),
                 confirm: askYesNo,
+            })
+
+        case "remove":
+            return await removeCommand({
+                // A bare ref, never `resolved()`: removal is about a sandbox directory, and a resolved
+                // manifest path would make `remove ./anything` look supported. `remove.ts` refuses a path.
+                ...(manifestPath === undefined ? {} : { ref: manifestPath }),
+                dryRun: flags.bool("dry-run"),
+                filesOnly: flags.bool("files-only"),
+                prune: flags.bool("prune"),
+                all: flags.bool("all"),
+                yes: flags.bool("yes"),
+                json: flags.bool("json"),
+                ...(flags.str("store") === undefined
+                    ? {}
+                    : { store: flags.str("store") as string }),
+                confirm: askExactly,
             })
 
         case "stop":

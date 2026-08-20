@@ -63,7 +63,7 @@ import {
 import { type FollowIO, followLogs } from "#lib/log-follow"
 import { CHANNEL_IDS, CHANNELS, PROVIDER_IDS } from "#lib/providers"
 import { bytes, indent, keyValue, tildify } from "#lib/render"
-import { sandboxRoot, storePath } from "#lib/sandbox"
+import { logPaths, storePath } from "#lib/sandbox"
 import { type Exec, resolveServiceManager, unsupported } from "#lib/service"
 
 export const DAEMON_ACTIONS = [
@@ -185,11 +185,6 @@ function findGitRoot(from: string): string | undefined {
 
 function execStartLine(binary: BinaryFacts, manifestPath: string): string {
     return `ExecStart=${binary.execPath} ${binary.scriptPath} serve ${manifestPath} --store ${storePath()}`
-}
-
-function logPaths(agentId: string): { out: string; err: string } {
-    const dir = join(sandboxRoot(), "logs")
-    return { out: join(dir, `${agentId}.out.log`), err: join(dir, `${agentId}.err.log`) }
 }
 
 // ─── install ────────────────────────────────────────────────────────────────────────────

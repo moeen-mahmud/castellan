@@ -252,16 +252,52 @@ export interface LeaseStore {
      *
      * The escape hatch that keeps ownership-scoped recovery honest. Narrowing recovery to leased
      * agents means a deleted or renamed agent's rows are nobody's to reap; this names them so
-     * `sessions --reap-orphans` can, rather than leaving a permanent lie in the turn list.
+     * something can, rather than leaving a permanent lie in the turn list.
+     *
+     * This pointed at a `sessions --reap-orphans` that was never built, for long enough that the
+     * gap it describes was real: rows belonging to a deleted agent were unreachable by any command.
+     * `remove --prune` is the one that clears them, and it reads `agentIds` rather than this —
+     * because this answers the narrower question (ids with *running* turns or *inflight* deliveries
+     * and no lease) and cannot see an agent whose directory was deleted while it was idle.
      */
     orphans(): Promise<readonly string[]>
 }
 
+/**
+ * A namespaced string map.
+ *
+ * **Nothing consumes this yet, and it is the one table with no `agent_id`.** Recorded rather than
+ * quietly carried: `scope` is a free string, so an agent-scoped caller has to compose the key itself,
+ * and `purgeAgent` therefore cannot clean up after one — there is no column to match on. The first
+ * caller either passes an agent-derived scope and this grows an agent-aware delete, or the table is
+ * dropped. Declared vocabulary with no consumer is how `includeHistory` sat unimplemented for three
+ * phases while looking finished.
+ */
 export interface KVStore {
     get(scope: string, key: string): Promise<string | undefined>
     set(scope: string, key: string, value: string): Promise<void>
     delete(scope: string, key: string): Promise<void>
     all(scope: string): Promise<Readonly<Record<string, string>>>
+}
+
+/**
+ * Everything one agent owns in the store, by table.
+ *
+ * One shape for two questions — what would go, and what went — so a listing shown before a deletion
+ * and the report printed after it cannot disagree. `agentFootprint` and `purgeAgent` both return this.
+ */
+export interface AgentFootprint {
+    readonly sessions: number
+    readonly messages: number
+    readonly turns: number
+    readonly artifacts: number
+    readonly outbox: number
+    /** Deliveries not yet sent. Worth naming separately: removing the agent abandons them. */
+    readonly outboxPending: number
+    readonly passages: number
+    readonly memorySources: number
+    /** A live lease means a process is running under this id right now. */
+    readonly lease: boolean
 }
 
 /**
@@ -563,5 +599,34 @@ export interface Store {
     readonly memory: MemoryStore
     /** Human-readable location, for `store.ready` and the `sessions` command. */
     readonly location: string
+    /**
+     * What one agent owns, counted and not touched.
+     *
+     * Read-only, and the pair to `purgeAgent`: a destructive command has to be able to *show* what it
+     * would take before taking it, and deriving that listing separately is how a listing and a
+     * deletion come to disagree.
+     */
+    agentFootprint(agentId: string): Promise<AgentFootprint>
+    /**
+     * Delete everything belonging to one agent, in one transaction.
+     *
+     * Returns what went, in the same shape `agentFootprint` reports, so the confirmation and the
+     * receipt are the same numbers.
+     *
+     * **One store is shared by every agent in a sandbox root**, so this is a `DELETE … WHERE
+     * agent_id = ?` rather than dropping a file — which makes the isolation a property of these
+     * queries rather than of the filesystem, and makes "another agent's rows are untouched" a thing to
+     * assert rather than assume. `kv` is not cleaned: it has no `agent_id` column, and no consumer.
+     */
+    purgeAgent(agentId: string): Promise<AgentFootprint>
+    /**
+     * Every agent id with rows anywhere in the store.
+     *
+     * For finding rows no agent claims any more. `LeaseStore.orphans` answers a narrower question —
+     * ids with *running* turns or *inflight* deliveries and no lease — which cannot see an agent whose
+     * directory was deleted while it was idle. That agent's sessions, memory and logs are simply
+     * unreachable, and this is what makes them nameable.
+     */
+    agentIds(): Promise<readonly string[]>
     close(): Promise<void>
 }

@@ -114,6 +114,11 @@ describe("the pure modules stay pure", () => {
         "lib/launchd.ts",
         "lib/daemon-plan.ts",
         "lib/render.ts",
+        // `remove`'s half. Pure so the cases that matter — a manifest id shared by two directories, a
+        // live lease, an installed service, rows nobody claims — are a table rather than nine ways of
+        // breaking a real sandbox. It also decides the *order* of an irreversible sequence, which is
+        // exactly the thing that must be assertable without performing it.
+        "lib/remove-plan.ts",
         // The kit's half of a screen that is not a renderer: what the header says and whether the
         // footer fits. Pure so both can be asserted as strings, which is the only way the *content* of
         // a header was ever observable — before this it lived in JSX in three components.
