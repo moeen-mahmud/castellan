@@ -119,6 +119,10 @@ describe("the pure modules stay pure", () => {
         // breaking a real sandbox. It also decides the *order* of an irreversible sequence, which is
         // exactly the thing that must be assertable without performing it.
         "lib/remove-plan.ts",
+        // Which stored messages a resumed conversation paints. Pure because the alternative was four
+        // chained lambdas inside a function that needs a live runtime, and the only way to check it was
+        // to resume a real session and look — which is how it shipped wrong twice.
+        "lib/resume.ts",
         // The kit's half of a screen that is not a renderer: what the header says and whether the
         // footer fits. Pure so both can be asserted as strings, which is the only way the *content* of
         // a header was ever observable — before this it lived in JSX in three components.

@@ -1348,6 +1348,11 @@ export function planFiles(answers: InitAnswers): readonly GeneratedFile[] {
                   },
               ]
             : [{ relPath: "skills/.keep", contents: "" }]),
+        // `knowledge.dir` naming a path that does not exist is a load failure, exactly as with
+        // skills, and the block is written either way. `.keep` rather than a README because every
+        // *.md* here is an entry and must declare frontmatter keywords — a README.md explaining
+        // how to author one would fail the very load it was written to help with.
+        { relPath: "knowledge/.keep", contents: "" },
         { relPath: ".env.example", contents: envExampleFor(answers) },
         { relPath: ".env", contents: envFor(answers) },
         // The generated .env carries real endpoint values and eventually a key; a repo-ready
@@ -1741,8 +1746,25 @@ function manifestFor(answers: InitAnswers): string {
         `  #                      # Tool output is never indexed at any setting: it is where text a`,
         `  #                      # stranger wrote lives, and indexing it outlives the write gate`,
         ``,
-        `# Phase 3.5 — knowledge, keyword-gated and never pinned (create ./knowledge first)`,
-        `# knowledge: { dir: ./knowledge, maxActive: 2, budget: 600 }`,
+        // Named and switched on for the reason skills above is: `knowledge.dir` naming a path that
+        // does not exist is a load failure, so the directory is scaffolded and an empty one is a
+        // switch that is off rather than a concept the agent does not have. It shipped commented
+        // out for three phases behind a "create ./knowledge first" note — which is the same shape
+        // as the web provider and memory, a capability reachable only by knowing the field names.
+        `# Knowledge — reference material that activates only on the turns that mention it. Tier 3:`,
+        `# retrieved, never pinned, outside the workspace budget, and compaction may drop it.`,
+        `# Every .md in that directory is an entry and must open with frontmatter naming its`,
+        `# keywords, so a plain README.md there fails the load. An entry looks like:`,
+        `#   ---`,
+        `#   keywords: [invoice, billing, VAT]`,
+        `#   ---`,
+        `#   Whatever this agent should know whenever one of those words comes up.`,
+        `knowledge:`,
+        `  dir: ./knowledge`,
+        `  maxActive: 2           # entries in one turn`,
+        `  budget: 600            # total across them. One entry over this fails the load: it could`,
+        `  #                      # never activate, and silently unreachable is the wrong answer.`,
+        `  #                      # Matching is whole-word and case-insensitive against the input`,
         ``,
         `# Phase 8 — schedules`,
         `# schedules:`,

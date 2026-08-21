@@ -260,10 +260,21 @@ Never claim a performance property without a number in `evals/` and a script to 
   into.** `<Static>` writes a node once and never touches it again, so history used to cost nothing —
   but it appends to the *scrollback*, and the alternate buffer is wiped on leave with a scrollbar that
   reaches nothing, so the two cannot both be true. The chat transcript is a buffer of rows we own with
-  a window over it (`lib/scroll.ts`), which puts it back in the redrawn tree; the row cap is what
-  bounds that and is now load-bearing rather than prudent. `<Static>` is still right for the wizard
-  and the picker, which do not take the screen. The unit is a **row, not an item** — an item-indexed
-  offset pages over a forty-row reply in one keystroke and lands on the question before it.
+  a window over it (`lib/scroll.ts`), which puts it back in the redrawn tree; `MAX_TRANSCRIPT_ITEMS`
+  is what bounds that and is load-bearing rather than prudent — it was described here as existing for
+  three phases before it did. `<Static>` is still right for the wizard and the picker, which do not
+  take the screen. The unit is a **row, not an item** for an *offset* — an item-indexed one pages over
+  a forty-row reply in one keystroke and lands on the question before it — and an **item** for the
+  cap, because the reducer that owns the buffer is pure and a row count needs the terminal width.
+- **Eviction is gated on `pinned`, and the gate is the whole feature.** Rows are addressed by position,
+  so dropping any from the front shifts every offset below them: a reader parked twelve turns back keeps
+  their offset and silently starts reading different text, which is the "looks live and is not" failure
+  `pinned` was introduced to prevent — strictly worse than the slow growth it fixes. So `trim` is an
+  *action* the layer holding that flag dispatches, never something `append` does on its own, and the
+  reducer returns **identical state** when there is nothing to do so the caller can ask on every change
+  without checking first. Its dependency on `state.items.length` is a trigger the body never reads, and
+  the lint rule offers to delete it — taking that offer enforces the cap once at mount and never again,
+  which lints clean and does nothing.
 - **Whoever owns a bounded window wraps the text itself, and every piece of chrome reports its height.**
   `visualRows` counted rows by dividing the character count by the width; Ink breaks at spaces, so 240
   characters at 80 columns is **four** rows drawn and three counted — every cap built on that division
@@ -738,7 +749,14 @@ Never claim a performance property without a number in `evals/` and a script to 
   already knows the field names is a capability the generated file is hiding. `fetch` and `search`
   are separate answers because their costs differ: one needs no account anywhere, the other needs a
   third-party key. When a new provider lands, it gets a question, a flag, and an entry in
-  `WEB_CHOICES`-shaped table — not a commented block.
+  `WEB_CHOICES`-shaped table — not a commented block. `knowledge:` was the third capability caught by
+  this and needed no question at all: its note read "create ./knowledge first", which was **true** —
+  `loadKnowledge` throws on a missing directory — so the fix is scaffolding `knowledge/.keep` beside
+  `skills/.keep` and writing the block live, exactly as skills and memory already do. Not every hidden
+  capability wants a question; a switch that is off wants to *exist*. The trap that decides the shape:
+  every `*.md` under `knowledge/` is an entry and must declare frontmatter `keywords`, so a `README.md`
+  explaining how to author one **fails the load it was written to help with** — the guidance goes in the
+  manifest comments, which nothing scans.
 - **Only secrets go through `${VAR}`; a generated manifest writes the model id and base URL
   literally.** A model name is not a secret, and hard rule 10 governs secrets. Behind a variable the
   id cost three things: `readManifestHeader` does not expand — deliberately, so a listing never needs
@@ -1388,9 +1406,15 @@ Never claim a performance property without a number in `evals/` and a script to 
   holds text a stranger wrote, and indexing that makes prompt injection **durable** — retrieved into slot 7
   in a later session, long after the write gate that fenced it stopped applying. Related trap: under NLT an
   assistant message that called a tool carries its prose *and* the `ACTION` block in one `origin: "call"`
-  row, so that prose is excluded from both the index and the resumed screen. The final answer still pairs
-  correctly, because `exchanges` keeps the last prose reply and an intervening observation does not close
-  the pair; what is lost is the narration, which `exchanges` drops on purpose anyway.
+  row. The **index** still excludes it and that is a choice rather than an omission: `exchanges` pairs a
+  question with its final answer, so hundreds of near-identical "let me look that up" passages would only
+  move every document frequency and could be mistaken for the reply in a turn that ended on a tool call.
+  The **screen** does not exclude it any more. A live session shows that narration as it streams, so
+  omitting it made a resumed conversation a different transcript of the same turn from the one that had
+  been on screen — `proseOf` strips the block at *read* time, which needs no stored field (a conditional
+  spread on `ChatMessage` is the shape that has cost six rounds) and works on rows already written.
+  `lib/resume.ts` owns which origins count, extracted from `run` precisely because four chained lambdas
+  inside a function needing a live runtime is how that filter shipped wrong twice.
 - **Memory has two reconciliation namespaces and `reconcile` drops whatever it was not handed.** That drop
   is a feature — it is how a deleted archive file stops being retrieved — and it is why `syncFiles` and
   `syncSessions` are separate functions over `session:<key>` and everything else. Recall syncs files every

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { AnyEvent } from "@dispach/core"
+import { MAX_TRANSCRIPT_ITEMS } from "#lib/const"
 import type { TranscriptState } from "#lib/types"
 import {
     EMPTY_TRANSCRIPT,
@@ -939,5 +940,76 @@ describe("a resumed conversation", () => {
         state = reduce(state, { kind: "user", text: "a new question" })
         expect(state.items.at(-1)?.text).toBe("a new question")
         expect(state.items.length).toBe(4)
+    })
+})
+
+describe("trim", () => {
+    /** `n` user messages, which is the cheapest item the reducer makes. */
+    function filled(n: number): TranscriptState {
+        let state = EMPTY_TRANSCRIPT
+        for (let i = 0; i < n; i++) state = reduce(state, { kind: "user", text: `m${i}` })
+        return state
+    }
+
+    test("a buffer under the cap comes back as the same object, not a copy", () => {
+        // Identity, not equality. `useReducer` compares by reference to decide whether to render, so a
+        // fresh object here would repaint the whole frame on every keystroke of every session — the cap
+        // would cost more than the growth it bounds. This is what lets App dispatch without checking.
+        const state = filled(10)
+        expect(reduce(state, { kind: "trim" })).toBe(state)
+    })
+
+    test("exactly at the cap is still nothing to do", () => {
+        const state = filled(MAX_TRANSCRIPT_ITEMS)
+        expect(reduce(state, { kind: "trim" })).toBe(state)
+        expect(state.items.length).toBe(MAX_TRANSCRIPT_ITEMS)
+    })
+
+    test("over the cap drops the oldest and keeps the newest", () => {
+        const state = reduce(filled(MAX_TRANSCRIPT_ITEMS + 5), { kind: "trim" })
+        expect(state.items.length).toBe(MAX_TRANSCRIPT_ITEMS)
+        // The five oldest went, and the order of what is left is untouched.
+        expect(state.items[0]?.text).toBe("m5")
+        expect(state.items.at(-1)?.text).toBe(`m${MAX_TRANSCRIPT_ITEMS + 4}`)
+    })
+
+    test("ids stay unique across an eviction, because nextId never rewinds", () => {
+        // Keys are what Ink reconciles rows by. Numbering from the surviving items instead of from the
+        // counter would reissue an id that is still on screen, and a duplicate key is a row that does
+        // not update rather than an error anybody sees.
+        let state = reduce(filled(MAX_TRANSCRIPT_ITEMS + 1), { kind: "trim" })
+        state = reduce(state, { kind: "user", text: "after" })
+        expect(new Set(state.items.map((item) => item.id)).size).toBe(state.items.length)
+        expect(state.items.at(-1)?.id).toBe(`t${MAX_TRANSCRIPT_ITEMS + 1}`)
+    })
+
+    test("no other action ever evicts, however far over the cap the buffer is", () => {
+        // The other half of App's gate. Eviction while a reader is parked in history would leave their
+        // offset pointing at different text, so the *only* thing that may drop a row is an explicit ask
+        // from the layer holding `pinned`. If `append` ever grew a cap of its own that gate would be
+        // bypassed with nothing failing — the buffer would be correct and the reading of it wrong.
+        let state = filled(MAX_TRANSCRIPT_ITEMS + 5)
+        state = reduce(state, { kind: "user", text: "another" })
+        state = reduce(state, { kind: "note", text: "a note" })
+        state = reduce(state, { kind: "delta", of: "text", text: "streaming" })
+        expect(state.items.length).toBe(MAX_TRANSCRIPT_ITEMS + 7)
+    })
+
+    test("the banner is evicted with everything else", () => {
+        // No exemption. Four hundred turns later it describes a session that has moved on, and pinning
+        // it above the conversation would be the trimmed-catalogue failure: true of the screen, false of
+        // what is the case. Nothing else depends on item 0 being the banner.
+        const state = reduce(
+            (() => {
+                let s = seed(["a banner"])
+                for (let i = 0; i < MAX_TRANSCRIPT_ITEMS; i++) {
+                    s = reduce(s, { kind: "user", text: `m${i}` })
+                }
+                return s
+            })(),
+            { kind: "trim" },
+        )
+        expect(state.items.some((item) => item.role === "banner")).toBe(false)
+        expect(state.items.length).toBe(MAX_TRANSCRIPT_ITEMS)
     })
 })

@@ -51,6 +51,7 @@ import { ENABLE_MOUSE } from "#lib/mouse"
 import { resolveModeFromProcess } from "#lib/output"
 import { CHANNELS, scriptRunner, TOOL_PROVIDERS } from "#lib/providers"
 import { keyValue } from "#lib/render"
+import { priorMessages } from "#lib/resume"
 import { listAgents, storePath } from "#lib/sandbox"
 import type { RunOptions } from "#lib/schema"
 import { screenColumns } from "#lib/screen"
@@ -283,15 +284,12 @@ export async function runCommand(options: RunOptions): Promise<number> {
         // The conversation so far, for the rich path only. `history` is the same read `send` performs, so
         // what is painted is exactly what the model is conditioned on — minus the runtime's own messages,
         // which `origin` identifies and which are not part of the conversation a person is resuming.
+        // Which origins and roles count, and why each exclusion is deliberate, is `lib/resume.ts` —
+        // extracted so it can be tested without standing up a runtime, which is what let the previous
+        // two versions of this be wrong in a way only a live resume would show.
         const prior: readonly PriorMessage[] =
             mode === "rich" && !quiet && !oneShot
-                ? (await agent.history(sessionKey))
-                      .filter(
-                          (message): message is typeof message & { role: "user" | "assistant" } =>
-                              message.origin === undefined &&
-                              (message.role === "user" || message.role === "assistant"),
-                      )
-                      .map((message) => ({ role: message.role, text: message.content }))
+                ? priorMessages(await agent.history(sessionKey), agent.describe().dialect)
                 : []
 
         const wired = {

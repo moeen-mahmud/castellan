@@ -117,7 +117,7 @@ export function App({
     const { exit } = useApp()
     const size = useTerminalSize()
     const columns = screenColumns(size.columns, FALLBACK_COLUMNS)
-    const { state, busy, send, cancel, note } = useTurn({ agent, bus, sessionKey, initial })
+    const { state, busy, send, cancel, note, trim } = useTurn({ agent, bus, sessionKey, initial })
     // A draft handed in by a `/restart` opens the prompt with the cursor at its end, which is where the
     // person left it. Only the initial value — a later prop change must not overwrite what is being
     // typed now, which is exactly what `useState`'s initialiser semantics give for free.
@@ -241,6 +241,28 @@ export function App({
         rows.length,
         transcriptRowsAfterBrand(frame, mark?.lines.length ?? 0),
     )
+
+    /**
+     * Bound the transcript, but only while following the tail.
+     *
+     * Every item is re-derived and re-wrapped on each frame now that the conversation is a windowed buffer
+     * rather than `<Static>` output, so an unbounded one is unbounded work per keystroke. The gate is the
+     * point: rows are addressed by position, so dropping any from the front shifts every offset below
+     * them — evicting while somebody is parked twelve turns back would leave their offset untouched and
+     * the text under it different, which is a session that looks live and is not. Deferring costs nothing,
+     * because `esc` returns to the tail and the next append trims then.
+     *
+     * Called on every change with no check of its own: a buffer under the cap reduces to identical state,
+     * so React bails out of the render.
+     */
+    // `state.items.length` below is a *trigger*, not a read: the body never looks at it, and it is there
+    // so a growing conversation re-runs the check. The lint rule offers to remove it, and taking that
+    // offer would leave the cap enforced once at mount and never again — a fix that lints clean and does
+    // nothing, which is why the suppression carries a reason rather than the dependency being dropped.
+    // biome-ignore lint/correctness/useExhaustiveDependencies: a deliberate trigger dependency; see above
+    useEffect(() => {
+        if (view.pinned) trim()
+    }, [view.pinned, state.items.length, trim])
 
     // The armed ^C expires on its own. A prompt that stayed armed indefinitely would turn a ^C pressed
     // minutes ago into the reason a later one ended the session.

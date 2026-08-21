@@ -58,7 +58,7 @@ import { loadSkills, type SkillCatalogue } from "../skills/index.ts"
 import { activateSkills } from "../skills/load.ts"
 import { renderScripts, skillScriptTools } from "../skills/tools.ts"
 import type { SessionSummary, Store, TurnRecord } from "../store/store.ts"
-import { passThroughFilter, type StreamFilter } from "../tools/dialect/dialect.ts"
+import { type DialectId, passThroughFilter, type StreamFilter } from "../tools/dialect/dialect.ts"
 import { nativeDialect, nativeWireTokens } from "../tools/dialect/native.ts"
 import { nltDialect } from "../tools/dialect/nlt.ts"
 import { onceOnlyTools } from "../tools/policy.ts"
@@ -143,7 +143,9 @@ export interface AgentDescription {
         readonly tokens: number
         readonly budget: number
     }[]
-    readonly dialect: string
+    /** Narrower than it was: it can only ever be one of two, and a reader deciding how to strip an
+     * embedded invocation needs that to be a fact rather than a string it has to re-check. */
+    readonly dialect: DialectId
     readonly tools: readonly string[]
     /** Tier 3 entries and their gates. Empty when the manifest configures none. */
     readonly knowledge: readonly {

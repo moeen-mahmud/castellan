@@ -19,6 +19,7 @@ import { SessionPicker, type SessionPickerProps } from "#components/SessionPicke
 import { SkillBrowser } from "#components/SkillBrowser"
 import { WizardApp } from "#components/WizardApp"
 import type { BrowseRow, InstallReport } from "#lib/browse"
+import { MAX_TRANSCRIPT_ITEMS } from "#lib/const"
 import type { SandboxAgent } from "#lib/sandbox"
 import type { AppProps } from "#lib/schema"
 import type { CatalogueEntry } from "#lib/source-cache"
@@ -491,7 +492,43 @@ function longHistory(turns: number): AppProps["initial"] {
     }
 }
 
+/** The scroll hint\'s own count, which is the only place the buffer\'s size reaches the screen. */
+function rowsAbove(text: string): number {
+    const match = /\u2191 (\d+) rows? above/.exec(text)
+    return match === undefined || match === null ? 0 : Number(match[1])
+}
+
 describe("App", () => {
+    test("the transcript is bounded while the reader follows the tail", async () => {
+        // The far-end test for the cap. `trim` is dispatched from an effect in App, so a reducer test
+        // proves only that eviction *works* — this is what proves it is asked for. Without it the buffer
+        // grows forever and the only symptom is a frame that gets slower over hours, which is the silent
+        // shape that has cost this repo six debugging rounds (apiKeyEnv, ChatMessage.toolCalls,
+        // TurnInput.skills, ToolContext.readArtifact, ToolContext.memoryDir, StoredMessage.origin).
+        //
+        // Read through the scroll hint, because the item count never reaches the screen directly: a
+        // buffer 200 items over the cap must end up reporting exactly as many rows above as one at it.
+        const over = mount(
+            h(App, { ...stubAppProps(), initial: longHistory(MAX_TRANSCRIPT_ITEMS + 200) }),
+            { columns: 100 },
+        )
+        await over.settle()
+        const overAbove = rowsAbove(over.frame().text)
+        over.unmount()
+
+        const at = mount(
+            h(App, { ...stubAppProps(), initial: longHistory(MAX_TRANSCRIPT_ITEMS) }),
+            { columns: 100 },
+        )
+        await at.settle()
+        const atAbove = rowsAbove(at.frame().text)
+        at.unmount()
+
+        // Non-zero first, or two failures to render would agree with each other and pass.
+        expect(atAbove).toBeGreaterThan(0)
+        expect(overAbove).toBe(atAbove)
+    })
+
     test("renders a prompt and a status line with no history", () => {
         const harness = mount(h(App, stubAppProps()), { columns: 100 })
         const frame = harness.frame()

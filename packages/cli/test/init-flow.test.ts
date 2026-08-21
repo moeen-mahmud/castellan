@@ -201,6 +201,7 @@ describe("planFiles", () => {
             "workspace/MEMORY.md",
             "workspace/REMINDER.md",
             "skills/starter/SKILL.md",
+            "knowledge/.keep",
             ".env.example",
             ".env",
             ".gitignore",
@@ -277,6 +278,12 @@ describe("planFiles", () => {
         expect(yaml).toContain("includeHistory: true")
         expect(yaml.includes("# memory:")).toBe(false)
         expect(yaml.includes("k: 6")).toBe(false)
+        // Knowledge, the third capability that shipped inside a comment. Its note said "create
+        // ./knowledge first" — true, since a missing dir is a load failure — which made the fix
+        // scaffolding the directory rather than leaving the block commented. The heading it sat
+        // under named Phase 3.5, a phase that had been built for four phases by then.
+        expect(yaml).toContain("\nknowledge:\n  dir: ./knowledge")
+        expect(yaml.includes("# knowledge:")).toBe(false)
         // Commented, with phases: uncommenting early must be a load refusal, not decoration.
         for (const line of [
             "# phases:",

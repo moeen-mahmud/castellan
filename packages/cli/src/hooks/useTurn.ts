@@ -18,6 +18,15 @@ export interface UseTurn {
     send(text: string): void
     cancel(): void
     note(text: string): void
+    /**
+     * Drop the oldest items if the buffer is over its cap. Safe to call on every change — a buffer
+     * under the cap returns identical state and React skips the render.
+     *
+     * Exposed rather than done inside the reducer because the caller owns the scroll state, and
+     * eviction while somebody is parked in history would move rows under them. `App` calls this only
+     * while following the tail.
+     */
+    trim(): void
 }
 
 export function useTurn(options: {
@@ -118,5 +127,7 @@ export function useTurn(options: {
         [],
     )
 
-    return { state, busy: state.status !== "idle", send, cancel, note }
+    const trim = useCallback(() => dispatch({ kind: "trim" }), [])
+
+    return { state, busy: state.status !== "idle", send, cancel, note, trim }
 }

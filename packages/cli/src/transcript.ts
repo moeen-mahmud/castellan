@@ -17,7 +17,7 @@
  */
 
 import type { AnyEvent } from "@dispach/core"
-import { REASONING_FOLD_ROWS } from "#lib/const"
+import { MAX_TRANSCRIPT_ITEMS, REASONING_FOLD_ROWS } from "#lib/const"
 import { ROLE_PREFIX } from "#lib/theme"
 import type {
     TranscriptItem,
@@ -46,6 +46,17 @@ export type TranscriptAction =
      * with no in-band protocol and wrong for NLT.
      */
     | { readonly kind: "delta"; readonly of: "text" | "reasoning"; readonly text: string }
+    /**
+     * Drop the oldest items if the buffer is over `MAX_TRANSCRIPT_ITEMS`.
+     *
+     * An action rather than something `append` does on its own, because whether it is *safe* depends on
+     * a fact this reducer cannot see: rows are addressed by position, so dropping any from the front
+     * moves every offset below them. A reader parked twelve turns back would keep their offset and
+     * silently start reading different text — the appearance of a live session that is not one, which is
+     * the failure `ScrollState.pinned` exists to make impossible. Only the layer holding that flag knows
+     * when eviction is allowed, so only it can ask.
+     */
+    | { readonly kind: "trim" }
 
 export const EMPTY_TRANSCRIPT: TranscriptState = {
     items: [],
@@ -117,7 +128,26 @@ export function reduce(state: TranscriptState, action: TranscriptAction): Transc
 
         case "event":
             return reduceEvent(state, action.event)
+
+        case "trim":
+            return trim(state)
     }
+}
+
+/**
+ * The oldest items above the cap, dropped. Identity when there is nothing to do.
+ *
+ * Returning the same object rather than a copy is what makes this cheap to ask about: `useReducer`
+ * compares by reference and skips the render, so the caller can dispatch on every change without
+ * checking first — and a caller that has to check first is a caller that eventually forgets.
+ *
+ * The banner is an ordinary item and goes with the rest. It is four hundred turns of scrollback above
+ * the reader by then, and exempting it would leave the session's opening line pinned above a
+ * conversation it no longer describes.
+ */
+function trim(state: TranscriptState): TranscriptState {
+    const over = state.items.length - MAX_TRANSCRIPT_ITEMS
+    return over <= 0 ? state : { ...state, items: state.items.slice(over) }
 }
 
 function applyDelta(

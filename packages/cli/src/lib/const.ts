@@ -108,6 +108,26 @@ export const REASONING_FOLD_ROWS = 4
 /** Matches `^R` shows at once. Enough to recognise one, few enough to leave the prompt on screen. */
 export const SEARCH_ROWS = 6
 
+/**
+ * Transcript items kept before the oldest are dropped.
+ *
+ * Load-bearing rather than prudent, and it was missing for three phases. While the conversation lived
+ * in `<Static>` a finished item was written once and cost nothing afterwards; the alternate screen took
+ * that away, so every item is now re-derived and re-wrapped on every frame — an unbounded buffer means
+ * unbounded work per keystroke, and the case that reaches it is an agent looping tool calls overnight
+ * rather than anybody typing.
+ *
+ * Counted in **items**, not rows, because the row count depends on the terminal width and the reducer
+ * that owns the buffer is pure and has none. That does not contradict the scroll layer's rule that the
+ * unit is a row: that rule is about addressing an *offset*, where paging by item steps over a forty-row
+ * reply in one keystroke.
+ *
+ * Deliberately far past any session a person reads end to end — roughly four hundred turns — so the cap
+ * is a backstop nobody meets rather than a limit that shapes ordinary use. Eviction is also gated on the
+ * reader following the tail; see `TRIM` in `transcript.ts` for why that gate is not optional.
+ */
+export const MAX_TRANSCRIPT_ITEMS = 2000
+
 // ─── defaults ────────────────────────────────────────────────────────────────────────────
 
 export const DEFAULT_ROW_LIMIT = 50

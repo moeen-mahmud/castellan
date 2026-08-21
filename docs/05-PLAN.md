@@ -2381,3 +2381,125 @@ one of which turned out to have a real gap behind it.
   `serve` exited 0, lease released) before its directory went → at a real pty the wrong name was a
   no-op and the right name removed it → `--all` removed both
 - [x] `bun test` 2366/0 · `test:node` 1128/0 · `bench:boot` under budget · lint at the pre-existing
+
+---
+
+## Phase 6.2b — three defects that were already diagnosed
+
+**Goal.** Close the three items flagged after 6.2 and not undertaken then. No new capability; each one
+is a shipped thing that was hidden, unbounded, or inconsistent with itself.
+
+**1. `knowledge:` was generated commented out.** Phase 3.5 shipped four phases earlier, and `init` wrote
+`# knowledge: { dir: ./knowledge, maxActive: 2, budget: 600 }` under a heading naming that phase — the
+third instance of the pattern the standing init directive exists to stop, after the web provider and
+`memory:`. The note beside it ("create ./knowledge first") was *correct*: `loadKnowledge` throws
+`knowledge_dir_missing` on an absent directory, which is why writing the block live also required
+scaffolding one. `knowledge/.keep` now ships beside `skills/.keep`, and `validate` reports
+`knowledge 0 entries, maxActive=2, budget=600` — a switch that is off rather than a concept the agent
+does not have.
+
+The authoring guidance had to go in the manifest comments rather than a `README.md` in the directory:
+every `*.md` there is an entry and `parseKnowledgeFile` throws without frontmatter `keywords`, so the
+file explaining how to write one fails the load. Verified both ways — the documented format loads as
+1 entry, and a plain `README.md` refuses with the error that names the requirement.
+
+**2. The transcript had no cap.** Described in `CLAUDE.md` as load-bearing since `<Static>` was removed,
+and absent. Every item is re-derived and re-wrapped per frame now, so the buffer was unbounded work per
+keystroke; the case that reaches it is an agent looping tool calls overnight, not a person typing.
+
+Two decisions, both Moeen's: the cap counts **items** (2000), because the reducer that owns the buffer
+is pure and a row count needs the terminal width; and eviction is **gated on `pinned`**. The gate is the
+substance — rows are addressed by position, so dropping any from the front leaves a reader parked in
+history on the same offset over different text, which is worse than the growth. `trim` is therefore an
+action `App` dispatches while following the tail, returning identical state when there is nothing to do
+so the caller never has to check first.
+
+**3. NLT call-prose was missing from a resumed screen.** One `origin: "call"` row holds the narration
+and the `ACTION` block, and the resume filter admitted only `origin === undefined` — so a live session
+showed "I'll read notes.md…" as it streamed and a resumed one showed nothing for that turn. Recovered at
+*read* time by `proseOf`, which needs no stored field and works on rows already written; a new field on
+`ChatMessage` is the conditional-spread shape that has cost six debugging rounds. Scope was Moeen's
+call: **screen only**. The memory index still excludes it deliberately — `exchanges` pairs a question
+with its final answer, and narration would move every document frequency while risking being read as
+the reply in a turn that ended on a tool call.
+
+`lib/resume.ts` was extracted for this, pure and in the `PURE` list: the filter was four chained
+lambdas inside a function needing a live runtime, which is how it shipped wrong twice.
+
+**Files.** `packages/cli/src/lib/init-flow.ts` · `packages/cli/src/lib/const.ts` ·
+`packages/cli/src/transcript.ts` · `packages/cli/src/hooks/useTurn.ts` ·
+`packages/cli/src/components/App.tsx` · `packages/cli/src/lib/resume.ts` (new) ·
+`packages/cli/src/run.ts` · `packages/core/src/tools/dialect/prose.ts` (new) ·
+`packages/core/src/runtime/agent.ts` (`AgentDescription.dialect` narrowed to `DialectId`) ·
+`packages/core/src/index.ts`
+
+**Acceptance**
+
+- [x] A generated agent has a live `knowledge:` block and a `knowledge/` directory, and loads
+- [x] The documented entry format loads; a `README.md` in that directory refuses by name
+- [x] `trim` is identity under the cap — asserted by reference, since that is what skips the render
+- [x] No action other than `trim` ever evicts, however far over the cap the buffer is
+- [x] `App` bounds the buffer while following the tail — asserted through the scroll hint, and
+  confirmed to **fail** with the effect disabled rather than passing for another reason
+- [x] `proseOf` keeps prose before *and* after a block, yields `""` for a silent call, and leaves
+  native content and non-assistant roles untouched
+- [x] `priorMessages` excludes `observation`, `repair`, `digest`, `system` and `tool`, and drops empties
+- [x] Live: a real deepseek turn that narrated and called `file_read`, resumed at a pty — the narration
+  is on screen, no `ACTION` block is, and the observation row is still absent. Confirmed against the
+  store that the row carries `origin: call` and the block, so it is the row the old filter dropped
+- [x] `bun test` 2387/0 · `test:node` 1144/0 · `typecheck` clean · `bench:boot` 76.5 ms median ·
+  `lint` at the 6 pre-existing warnings
+
+**Non-goals.**
+
+- **Call-prose in the memory index.** Decided above, not deferred.
+- **A row-unit cap.** Would need the terminal width inside a pure reducer, or a second eviction path
+  at render time that bounds what is drawn while the buffer keeps growing.
+- **Telling a parked reader that history was dropped.** Only needed by the eviction policy that was
+  not chosen; deferring is free because `esc` returns to the tail and trims then.
+
+---
+
+## Phase 6.3 — a config surface for the person (planned, not built)
+
+**Goal.** A person can change any setting after `init` without hand-editing YAML.
+
+**The gap.** `config_read`/`config_set` exist in `tools-system/src/config.ts` with a 15-path `SETTABLE`
+list, a floor, and `setInSource` doing comment-preserving edits — as **tools the agent calls**. There is
+no `config` command among the sixteen, so a person's routes are hand-editing `agent.yaml`, re-running
+`init` into a fresh directory, or asking their own agent (which needs `config_set` pinned, in
+`policy.allow`, and a restart).
+
+The inversion is the argument. This project deliberately reserves `allowFrom`, `server.host`,
+`server.tokenEnv`, `writeRoots`, `tools.policy.deny` and `untrusted.onMutate` **for the person**, floored
+so the agent cannot widen its own reach. That decision stands. But the only editor ever built is the
+agent's, so the fields designated as the person's have the worst ergonomics in the system: unvalidated
+YAML that fails at the next boot. It compounds with `.env` being a protected path *precisely* so the
+agent cannot supply its own secrets — leaving the one actor who can fill in `MODEL_API_KEY` with no tool
+for it.
+
+**Decisions taken (2026-08-20).**
+
+- **Shape:** a `config` command, plain path first, TUI over the same pure catalogue —
+  `config list` / `config get <path>` / `config set <path> <value>`, then a full-screen editor. The
+  plain path is what a collaborator, a script and CI need, and it makes the TUI a renderer over a
+  reducer that is already proven.
+- **Secrets:** yes. When a field names an env var that is not set, the surface offers to write it to the
+  agent's `.env` at 0600, never echoed and never in scrollback. Without it the command can report
+  `MODEL_API_KEY is not set` and be unable to fix it, which is the dead end this phase exists to remove.
+- **Field scope:** the agent's settable list **plus** the person-only floored fields, one catalogue with
+  two permission tiers, each row stating who may set it — so the floor is visible rather than a refusal
+  met later.
+- **In session:** `/config` is a pane, and on save it returns the `RESTART` symbol `/restart` already
+  uses, because an agent's settings are fixed for its lifetime and `manifest_changed` already says so.
+
+**The load-bearing constraint.** `yaml-edit.ts` stays the **only** thing that mutates a manifest, with
+the *policy* — which paths, which floors — varying by caller, the person's tier a superset of the
+agent's. A second edit path is how one caller writes a manifest the other's schema rejects, which has
+already happened once with `tools.providers`: a document the schema accepted and the runtime refused, an
+agent that booted today and not tomorrow, reported as success.
+
+**Non-goals (proposed).** Generating rows from the whole Zod schema — the deep nested shapes (workspace
+tiers, model roles) have no sensible flat editor and `setInSource` writes scalars, lists and maps rather
+than arbitrary nesting. A hand-curated shortlist, which is the drift `session-commands.ts` was written
+to end. Editing another agent's manifest by path without a ref.
