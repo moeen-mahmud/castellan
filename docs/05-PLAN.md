@@ -2460,7 +2460,7 @@ lambdas inside a function needing a live runtime, which is how it shipped wrong 
 
 ---
 
-## Phase 6.3 — a config surface for the person (planned, not built)
+## Phase 6.3 — a config surface for the person
 
 **Goal.** A person can change any setting after `init` without hand-editing YAML.
 
@@ -2499,7 +2499,74 @@ agent's. A second edit path is how one caller writes a manifest the other's sche
 already happened once with `tools.providers`: a document the schema accepted and the runtime refused, an
 agent that booted today and not tomorrow, reported as success.
 
-**Non-goals (proposed).** Generating rows from the whole Zod schema — the deep nested shapes (workspace
-tiers, model roles) have no sensible flat editor and `setInSource` writes scalars, lists and maps rather
-than arbitrary nesting. A hand-curated shortlist, which is the drift `session-commands.ts` was written
-to end. Editing another agent's manifest by path without a ref.
+**Non-goals.** Generating rows from the whole Zod schema — the deep nested shapes (workspace tiers,
+model roles) have no sensible flat editor and `setInSource` writes scalars, lists and maps rather than
+arbitrary nesting. A hand-curated shortlist, which is the drift `session-commands.ts` was written to
+end. Editing another agent's manifest by path without a ref. Sequence indexing in the writer — a key
+inside a list entry is reached by rewriting the list, and `allowFrom` has its own action instead.
+
+---
+
+## What was built
+
+`config list | get | set | env | allow`, plus the plumbing the decision above required.
+
+**One writer.** `core/manifest/edit.ts` — `prepareManifestEdit` is pure (place, schema,
+`resolveProviders`) with `editManifest` and `editManifestSync` over it. `yaml-edit.ts` **moved** from
+`tools-system` into core, and `parseSettingValue` with it, so the two surfaces cannot disagree about
+whether `["a", "b"]` is a list. `skills enable` was the third writer and now goes through this,
+gaining validation it never had. Each caller keeps its own *policy* and translates the writer's errors
+into its own audience's vocabulary — the agent's are prose for a model, the person's for a terminal.
+
+**One catalogue.** `core/manifest/settings.ts` holds every settable path once, with `agentListed`,
+`confirm` and `via` per row. `config_read`'s prose is carried verbatim on `toAgent`, because the whole
+summary was measured at 549 tokens against a 2,000-token observation budget.
+
+**Three bugs found on the way, all pre-existing:**
+
+- `renderScalar` permitted `@` in a bare scalar, so `config allow` wrote **unparseable YAML** — and
+  `prepareManifestEdit` waved it through, because `toJS()` on a broken document still returns an
+  object. Both halves fixed; the structural one matters more (11.107).
+- `NO_MANIFEST` was hand-kept and wrong both ways, so **`/soul distill` has been broken in-session**
+  for as long as it has been offered, and `/agents` ran with no manifest (11.108).
+- `resolveSessionCommand` was called with no offered list and `onSubmit` had no `case "command"`, so
+  **no typed slash command with arguments worked** — the palette ran them and typing the same thing
+  spent a model turn (11.109).
+
+Two more, minor: `tools.local`'s description had omitted `artifact_read` for two phases, visible in a
+real `config list` beside the value that contradicted it; and `palette.test.ts`'s
+`LANDING_LIST_ROWS` assertion counted 11 entries against a 16-row list, so it passed while the frame
+was truncated — the guard whose comment claims it catches exactly that.
+
+**Files.** `packages/core/src/manifest/edit.ts`, `settings.ts`, `yaml-edit.ts` (moved) ·
+`packages/cli/src/config.ts` · `packages/cli/src/lib/config-view.ts`, `dotenv-edit.ts` ·
+`packages/cli/src/lib/confirm.ts` (`askSecret`) · `packages/cli/src/lib/subcommand.ts` ·
+`packages/cli/src/lib/palette.ts` (`offeredCommands`) · `packages/cli/src/components/App.tsx` ·
+`packages/tools-system/src/config.ts` · `packages/cli/src/skills.ts`
+
+**Acceptance**
+
+- [x] One writer: `skills enable`, `config_set` and `config set` all validate identically
+- [x] `prepareManifestEdit` is pure, and refuses a result that is not valid YAML *before* the schema
+- [x] A person may set every field decision 11.29 reserves for them; the agent's floor is unchanged
+- [x] Only `tools.policy.deny` and `onMutate: allow` confirm; `onMutate: confirm` does not
+- [x] A declined confirmation writes nothing; `--yes` skips it; not a TTY declines
+- [x] A secret is prompted, masked, written 0600, and refused from a pipe or an argument
+- [x] `.env` comments and other variables survive; every value round-trips through `parseDotEnv`
+- [x] An impossible Telegram handle is refused with the rule it broke, sharing `init`'s check
+- [x] `allow` is idempotent, normalises to `@`, and `--remove` takes it off
+- [x] Env consequences are differentiated: load failure vs boot failure vs unauthenticated API vs a
+  provider that will not work — and only *newly* required ones are reported on a set
+- [x] A running agent is named with the right restart route for its mode, never refused; a stale
+  lease is ignored
+- [x] Live, in an isolated sandbox: three edits to a generated manifest changed exactly three lines,
+  with every comment and alignment intact · a first `channels` write went from 98 reflowed lines to 11
+  · `config allow @ada-lovelace` refused · a real handle wrote quoted and the agent still loaded ·
+  the secret prompt masked ten characters and wrote 0600 · `/config get` and `/config set` ran as
+  panes at a pty, the latter naming `/restart` in this session
+- [x] `bun test` 2482/0 · `test:node` 1164/0 · `typecheck` clean · `bench:boot` 75.0 ms median ·
+  `lint` at the 6 pre-existing warnings
+
+**Still to do (6.3b).** The full-screen editor over the same catalogue, and `/config` opening it as a
+pane that hands back the `RESTART` symbol on save. The plain path is what the reducer and the
+rendering are now proven against, which was the point of doing it first.

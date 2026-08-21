@@ -14,7 +14,7 @@
 
 import { describe, expect, test } from "bun:test"
 import { PassThrough } from "node:stream"
-import { askExactly, askYesNo } from "#lib/confirm"
+import { askExactly, askSecret, askYesNo, type SecretInput } from "#lib/confirm"
 
 /** A stdin that answers once, claiming to be a terminal unless told otherwise. */
 function tty(answer: string, isTTY = true) {
@@ -72,5 +72,105 @@ describe("askExactly", () => {
         expect(await askExactly("confirm?", "all", tty("all"))).toBe(true)
         expect(await askExactly("confirm?", "all", tty("milo"))).toBe(false)
         expect(await askExactly("confirm?", "prune", tty("prune"))).toBe(true)
+    })
+})
+
+/**
+ * A stdin that hands over bytes on demand, with raw mode observable.
+ *
+ * Real enough to catch what matters: that raw mode is entered *and left* (a thrown error leaving it on
+ * makes the shell that follows unable to echo anything, which reads as a hung terminal), and that no
+ * character of the value reaches the output.
+ */
+function keyboard(chunks: readonly string[], isTTY = true) {
+    const listeners: ((chunk: string) => void)[] = []
+    const raw: boolean[] = []
+    const written: string[] = []
+    const input: SecretInput = {
+        isTTY,
+        setRawMode: (mode) => raw.push(mode),
+        resume: () => undefined,
+        on: (_event, listener) => {
+            listeners.push(listener as (chunk: string) => void)
+            // Delivered after the caller has subscribed, which is the order a real stream uses.
+            queueMicrotask(() => {
+                for (const chunk of chunks) for (const fn of [...listeners]) fn(chunk)
+            })
+            return undefined
+        },
+        removeListener: (_event, listener) => {
+            const at = listeners.indexOf(listener as (chunk: string) => void)
+            if (at !== -1) listeners.splice(at, 1)
+            return undefined
+        },
+    }
+    const output = {
+        write: (text: string) => {
+            written.push(text)
+            return true
+        },
+    } as unknown as NodeJS.WritableStream
+    return { input, output, raw, written: () => written.join("") }
+}
+
+describe("askSecret", () => {
+    test("reads a value and never echoes a character of it", async () => {
+        const io = keyboard(["sk-live", "\r"])
+        expect(await askSecret("key:", { input: io.input, output: io.output })).toBe("sk-live")
+        expect(io.written()).not.toContain("sk-live")
+        expect(io.written()).toContain("*******")
+    })
+
+    test("raw mode is entered and left", async () => {
+        // Left, above all. A run that returned with raw mode still on would leave the next shell unable
+        // to echo anything the person types, which looks like a hung terminal rather than a bug here.
+        const io = keyboard(["x", "\n"])
+        await askSecret("key:", { input: io.input, output: io.output })
+        expect(io.raw).toEqual([true, false])
+    })
+
+    test("backspace removes a character", async () => {
+        // A mistyped key in a value you cannot see is otherwise unrecoverable without starting again.
+        const io = keyboard(["abc", "\u007f", "d", "\r"])
+        expect(await askSecret("key:", { input: io.input, output: io.output })).toBe("abd")
+    })
+
+    test("^C cancels, and ^D cancels only an empty line", async () => {
+        const cancelled = keyboard(["ab", "\u0003"])
+        expect(
+            await askSecret("key:", { input: cancelled.input, output: cancelled.output }),
+        ).toBeUndefined()
+
+        const empty = keyboard(["\u0004"])
+        expect(
+            await askSecret("key:", { input: empty.input, output: empty.output }),
+        ).toBeUndefined()
+
+        // ^D after typing submits rather than throwing the value away.
+        const typed = keyboard(["ab", "\u0004"])
+        expect(await askSecret("key:", { input: typed.input, output: typed.output })).toBe("ab")
+    })
+
+    test("a whole escape sequence is dropped, not just its escape byte", async () => {
+        // Dropping the byte alone left `[A` in the value — two characters of junk in a string nobody can
+        // see, which is worse than three because it looks like nothing happened.
+        const arrow = keyboard(["a", "\u001b[A", "b", "\r"])
+        expect(await askSecret("key:", { input: arrow.input, output: arrow.output })).toBe("ab")
+
+        // Split across chunks, which is how a real terminal often delivers it.
+        const split = keyboard(["a", "\u001b", "[", "B", "b", "\r"])
+        expect(await askSecret("key:", { input: split.input, output: split.output })).toBe("ab")
+
+        // SS3, which is how some terminals send arrows instead.
+        const ss3 = keyboard(["a", "\u001bOA", "b", "\r"])
+        expect(await askSecret("key:", { input: ss3.input, output: ss3.output })).toBe("ab")
+    })
+
+    test("not a TTY returns undefined and reads nothing", async () => {
+        // The caller reports that nothing was written. Reading a pipe would take a secret from a source
+        // nobody audited, and put it wherever that pipe came from.
+        const io = keyboard(["sk-live", "\r"], false)
+        expect(await askSecret("key:", { input: io.input, output: io.output })).toBeUndefined()
+        expect(io.written()).toBe("")
     })
 })

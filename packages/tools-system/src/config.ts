@@ -43,9 +43,17 @@
  * of "stop checking" do not.
  */
 
-import { readFile, writeFile } from "node:fs/promises"
+import { readFile } from "node:fs/promises"
 import { join } from "node:path"
-import { AgentManifestSchema, resolveProviders, type Tool, type ToolHandler } from "@dispach/core"
+import {
+    AGENT_SETTABLE_PATHS,
+    editManifest,
+    HarnessError,
+    parseSettingValue,
+    SETTINGS,
+    type Tool,
+    type ToolHandler,
+} from "@dispach/core"
 import { isMap, isSeq, parseDocument, stringify } from "yaml"
 import {
     configInvalid,
@@ -55,7 +63,6 @@ import {
     configValueUnreadable,
 } from "./errors.ts"
 import { SYSTEM_PROVIDER_ID } from "./paths.ts"
-import { setInSource } from "./yaml-edit.ts"
 
 export interface ConfigOptions {
     /** The agent's own directory. The manifest is `agent.yaml` inside it. */
@@ -65,56 +72,18 @@ export interface ConfigOptions {
 }
 
 /**
- * What the agent is told it can change, and what each field means.
+ * The settable list moved to `core/manifest/settings.ts`, and the prose with it.
  *
- * Returned by `config_read` rather than carried in the catalogue, so it costs nothing until something
- * asks. This is the "knows its own system" half of the requirement: the list is the manifest spec's
- * own vocabulary, in one place, phrased for the thing that has to use it.
+ * Two surfaces edit this file — this tool and the `config` command — and they do not have the same
+ * authority. Keeping the paths in one table is what stops the two lists disagreeing on the first field
+ * either one grows; what stayed here is the *policy*, below, because two of its three refusals depend
+ * on the value and one on a key hidden anywhere inside it, and none of that is a person's rule.
+ *
+ * `toAgent` on a row carries the clause this reader needs and the person's table does not — "cannot be
+ * set to allow", "allowFrom is refused here". The wording is verbatim, because the whole summary was
+ * measured at 549 tokens against a 2,000-token observation budget.
  */
-const SETTABLE: readonly { readonly path: string; readonly means: string }[] = [
-    { path: "tools.local", means: "built-in tools: now, memory_write" },
-    {
-        path: "tools.providers",
-        means: "where tools come from, as a map — {system: {}} for shell and files, {web: {backend: tavily, apiKeyEnv: TAVILY_API_KEY}} for the internet. Several at once. A writeRoots key inside is refused",
-    },
-    { path: "tools.pinned", means: "the tools from that provider this agent may call" },
-    {
-        path: "tools.policy.allow",
-        means: 'rules permitting a call: "exec", or narrower like "exec(git *)". Also what lets a mutating tool run in a turn that has read untrusted content',
-    },
-    { path: "tools.policy.deny", means: "rules refusing a call. Beats any allow rule" },
-    { path: "tools.policy.mode", means: "allow | ask | deny — for calls no rule mentions" },
-    {
-        // Present so the floor below is *reachable*. Left out, `config_set` refused this path as
-        // unsettable and the floor never ran — which meant `confirm`, a perfectly reasonable thing to
-        // ask for, was refused with the wrong reason, and the one value that must be refused was
-        // refused by accident. A guard that fires for the wrong reason is a guard nobody can predict.
-        path: "tools.untrusted.onMutate",
-        means: 'refuse | confirm — what happens when a tool that changes something is asked for in a turn that has read outside content. Cannot be set to "allow"',
-    },
-    { path: "tools.dialect", means: "nlt | native — how tool calls are written" },
-    { path: "model.main.id", means: "the model this agent runs on" },
-    { path: "model.main.temperature", means: "0 to 2" },
-    { path: "limits.maxSteps", means: "tool calls allowed in one turn" },
-    { path: "limits.toolTimeoutMs", means: "how long any single tool may take" },
-    {
-        path: "context.observationMaxTokens",
-        means: "how much of a tool's output reaches the model",
-    },
-    {
-        path: "channels",
-        means: "how people reach this agent, as a list — [{type: telegram, id: tg, tokenEnv: TELEGRAM_BOT_TOKEN, mode: longpoll}]. The token itself goes in the .env, which only a person can write. allowFrom is refused here: who may talk to you is not yours to decide",
-    },
-    {
-        path: "delivery",
-        means: "where a reply goes when a turn has no origin — {default: tg}. Names a channel id, not a channel type",
-    },
-    {
-        path: "server.enabled",
-        means: "true | false — serve the HTTP API on 127.0.0.1. host and tokenEnv are refused: binding anywhere reachable is not yours to decide",
-    },
-    { path: "server.port", means: "port for the HTTP API" },
-]
+const AGENT_ROWS = SETTINGS.filter((entry) => entry.agentListed)
 
 /**
  * Edits refused whatever the policy says.
@@ -247,21 +216,17 @@ export const CONFIG_SET_SPEC: Tool["spec"] = {
 }
 
 /**
- * Read a value written as a scalar or a JSON-ish list.
+ * Read a value the model wrote. `parseSettingValue`'s rules, this tool's error.
  *
- * `stringify`-then-`parseDocument` rather than `JSON.parse`, because a model writing YAML is the
- * common case and `["a", "b"]` happens to be valid in both. A value that parses as neither is refused
- * by name — guessing at it is how `tools.pinned: "exec"` becomes a one-character tool list.
+ * The parsing is core's so the two surfaces cannot disagree about whether `["a", "b"]` is a list; the
+ * refusal stays here because it is prose addressed to a model, and it is the only explanation it will
+ * get for why nothing happened.
  */
 export function parseValue(raw: string): unknown {
-    const text = raw.trim()
-    if (text === "") return ""
     try {
-        const doc = parseDocument(text)
-        if (doc.errors.length > 0) throw new Error(doc.errors[0]?.message ?? "unparseable")
-        return doc.toJS()
+        return parseSettingValue(raw)
     } catch (cause) {
-        throw configValueUnreadable(raw, String(cause))
+        throw configValueUnreadable(raw, cause instanceof Error ? cause.message : String(cause))
     }
 }
 
@@ -293,7 +258,7 @@ export function configReadHandler(options: ConfigOptions): ToolHandler {
         // tokens to change one line. What it actually needs is "what can I change, and what is it
         // now", which is a fifth the size and directly actionable.
         const doc = parseDocument(source)
-        const rows = SETTABLE.map((entry) => {
+        const rows = AGENT_ROWS.map((entry) => {
             const current = doc.getIn(entry.path.split("."), false)
             // Lists inline as `[a, b]` rather than as block YAML flattened onto one line, which
             // renders `- a - b` and reads as a subtraction.
@@ -311,7 +276,9 @@ export function configReadHandler(options: ConfigOptions): ToolHandler {
                         // rather than as fields. JSON is what the model writes back anyway.
                         `[${value.map((entry) => (typeof entry === "object" && entry !== null ? JSON.stringify(entry) : String(entry))).join(", ")}]`
                       : stringify(value).trim()
-            return `- ${entry.path} = ${shown}\n    ${entry.means}`
+            const means =
+                entry.toAgent === undefined ? entry.means : `${entry.means}. ${entry.toAgent}`
+            return `- ${entry.path} = ${shown}\n    ${means}`
         }).join("\n")
 
         return [
@@ -341,11 +308,8 @@ export function configSetHandler(options: ConfigOptions): ToolHandler {
         const pathFloor = floorRefusal(path)
         if (pathFloor !== undefined) throw configRefused(path, pathFloor)
 
-        if (!SETTABLE.some((entry) => entry.path === path)) {
-            throw configPathUnknown(
-                path,
-                SETTABLE.map((entry) => entry.path),
-            )
+        if (!AGENT_SETTABLE_PATHS.includes(path)) {
+            throw configPathUnknown(path, AGENT_SETTABLE_PATHS)
         }
 
         const value = parseValue(raw)
@@ -353,71 +317,33 @@ export function configSetHandler(options: ConfigOptions): ToolHandler {
         const valueFloor = floorRefusal(path, value)
         if (valueFloor !== undefined) throw configRefused(path, valueFloor)
 
-        let source: string
+        // Placing, validating and writing is `editManifest` — one writer for every surface, because
+        // the three that existed made the guarantee depend on which caller you were. Its errors are
+        // translated rather than propagated: this reader is a model, and the prose it gets back is the
+        // only explanation it will have of why nothing happened.
+        let result: Awaited<ReturnType<typeof editManifest>>
         try {
-            source = await readFile(file, "utf8")
+            result = await editManifest({ file, path: path.split("."), value })
         } catch (cause) {
-            throw configReadFailed(file, String(cause))
+            if (cause instanceof HarnessError && cause.code === "manifest_edit_unreadable") {
+                throw configReadFailed(file, String(cause.cause ?? cause.message))
+            }
+            if (cause instanceof HarnessError && cause.code === "manifest_edit_invalid") {
+                // The detail after the colon; the sentence around it is written for a person.
+                const detail = cause.message.slice(cause.message.indexOf(": ") + 2)
+                throw configInvalid(path, raw, detail)
+            }
+            throw cause
         }
 
-        const parts = path.split(".")
-        const doc = parseDocument(source)
-        const before = doc.getIn(parts, false)
-
-        // Edited in the source text, not by re-serialising the document. A round-trip keeps every
-        // comment and moves half of them: a comment block between two top-level keys belongs, as far
-        // as the parser is concerned, to the *end of the first*, so re-emitting it indents a section
-        // header into the section above. Measured on a generated manifest, one change produced a
-        // thirty-line diff. `setInSource` returns undefined when it cannot place the path with
-        // certainty, and the round-trip is then the fallback — a reflowed file beats a wrong one.
-        const surgical = setInSource(source, parts, value)
-        let next: string
-        if (surgical === undefined) {
-            const fallback = parseDocument(source)
-            fallback.setIn(parts, value)
-            next = String(fallback)
-        } else {
-            next = surgical
-        }
-
-        // Validated against the real schema before anything is written. An invalid manifest bricks the
-        // agent at its next boot, and without this the model would have reported success.
-        const parsed = AgentManifestSchema.safeParse(parseDocument(next).toJS())
-        if (!parsed.success) {
-            const first = parsed.error.issues[0]
-            throw configInvalid(
-                path,
-                raw,
-                `${first?.path.join(".") ?? path}: ${first?.message ?? "does not fit the schema"}`,
-            )
-        }
-
-        // The schema alone is not the whole load. Writing `tools.providers` into a manifest that
-        // still carries the deprecated `tools.provider` produces a document the schema accepts and
-        // the runtime refuses — an agent that boots today and not tomorrow, which is the failure this
-        // validation exists to prevent. Same function the runtime calls, so they cannot disagree.
-        try {
-            resolveProviders(parsed.data.tools)
-        } catch (cause) {
-            throw configInvalid(
-                path,
-                raw,
-                cause instanceof Error ? cause.message : "the providers block does not resolve",
-            )
-        }
-
-        await writeFile(file, next, "utf8")
-
-        const wasSet = before !== undefined && before !== null
+        const wasSet = result.before !== undefined
         return [
             `Set ${path} in ${file}.`,
-            wasSet
-                ? `It was: ${stringify(isMap(before) || isSeq(before) ? before.toJS(doc) : before).trim()}`
-                : "It was not set before.",
+            wasSet ? `It was: ${stringify(result.before).trim()}` : "It was not set before.",
             `It is now: ${stringify(value).trim()}`,
             "",
             "The configuration still validates. This takes effect when the agent next starts — nothing in the current conversation changes, so do not try the new tool yet.",
-            ...pendingSecrets(parsed.data, value),
+            ...pendingSecrets(result.manifest, value),
         ].join("\n")
     }
 }
@@ -459,5 +385,8 @@ export function configTools(options: ConfigOptions): readonly Tool[] {
     ]
 }
 
-/** For the "not enabled" hint and for tests, without exporting the table itself. */
-export const SETTABLE_PATHS: readonly string[] = SETTABLE.map((entry) => entry.path)
+/**
+ * For the "not enabled" hint and for tests. Re-exported from core rather than derived again — the
+ * derivation is what made these two lists able to disagree in the first place.
+ */
+export const SETTABLE_PATHS: readonly string[] = AGENT_SETTABLE_PATHS

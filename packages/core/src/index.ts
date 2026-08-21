@@ -87,6 +87,18 @@ export {
     type TurnResult,
 } from "./loop/turn.ts"
 export {
+    editManifest,
+    editManifestSync,
+    type ManifestEdit,
+    type ManifestEditResult,
+    manifestDocument,
+    manifestValueAt,
+    type PreparedEdit,
+    parseSettingValue,
+    plain,
+    prepareManifestEdit,
+} from "./manifest/edit.ts"
+export {
     type EnvOverride,
     type EnvSource,
     envOverrides,
@@ -131,11 +143,19 @@ export type {
 } from "./manifest/schema.ts"
 export { AgentManifestSchema, MODEL_ROLES } from "./manifest/schema.ts"
 export {
+    AGENT_SETTABLE_PATHS,
+    PERSON_SETTABLE_PATHS,
+    SETTINGS,
+    type Setting,
+    settingByPath,
+} from "./manifest/settings.ts"
+export {
     assertApiVersion,
     scanForLiteralSecrets,
     type ValidateOptions,
     validateManifest,
 } from "./manifest/validate.ts"
+export { setInSource, uncommentInSource } from "./manifest/yaml-edit.ts"
 export {
     CAPABILITY_REGISTRY,
     type CapabilityEntry,

@@ -30,6 +30,7 @@ import { basename, isAbsolute, join, relative, resolve } from "node:path"
 import {
     checkSkillAuthoring,
     type ErrorDetail,
+    editManifestSync,
     HarnessError,
     isSkillName,
     loadManifest,
@@ -41,7 +42,6 @@ import {
     type SkillsConfig,
     whenNotToUseKey,
 } from "@dispach/core"
-import { setInSource } from "@dispach/tools-system"
 import { ambientEnv } from "#lib/ambient"
 import { EXIT_FAILURE, EXIT_OK } from "#lib/const"
 import { forgetOrigin, type Origin, readOrigins, recordOrigins } from "#lib/origins"
@@ -460,9 +460,17 @@ function detail(skill: Skill) {
  * the reason this is a command rather than a `config_set` path — the agent cannot be trusted to do two
  * things atomically, and it is exactly the shape that made `config_set` report a pending `tokenEnv`.
  *
- * The manifest is edited with `setInSource`, the same editor `config_set` uses, because a round trip
- * through the YAML parser reflows the document: a comment between two top-level keys belongs to the end
- * of the first, so re-emitting moves section headers and one change produces a thirty-line diff.
+ * The manifest goes through `editManifest`, the one writer every surface uses. It used to place the
+ * block itself and write it unvalidated, on the reasoning that "the next load" would catch a bad
+ * result — which is the failure that validation exists to prevent, because the next load is a person's
+ * agent refusing to start after this command reported success. The block is a fixed known-good shape,
+ * so nothing was ever actually broken; the *guarantee* differed by which caller you happened to be.
+ *
+ * The uncommenting this used to do itself is `uncommentInSource` now, reached automatically for a
+ * top-level path: `setInSource` appends to a parent and `skills` has none, so it declines, and the
+ * generated manifest ships the line commented under its own heading. Generalising it was worth doing —
+ * `channels` needed exactly the same thing, and writing it for the first time had been reflowing 98
+ * lines of somebody's manifest.
  */
 function enable(
     manifestPath: string,
@@ -475,16 +483,17 @@ function enable(
 
     if (existing !== undefined) return existing
 
-    const source = readFileSync(manifestPath, "utf8")
-    // `setInSource` replaces a key that exists and returns `undefined` for one that does not — it never
-    // had to append a new top level, because every path `config_set` writes has a parent already there.
-    // So it is tried first, and the fallback uncomments the line the generated manifest ships, which is
-    // that manifest's whole premise. Both are text edits: neither reflows the document.
-    const edited = setInSource(source, ["skills"], block(dir)) ?? uncomment(source, dir)
-    writeFileSync(manifestPath, edited, "utf8")
+    const written = editManifestSync({ file: manifestPath, path: ["skills"], value: block(dir) })
     process.stdout.write(`${keyValue([{ label: "enabled", value: `skills.dir = ${dir}` }])}\n`)
-    // Re-read rather than assumed: the block just written is validated by the next load, and reporting
-    // success for a document nobody has parsed is how a manifest that boots today fails tomorrow.
+    if (written.reflowed) {
+        // Said rather than swallowed. A manifest with no commented `# skills:` line to uncomment — a
+        // hand-written one — goes through the round-trip, which is valid and moves comments, and
+        // finding that in a later `git diff` with nothing having mentioned it is the worse outcome.
+        process.stdout.write(
+            `${bullet("the file was re-serialised to add the block — it is valid, and comments may have moved")}\n`,
+        )
+    }
+    // Validated before it was written, so this is a resolved config rather than an assumption.
     return { dir, ...DEFAULTS }
 }
 
@@ -493,29 +502,6 @@ const DEFAULTS = { maxActive: 1, threshold: 0.35 } as const
 
 function block(dir: string): Record<string, unknown> {
     return { dir, ...DEFAULTS }
-}
-
-/**
- * Replace the commented Phase 5 line, or append the block at the end.
- *
- * The generated manifest carries `# skills: { dir: ./skills, ... }` under a `# Phase 5 — skills`
- * heading, so the common case is uncommenting exactly what is already documented in place — which keeps
- * the block where a reader expects it rather than orphaned at the bottom of the file.
- */
-function uncomment(source: string, dir: string): string {
-    const lines = source.split("\n")
-    const at = lines.findIndex((line) => /^#\s*skills:/.test(line))
-    const written = [
-        "skills:",
-        `  dir: ${dir}`,
-        `  maxActive: ${DEFAULTS.maxActive}`,
-        `  threshold: ${DEFAULTS.threshold}`,
-    ]
-    if (at === -1) return [...lines, "", ...written, ""].join("\n")
-    // The heading above it goes too, when there is one: "# Phase 5 — skills" over a live block reads as
-    // a phase that has not shipped.
-    const from = /^#\s*Phase 5/.test(lines[at - 1] ?? "") ? at - 1 : at
-    return [...lines.slice(0, from), ...written, ...lines.slice(at + 1)].join("\n")
 }
 
 function create(dir: string, options: SkillsOptions): number {

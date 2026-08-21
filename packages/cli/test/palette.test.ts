@@ -38,7 +38,13 @@ describe("every command declares how it appears in a session", () => {
         // a function of the table's size — so it is asserted here, where adding a command fails on the
         // relationship, rather than in a frame test where it fails as a missing string and reads like a
         // rendering bug. Adding `memory` in Phase 6 took the table from 14 to 15 and did exactly that.
-        const offered = COMMANDS.filter((spec) => spec.inSession !== "hidden").length
+        // Counted from what the palette actually builds, not from `COMMANDS` alone. It used to be the
+        // latter, which is eleven entries against a sixteen-row list — so this passed at 15 while the
+        // rendered frame was truncated with `… 1 below`, and the frame test caught what the comment
+        // above claims this one does. A guard that cannot fail is worse than no guard, because the
+        // comment explaining it stops anyone looking.
+        const offered = paletteEntries().length
+        expect(offered).toBeGreaterThan(COMMANDS.filter((s) => s.inSession !== "hidden").length)
         expect(LANDING_LIST_ROWS).toBeGreaterThanOrEqual(offered)
     })
 
@@ -185,6 +191,51 @@ describe("the argv a pane runs", () => {
             "list",
             "--plain",
         ])
+    })
+
+    test("a command that takes an action *and* a manifest gets it in the middle", () => {
+        // The shape the old hand-kept `NO_MANIFEST` set could not express. "Prepend or not" has no right
+        // answer for `config` and `memory`: the path belongs at the index their own spec puts it.
+        expect(subcommandArgv({ ...BASE, name: "config", rest: "list" })).toEqual([
+            "config",
+            "list",
+            "/agents/milo/agent.yaml",
+            "--plain",
+        ])
+        expect(subcommandArgv({ ...BASE, name: "memory", rest: "search deploy" })).toEqual([
+            "memory",
+            "search",
+            "/agents/milo/agent.yaml",
+            "deploy",
+            "--plain",
+        ])
+    })
+
+    test("`soul` is handed no manifest, and used to be handed one in the action's place", () => {
+        // Its second positional is a `file` — a long-form identity document — not a manifest. The old set
+        // did not list it, so `/soul distill` ran as `soul <manifestPath> distill` and the action became a
+        // path: broken in-session for as long as it has been offered there.
+        expect(
+            subcommandArgv({ ...BASE, name: "soul", rest: "distill workspace/SOUL.md" }),
+        ).toEqual(["soul", "distill", "workspace/SOUL.md", "--plain"])
+    })
+
+    test("`agents` is handed one, and used to be handed none", () => {
+        // Wrong in the other direction: it takes a variadic manifest first and *was* in the set, so it
+        // ran with nothing to report on.
+        expect(subcommandArgv({ ...BASE, name: "agents", rest: "" })).toEqual([
+            "agents",
+            "/agents/milo/agent.yaml",
+            "--plain",
+        ])
+    })
+
+    test("nothing is inserted when the positionals before it were not typed", () => {
+        // `/skills` bare would otherwise become `skills <manifestPath>`, putting a path where the action
+        // goes. Resolving from the cwd is the lesser wrong: it may pick a different agent, where this
+        // cannot run at all.
+        expect(subcommandArgv({ ...BASE, name: "skills", rest: "" })).toEqual(["skills", "--plain"])
+        expect(subcommandArgv({ ...BASE, name: "config", rest: "" })).toEqual(["config", "--plain"])
     })
 })
 

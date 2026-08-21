@@ -842,6 +842,37 @@ export function nextQuestion(
     return undefined
 }
 
+/**
+ * Is this a handle Telegram could actually issue, normalised to a leading `@`?
+ *
+ * Exported and shared because two surfaces ask it — `init` when the handle is typed, and `config
+ * allow` when one is added later — and *a check only one of them performs is a check they disagree
+ * with*. That is the `ruleBudgetFailure` lesson: the rule guard first lived in `Agent.create` alone,
+ * and `validate` happily reported ok on a manifest `run` refused.
+ *
+ * Checked against Telegram's real username rule: letters, digits and underscores, five to thirty-two
+ * of them. Not pedantry — a hyphen cannot occur in a real handle, so `@ada-lovelace` matches nobody,
+ * and the only symptom is the bot silently refusing every message from the one person it was set up
+ * for. That refusal names the problem perfectly and writes it to a log file, which under a background
+ * service nobody opens. The moment it is typed is the only cheap place to catch it.
+ */
+export function telegramHandle(raw: string): Answered {
+    const handle = raw.trim()
+    if (/\s/.test(handle)) {
+        return { ok: false, reason: "is one handle, with no spaces — for example @moeen." }
+    }
+    const bare = handle.startsWith("@") ? handle.slice(1) : handle
+    if (!/^[A-Za-z0-9_]{5,32}$/.test(bare)) {
+        return {
+            ok: false,
+            reason: /-/.test(bare)
+                ? "contains a hyphen, and a Telegram handle cannot — they are letters, digits and underscores only. Did you mean an underscore?"
+                : "is not a Telegram handle: 5-32 characters, letters, digits and underscores only. Leave it empty to allow nobody for now.",
+        }
+    }
+    return { ok: true, value: `@${bare}` }
+}
+
 export type Answered =
     | { readonly ok: true; readonly value: string }
     | { readonly ok: false; readonly reason: string }
@@ -908,25 +939,7 @@ export function validateAnswer(step: InitStep, raw: string): Answered {
             // treats the prefix as optional either way, so this is cosmetic rather than load-bearing.
             const handle = value.trim()
             if (handle === "") return { ok: true, value: "" }
-            if (/\s/.test(handle)) {
-                return { ok: false, reason: "is one handle, with no spaces — for example @moeen." }
-            }
-            // Checked against Telegram's actual username rule — letters, digits and underscores,
-            // five to thirty-two of them. Not pedantry: a hyphen cannot occur in a real handle, so
-            // `@ada-lovelace` matches nobody, and the *only* symptom is the bot silently refusing
-            // every message from the one person it was set up for. That refusal names the problem
-            // perfectly and writes it to a log file, which under a background service nobody opens.
-            // Catching the impossible handle at the moment it is typed is the only cheap place.
-            const bare = handle.startsWith("@") ? handle.slice(1) : handle
-            if (!/^[A-Za-z0-9_]{5,32}$/.test(bare)) {
-                return {
-                    ok: false,
-                    reason: /-/.test(bare)
-                        ? "contains a hyphen, and a Telegram handle cannot — they are letters, digits and underscores only. Did you mean an underscore?"
-                        : "is not a Telegram handle: 5-32 characters, letters, digits and underscores only. Leave it empty to allow nobody for now.",
-                }
-            }
-            return { ok: true, value: `@${bare}` }
+            return telegramHandle(handle)
         }
 
         case "telegram": {

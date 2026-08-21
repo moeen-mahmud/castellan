@@ -39,8 +39,26 @@ export interface SubcommandRequest {
     readonly timeoutMs?: number
 }
 
-/** Commands whose first positional argument is *not* a manifest, so the path must not be prepended. */
-const NO_MANIFEST = new Set(["sources", "agents", "daemon", "skills"])
+/**
+ * Where this command wants the manifest among its positionals, or `-1` for one that takes none.
+ *
+ * Read off the command's own spec rather than a hand-kept list, which was wrong in both directions at
+ * once. `NO_MANIFEST` held four names: `soul` takes an *action* first and was not listed, so
+ * `/soul distill` ran as `soul <manifestPath> distill` and the action became a path — broken in-session
+ * for as long as it has been offered there; and `agents` takes a variadic manifest first and *was*
+ * listed, so it ran with none at all.
+ *
+ * It also could not express the real shape. `config` and `memory` take an action and *then* a manifest,
+ * so "prepend or not" has no right answer for them — the path belongs at index 1. `soul`'s second
+ * positional is a `file` (a long-form identity document, not a manifest), which is why matching on the
+ * name matters rather than on the position.
+ *
+ * The same drift `session-commands.ts` exists to end: a second list describing `COMMANDS` disagrees with
+ * it on the first command either one grows. Derived, a new command is covered with nothing to remember.
+ */
+function manifestIndex(name: string): number {
+    return findCommand(name)?.args.findIndex((arg) => arg.name === "manifest") ?? -1
+}
 
 /**
  * The argv for a request.
@@ -50,10 +68,16 @@ const NO_MANIFEST = new Set(["sources", "agents", "daemon", "skills"])
  */
 export function subcommandArgv(request: SubcommandRequest): readonly string[] {
     const rest = request.rest.trim() === "" ? [] : request.rest.trim().split(/\s+/)
-    const manifest = NO_MANIFEST.has(request.name) ? [] : [request.manifestPath]
-    // A command that takes an action first — `daemon status`, `skills list` — keeps its own order, and
-    // the manifest is not inserted ahead of it. `--plain` last, so it cannot be swallowed as a value.
-    return [request.name, ...manifest, ...rest, "--plain"]
+    const at = manifestIndex(request.name)
+    // Inserted only when everything before it was typed. `/skills` bare would otherwise become
+    // `skills <manifestPath>`, putting a path where the action goes — and a command that resolves the
+    // agent from the cwd instead is the lesser wrong: it may pick a different agent, where this one
+    // cannot run at all. `--plain` stays last, so it cannot be swallowed as a flag's value.
+    const positionals =
+        at === -1 || rest.length < at
+            ? rest
+            : [...rest.slice(0, at), request.manifestPath, ...rest.slice(at)]
+    return [request.name, ...positionals, "--plain"]
 }
 
 /**

@@ -96,3 +96,17 @@ export function paletteSelection(palette: Palette, index: number): PaletteEntry 
     if (palette.matches.length === 0) return undefined
     return palette.matches[Math.max(0, Math.min(index, palette.matches.length - 1))]
 }
+
+/**
+ * The command names a typed slash line may use, without the leading slash.
+ *
+ * `resolveSessionCommand` takes this list, and it defaulted to empty at the one call site that mattered
+ * — so a typed `/config get x` was prose and the same command chosen from the palette ran. Derived from
+ * the palette rather than from `COMMANDS` directly, because the palette is what the person was just
+ * shown: anything offered there has to be typeable, and anything typeable has to be offered.
+ */
+export function offeredCommands(): readonly string[] {
+    return paletteEntries()
+        .filter((entry) => entry.kind !== "session")
+        .map((entry) => entry.word.slice(1))
+}

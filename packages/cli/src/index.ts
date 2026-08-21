@@ -182,6 +182,26 @@ async function dispatch(argv: readonly string[]): Promise<number> {
             })
         }
 
+        case "config": {
+            // As for `soul` and `daemon`, positional 0 is the action, so `resolved()` must not run —
+            // the agent is positional 1 and this command resolves it itself.
+            const { configCommand } = await import("#config")
+            return await configCommand({
+                action: manifestPath,
+                ...(positionals[1] === undefined ? {} : { ref: positionals[1] }),
+                ...(positionals[2] === undefined ? {} : { name: positionals[2] }),
+                ...(positionals[3] === undefined ? {} : { value: positionals[3] }),
+                ...(flags.str("channel") === undefined
+                    ? {}
+                    : { channel: flags.str("channel") as string }),
+                remove: flags.bool("remove"),
+                yes: flags.bool("yes"),
+                ...(flags.str("store") === undefined
+                    ? {}
+                    : { store: flags.str("store") as string }),
+            })
+        }
+
         case "validate":
             return validateCommand({ manifestPath: resolved(), json: flags.bool("json") })
 

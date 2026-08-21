@@ -75,4 +75,3 @@ export { ShellSessions } from "./session.ts"
  * section above and one change produces a thirty-line diff. Two ways of writing this file would mean
  * one of them eventually being the reflowing one.
  */
-export { setInSource } from "./yaml-edit.ts"

@@ -123,6 +123,13 @@ describe("the pure modules stay pure", () => {
         // chained lambdas inside a function that needs a live runtime, and the only way to check it was
         // to resume a real session and look — which is how it shipped wrong twice.
         "lib/resume.ts",
+        // `config`'s two halves. This surface can disable the write gate and open a bind address to the
+        // network, so *which* edits need a confirmation has to be assertable without performing one —
+        // the same argument `remove-plan.ts` makes about an irreversible sequence's order.
+        "lib/config-view.ts",
+        // Text in, text out. A `.env` writer that reflowed the file would drop the comments naming where
+        // each key came from, which matters more here than in the manifest.
+        "lib/dotenv-edit.ts",
         // The kit's half of a screen that is not a renderer: what the header says and whether the
         // footer fits. Pure so both can be asserted as strings, which is the only way the *content* of
         // a header was ever observable — before this it lived in JSX in three components.

@@ -299,6 +299,67 @@ export const COMMANDS: readonly CommandSpec[] = [
         ],
     },
     {
+        // A person's editor for the manifest. `config_read`/`config_set` are the *agent's*, and they
+        // are deliberately floored on the fields decision 11.29 reserves for a person — which left
+        // those fields with no editor at all until this existed.
+        //
+        // `output` rather than `view`: the result is a listing or a one-line report, not a surface
+        // somebody navigates. A `set` from inside a session cannot take effect in it, which the report
+        // says, and the pane path already knows how to hand back a restart.
+        name: "config",
+
+        inSession: "output",
+        summary: "read and change an agent's settings, and fill in its secrets",
+        args: [
+            {
+                name: "action",
+                required: true,
+                help: "what to do",
+                choices: [
+                    { value: "list", help: "every setting, its current value, and who may set it" },
+                    { value: "get", help: "one setting" },
+                    { value: "set", help: "change one setting" },
+                    {
+                        value: "env",
+                        help: "put a secret in the .env beside the manifest, prompted and not echoed",
+                    },
+                    {
+                        value: "allow",
+                        help: "add or remove a handle a channel accepts messages from",
+                    },
+                ],
+            },
+            { ...MANIFEST, required: true },
+            {
+                name: "name",
+                required: false,
+                help: "the setting's dotted path, an env variable name, or a handle",
+            },
+            { name: "value", required: false, help: "the new value (set only)" },
+        ],
+        flags: [
+            STORE,
+            {
+                name: "channel",
+                kind: "string",
+                placeholder: "id",
+                help: "which channel to allow on, when there is more than one",
+            },
+            {
+                name: "remove",
+                kind: "boolean",
+                help: "take the handle off instead of adding it (allow only)",
+            },
+            {
+                // Only reaches the two edits that stop a check running. Everything else applies
+                // without asking, so this is not the flag people learn to type by reflex.
+                name: "yes",
+                kind: "boolean",
+                help: "skip the confirmation on an edit that weakens a check",
+            },
+        ],
+    },
+    {
         name: "validate",
 
         inSession: "output",

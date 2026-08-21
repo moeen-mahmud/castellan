@@ -51,7 +51,7 @@ import {
     SEARCH_ROWS,
     SESSION_PICKER_ROWS,
 } from "#lib/const"
-import { paletteEntries, paletteFor, paletteSelection } from "#lib/palette"
+import { offeredCommands, paletteEntries, paletteFor, paletteSelection } from "#lib/palette"
 import type { AppProps } from "#lib/schema"
 import { screenColumns, titleLine } from "#lib/screen"
 import { FOLLOWING, scroll, slice } from "#lib/scroll"
@@ -289,7 +289,13 @@ export function App({
     const onSubmit = (text: string, draft: string): void => {
         // Both renderers dispatch through the same table, so `--plain` and the rich path cannot
         // answer the same typed command differently.
-        const command = resolveSessionCommand(text)
+        // `offered` is what turns a typed `/config get x` into a command rather than a message. Without
+        // it the list defaults to empty, so **no** CLI command resolved when typed with arguments: the
+        // palette ran them and typing the same thing sent it to the model as prose, which then answered
+        // about it. Selecting `/config` from the list worked, and typing `/config get model.main.id` cost
+        // a turn — the same command, two answers, which is exactly what `resolveSessionCommand` living in
+        // one place is supposed to prevent.
+        const command = resolveSessionCommand(text, offeredCommands())
         if (command !== undefined) {
             switch (command.kind) {
                 case "exit":
@@ -325,6 +331,12 @@ export function App({
                                 `could not clear the session: ${error instanceof Error ? error.message : String(error)}`,
                             ),
                         )
+                    return
+                case "command":
+                    // Through `dispatch`, which is the palette's path too — its own comment says it is
+                    // shared "so the two cannot diverge", and until now only one of the two reached it.
+                    if (dispatch(`/${command.name}`, command.rest)) return
+                    note(unknownCommandText({ word: `/${command.name}` }))
                     return
                 case "unknown":
                     note(unknownCommandText(command))

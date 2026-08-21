@@ -115,6 +115,27 @@ passed on the command line lands in shell history — so a scripted run
 (`init --user Ada --name Scout --preset ollama --yes`) leaves the line blank and says where to fill
 it in.
 
+## Changing an agent afterwards
+
+Nothing about an agent is fixed at `init`. `config` is the person's editor for it — the agent has its
+own (`config_set`), and the two are deliberately not the same: what a tool may do is the agent's to
+ask for, but where it writes, who may reach it and what address it listens on are yours.
+
+```bash
+dispach config list milo                            # every setting, its value, and who may set it
+dispach config set milo model.main.id deepseek-v4-pro
+dispach config env milo MODEL_API_KEY               # prompted, masked, written 0600
+dispach config allow milo @your_handle              # who a channel accepts messages from
+```
+
+Every edit is placed in the file, re-validated against the real schema and only then written, so a
+change that would stop the agent loading is refused instead of discovered at the next boot. Comments
+and alignment survive. Two edits — replacing the deny rules, and turning the write gate off — say what
+the guard does and ask before applying; nothing else asks.
+
+An agent's settings are fixed for the lifetime of the process running it, so a change lands at the next
+start and the command says so, naming the process holding it.
+
 ## Where things live
 
 Agents created by `init` live in a sandbox under your home directory, and `run <name>` finds them
@@ -280,6 +301,7 @@ Stated plainly, because the alternative is someone assuming otherwise:
 | `daemon` | install, start, stop and inspect a background service (macOS) |
 | `stop` | stop everything — services and any loose `serve` |
 | `remove` | delete an agent: directory, sessions, memory, logs, service |
+| `config` | read and change an agent's settings, and fill in its secrets |
 | `sessions` | list stored conversations, or inspect one |
 | `memory` | search what an agent remembers, or rebuild the index |
 | `skills` | browse the catalogues and install, or check one agent's skills |

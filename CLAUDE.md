@@ -516,6 +516,54 @@ Never claim a performance property without a number in `evals/` and a script to 
   Without it a pinned-down agent is silently less capable than its runtime and only the manifest
   explains why. One shared renderer for both dialects — under `native` it is the *only* slot-1 block,
   because the request's `tools` parameter has no field for what was left out.
+- **One thing writes `agent.yaml`: `core/manifest/edit.ts`.** There were three, and the guarantee
+  depended on which caller you were — `skills enable` placed and wrote *unvalidated*, reasoning in its
+  own comment that "the next load" would catch a bad result, which is the failure validation exists to
+  prevent because the next load is somebody's agent refusing to start after a command reported success.
+  `prepareManifestEdit` is **pure** (place → schema → `resolveProviders`) with sync and async wrappers,
+  and pure is the load-bearing part: it is what stops a non-async caller skipping the checks. Core owns
+  it because core owns the schema, the loader and `resolveProviders`, and because the CLI then needs no
+  YAML parser of its own. What does *not* move is the **policy**: the agent's `floorRefusal` and the
+  person's confirmations are different authorities, and each caller translates the writer's errors into
+  its own audience's words — the agent's are prose for a model.
+- **A rendering defect has to fail in the writer, not at somebody's next boot — so check `doc.errors`
+  before the schema.** `prepareManifestEdit` ran `AgentManifestSchema.safeParse(parseDocument(next).toJS())`
+  and `toJS()` on a *broken* document still returns an object: `renderScalar` permitted `@` in a bare
+  scalar, `config allow` wrote `- @moeen_m` (invalid YAML — `@` is a reserved indicator and a plain
+  scalar may not begin with one), `allowFrom` came back absent, the schema accepted the rest, and the
+  writer reported success on a manifest the runtime refuses. The exact failure the module exists to
+  prevent, inside the module. Corollary for the renderer: **the first character of a plain scalar is a
+  separate question from the rest** — `./skills` and `127.0.0.1` stay bare, `@handle` and `~` are quoted.
+- **`config` is the person's editor and nothing in it is floored.** The agent's floor exists because an
+  agent that could widen its inbound gate could be *talked into* it by the message it is reading;
+  `config_set` sits in `policy.allow` on a real manifest, so the write gate would not stop that. A
+  person at a terminal is not that threat, and refusing them is what left the fields decision 11.29
+  *reserves* for them — `allowFrom`, `server.host`, `server.tokenEnv`, `writeRoots` — with the worst
+  ergonomics in the system. Two edits are confirmed rather than refused, and only two: `onMutate:
+  confirm` is silent because it **tightens** the gate, the same asymmetry the agent's floor has.
+- **A secret is prompted, never taken from an argument or a pipe.** An argument lands in shell history
+  *and* in `ps`, readable by every local process for the call's lifetime — the exposure `renderPlist`
+  throws to prevent, and short-lived does not change it. Not a TTY returns nothing rather than reading a
+  pipe, so CI is told instead of a secret arriving unaudited. readline cannot do it (suppressing its
+  echo means overwriting a private method, which needs a forbidden cast), so the bytes are read directly
+  — raw mode restored in a `finally`, because returning with it on leaves the next shell unable to echo
+  and reads as a hung terminal. Drop **whole** escape sequences: `[A` left in a value nobody can see is
+  worse than three characters, because it looks like nothing happened.
+- **A commented-out top-level block is uncommented in place, never appended.** `setInSource` appends to
+  a parent and a top-level key has none, so it declines every block a generated manifest ships
+  commented and the round-trip runs: writing `channels` for the first time changed **98 lines**,
+  indenting `# ── context ──` four spaces inside `model:`. With the fallback it is 11, all of them the
+  block. And uncommenting beats appending anyway — the manifest documents each block where it belongs,
+  and *that uncommenting works is the file's whole premise*.
+- **The pane's manifest position comes from the command's own spec, and a typed slash command uses the
+  palette's dispatch.** Two hand-kept lists, both wrong. `NO_MANIFEST` omitted `soul` (so `/soul
+  distill` ran as `soul <manifestPath> distill` and the action became a path — broken for as long as it
+  has been offered) and *included* `agents` (which takes a manifest first, so it ran with none); it also
+  cannot express `config` and `memory`, where the manifest is positional **1**. And
+  `resolveSessionCommand(text)` was called with no `offered` list, so no CLI command resolved when typed
+  with arguments: the palette ran `/config` and typing `/config get model.main.id` spent a model turn
+  instead. Both derived now. `dispatch`'s own comment already said it was "shared so the two cannot
+  diverge" — only one of the two reached it.
 - **`agent.yaml` is edited by `config_set`, never by `file_write`, and never by re-serialising it.**
   A whole-file overwrite cannot be validated; a targeted change is re-checked against the schema
   before anything is written. And `parseDocument` → `setIn` → `String(doc)` **reflows the file**: a

@@ -24,12 +24,27 @@
  * wrong one.
  */
 
-/** How a value is written into the file. Nothing else is settable, so nothing else is handled. */
+/**
+ * How a value is written into the file. Nothing else is settable, so nothing else is handled.
+ *
+ * Quoted only when it has to be. A bare `system` reads the way a person would have typed it, and a
+ * value containing a comment marker or a colon would silently change meaning unquoted.
+ *
+ * **The first character is a separate question from the rest**, and conflating them was a real bug.
+ * `@` was in the one permitted set, so a Telegram handle wrote as `- @moeen_m` — and `@` is a *reserved
+ * indicator* in YAML, meaning a plain scalar may not begin with one. The file stopped parsing. Latent
+ * since Phase 3.6 and invisible until `allowFrom` became the first field whose values start with `@`.
+ *
+ * So the body keeps the permissive set and the opener is restricted to characters that cannot be read
+ * as structure: `~` is null, `-` is a sequence entry, `@` and a backtick are reserved, and `?`, `:`,
+ * `#`, `&`, `*`, `!`, `|`, `>`, `%`, `[`, `]`, `{`, `}` and the quotes are all indicators. Everything
+ * ruled out here is merely *quoted*, never rejected.
+ */
 function renderScalar(value: unknown): string {
     if (typeof value === "string") {
-        // Quoted only when it has to be. A bare `system` reads the way a person would have typed it,
-        // and a value containing a comment marker or a colon would silently change meaning unquoted.
-        return /^[A-Za-z0-9_./@~-]+$/.test(value) ? value : JSON.stringify(value)
+        const safeThroughout = /^[A-Za-z0-9_./@~-]+$/.test(value)
+        const safeOpener = /^[A-Za-z0-9_./]/.test(value)
+        return safeThroughout && safeOpener ? value : JSON.stringify(value)
     }
     return String(value)
 }
@@ -237,3 +252,40 @@ function renderNested(keys: readonly string[], value: unknown, indent: number): 
 
 /** Two spaces, matching every file this project generates. Only used for levels being created. */
 const INDENT_STEP = 2
+
+/**
+ * Replace a commented-out top-level block with a real one, in place.
+ *
+ * `setInSource` appends to a parent, and a top-level key has none, so it declines every block the
+ * generated manifest ships commented — `channels`, `delivery`, `phases`, `skills`. The round-trip then
+ * ran, and it is expensive in exactly the way decision 4.51 describes: measured on a generated manifest,
+ * writing `channels` for the first time changed **98 lines**, indenting `# ── context ──` four spaces
+ * inside `model:` and collapsing every aligned trailing comment in the file.
+ *
+ * Uncommenting is better than appending on its own merits, too. The generated manifest documents each
+ * block where it belongs, under a heading explaining it, and *that uncommenting works is the file's
+ * whole premise* — a block appended at the bottom instead leaves the documentation describing something
+ * that is now defined somewhere else.
+ *
+ * Children are the commented lines indented under it: `#` then two or more spaces. One space is a
+ * different key, which is what stops the run at `# delivery:` after `# channels:`.
+ */
+export function uncommentInSource(source: string, key: string, value: unknown): string | undefined {
+    const lines = source.split("\n")
+    const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    const opener = new RegExp(`^#\\s*${escaped}\\s*:`)
+    const at = lines.findIndex((line) => opener.test(line))
+    if (at === -1) return undefined
+
+    let end = at
+    while (/^#\s{2,}\S/.test(lines[end + 1] ?? "")) end += 1
+
+    // A phase heading immediately above becomes a lie the moment the block is live: "# Phase 5 —
+    // skills" over a configured one reads as a phase that has not shipped. Only that shape, and only
+    // directly above — prose explaining the block is the author's and stays.
+    const from = /^#\s*Phase \d/.test(lines[at - 1] ?? "") ? at - 1 : at
+
+    return [...lines.slice(0, from), ...renderBlock(key, value, 0), ...lines.slice(end + 1)].join(
+        "\n",
+    )
+}
