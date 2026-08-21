@@ -2567,6 +2567,64 @@ was truncated — the guard whose comment claims it catches exactly that.
 - [x] `bun test` 2482/0 · `test:node` 1164/0 · `typecheck` clean · `bench:boot` 75.0 ms median ·
   `lint` at the 6 pre-existing warnings
 
-**Still to do (6.3b).** The full-screen editor over the same catalogue, and `/config` opening it as a
-pane that hands back the `RESTART` symbol on save. The plain path is what the reducer and the
-rendering are now proven against, which was the point of doing it first.
+---
+
+## Phase 6.3b — the editor
+
+**Goal.** Change any setting from a screen, without knowing a dotted path.
+
+**Decisions taken (2026-08-21).**
+
+- **Reach:** `config edit <agent>` *and* bare `config <agent>`. The action becomes optional and the six
+  action words win the first positional; anything else is an agent. Two action words print a note.
+- **Saving:** immediately, one write per confirmed row, through the same `applySet`/`applyAllow`/
+  `applySecret` the plain commands use. No staged set, no unsaved state, no cancel-all.
+- **Coverage:** everything — dotted settings, one `allowFrom` row per declared channel, and every
+  secret the manifest depends on, masked.
+
+**Shape.** `lib/config-editor.ts` is the pure reducer (rows, cursor, mode, buffer);
+`components/ConfigEditor.tsx` is a *view* under the Phase 5.5 contract — it owns its state and its
+single `focused`-gated `useInput`, like `SkillBrowser` and `SessionPicker`, and never mounts itself.
+`lib/config-apply.ts` holds the three writes so the editor and the plain commands cannot diverge on
+one; `lib/config-rows.ts` builds the rows and is imported *statically* by both hosts, because
+`index.ts` imports `config.ts` dynamically and a module reached both ways makes the bundle unparseable.
+Both modes share `keyToWizardIntent` — `select: true` browsing, `select: false` in a field — so there
+is no third intent mapper to keep in step.
+
+**Six pre-existing defects found on the way**, four of them silent:
+
+- `config edit` without a tty wrote the alternate-screen escape **into a pipe** and exited **0** on
+  Ink's raw-mode error (11.114).
+- `ambientEnv` was being asked a question it cannot answer, so a token beside the manifest read as
+  unset and an editor row said `(not set)` right after being set (11.115).
+- `titleLine` dropped the `summary` that `Screen` renders, so the conversation switcher's "pick a
+  conversation" had never appeared either (11.117).
+- `MAX_SCREEN_ROWS` as a window overflowed a 30-row terminal, scrolling the header and cursor away
+  (11.116).
+- `dispatch`'s `useCallback` was missing `manifestPath` once the `/config` branch read it.
+- And in the tests: `KEY.return` does not exist (it is `KEY.enter`), which typecheck catches and I had
+  run the suite first; and two `config-env` tests asserted on `MODEL_API_KEY`, which `bun test`
+  auto-loads from the repo's own `.env` — the contamination hazard this repo has recorded twice.
+
+**Acceptance**
+
+- [x] `config <agent>`, `config edit <agent>` and `/config` all reach the editor; `config list <agent>`
+  still reaches the listing
+- [x] The cursor opens on the first setting, steps over headings in the direction of travel, and never
+  parks on one; a list with nothing selectable does not hang
+- [x] A secret never appears in any frame and never seeds the buffer — asserted by grepping every
+  frame of a real pty session for the value
+- [x] An impossible handle is refused in place with the buffer kept, so it can be corrected
+- [x] A value the schema rejects is refused with the schema's own words, and nothing is written
+- [x] Rows are re-read after each write: a secret's row goes `(not set)` → `(set)`, and `config list`
+  agrees
+- [x] No tty refuses with exit 1 and writes nothing to stdout
+- [x] Live, at a pty: the editor opened via bare `config <agent>` · navigated · `model.main.id` changed
+  and the file changed with it · `allowFrom` refused `@ada-lovelace` then accepted `moeen_m` · a secret
+  typed masked, landing in a 0600 `.env`, never on screen · `/config` opened as a pane in a session and
+  an edit there **restarted the agent**, whose banner then reported the new model
+- [x] `bun test` 2525/0 · `test:node` 1164/0 · `typecheck` clean · `bench:boot` under budget ·
+  `lint` at the 6 pre-existing warnings
+
+**Non-goals.** A staged set with a cancel-all (11.111). Editing `writeRoots` from the editor (11.112).
+Sequence indexing in the writer — a key inside a list entry is reached by rewriting the list.

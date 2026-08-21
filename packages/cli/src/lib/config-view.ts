@@ -20,6 +20,7 @@
  */
 
 import { SETTINGS, type Setting } from "@dispach/core"
+import type { EditorRow } from "#lib/config-editor"
 import { bullet, indent, keyValue, section } from "#lib/render"
 
 /** A setting with whatever the manifest currently has in it. */
@@ -259,4 +260,68 @@ export function unmet(
     env: Readonly<Record<string, string | undefined>>,
 ): readonly EnvNeed[] {
     return needs.filter((need) => env[need.name] === undefined || env[need.name] === "")
+}
+
+/**
+ * The editor's rows for a manifest: every setting, one `allowFrom` per channel, and every secret.
+ *
+ * Here rather than in the component because it is the whole shape of the surface and it is pure — what
+ * appears, in what order, under which heading — and because both hosts build it the same way.
+ *
+ * The two catalogue rows that are not dotted paths are *replaced* by their expansions rather than shown
+ * beside them: `channels[].allowFrom` becomes one row per declared channel, and
+ * `tools.providers.<id>.writeRoots` is left as a listing-only row, because writing it means naming a
+ * provider and the editor has no way to ask which. A row nobody can act on would be the dead end this
+ * surface exists to remove, so it is not offered at all — `config list` still shows it.
+ */
+export function editorRows(
+    settings: readonly SettingValue[],
+    input: {
+        readonly channels: readonly {
+            readonly id: string
+            readonly type: string
+            readonly allowFrom: readonly string[]
+        }[]
+        readonly secrets: readonly EnvNeed[]
+        readonly present: (name: string) => boolean
+    },
+): readonly EditorRow[] {
+    const out: EditorRow[] = []
+    let block: string | undefined
+
+    for (const row of settings) {
+        if (row.setting.via !== undefined || /[[<]/.test(row.setting.path)) continue
+        const group = row.setting.path.split(".")[0] ?? row.setting.path
+        if (group !== block) {
+            out.push({ kind: "heading", label: group })
+            block = group
+        }
+        out.push({ kind: "setting", setting: row.setting, value: row.value })
+    }
+
+    if (input.channels.length > 0) {
+        out.push({ kind: "heading", label: "who may reach it" })
+        for (const channel of input.channels) {
+            out.push({
+                kind: "allow",
+                channelId: channel.id,
+                channelType: channel.type,
+                handles: channel.allowFrom,
+            })
+        }
+    }
+
+    if (input.secrets.length > 0) {
+        out.push({ kind: "heading", label: "secrets — written to the .env, never shown" })
+        for (const need of input.secrets) {
+            out.push({
+                kind: "secret",
+                name: need.name,
+                why: need.why,
+                present: input.present(need.name),
+            })
+        }
+    }
+
+    return out
 }

@@ -14,7 +14,7 @@ import { mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { BRAND, HarnessError, parseDotEnv } from "@dispach/core"
-import { configCommand } from "#config"
+import { configCommand, readAction } from "#config"
 
 const MANIFEST = `apiVersion: ${BRAND.apiVersion}
 id: cfg
@@ -526,6 +526,56 @@ describe("allow", () => {
             }),
         )
         expect(error.hint).toContain("Did you mean tg")
+    })
+})
+
+describe("readAction", () => {
+    test("a known action word wins", () => {
+        expect(readAction("list", "milo")).toEqual({ action: "list", ref: "milo" })
+        expect(readAction("set", "milo")).toEqual({ action: "set", ref: "milo" })
+    })
+
+    test("anything else is the agent, and the action is the editor", () => {
+        // `config milo` is the obvious thing to type, so it has to work. Same rule as a slash command
+        // taking arguments only after an exact match, and as `resolveAgentRef` letting a path win.
+        expect(readAction("milo", undefined)).toEqual({ action: "edit", ref: "milo" })
+        expect(readAction("./somewhere/agent.yaml", undefined)).toEqual({
+            action: "edit",
+            ref: "./somewhere/agent.yaml",
+        })
+    })
+
+    test("nothing at all is the editor with no agent", () => {
+        expect(readAction(undefined, undefined)).toEqual({ action: "edit", ref: undefined })
+    })
+
+    test("two action words note which was read as which", () => {
+        // The collision is an agent literally named after an action. Running the wrong one quietly is
+        // the failure worth avoiding, and it does not look wrong in the output.
+        const said: string[] = []
+        expect(readAction("list", "edit", (line) => said.push(line))).toEqual({
+            action: "list",
+            ref: "edit",
+        })
+        expect(said.join("")).toContain('reading "list" as the action')
+    })
+
+    test("a bare action word carries no agent, so the usual missing-manifest error applies", () => {
+        expect(readAction("edit", undefined)).toEqual({ action: "edit", ref: undefined })
+        expect(readAction("set", undefined)).toEqual({ action: "set", ref: undefined })
+    })
+})
+
+describe("edit", () => {
+    test("refuses without a terminal rather than writing an escape into a pipe", async () => {
+        // Attempted, it wrote the alternate-screen sequence to a *pipe* and Ink's own "raw mode is not
+        // supported" error left the command exiting **0** — a failure reported as success.
+        const error = await refusal(
+            configCommand({ action: "edit", ref: file, out, sandboxEnv: CLEAN }),
+        )
+        expect(error.code).toBe("cli_config_edit_needs_terminal")
+        expect(error.hint).toContain("config list")
+        expect(said()).toBe("")
     })
 })
 

@@ -162,6 +162,11 @@ export function hintLine(hints: readonly KeyHint[], width: number): string {
  */
 export function titleLine(header: ScreenHeader, width: number): string {
     const parts = [header.title]
+    // The summary was dropped here while `Screen` renders it on its own dim line, so a surface using the
+    // one-line variant silently lost its label: the conversation switcher passed "pick a conversation"
+    // and the settings editor "settings", and neither ever appeared. Empty adds nothing, which is what
+    // the chat header passes.
+    if (header.summary !== "") parts.push(header.summary)
     if (header.agent !== undefined) parts.push(header.agent.name, header.agent.model)
     const warnings = header.warnings ?? []
     if (warnings.length > 0) {

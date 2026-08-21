@@ -185,10 +185,13 @@ async function dispatch(argv: readonly string[]): Promise<number> {
         case "config": {
             // As for `soul` and `daemon`, positional 0 is the action, so `resolved()` must not run —
             // the agent is positional 1 and this command resolves it itself.
-            const { configCommand } = await import("#config")
+            const { configCommand, readAction } = await import("#config")
+            // `config <agent>` with no action is the editor, so the split is not positional. The six
+            // action words win and anything else is an agent — the same rule a slash command uses.
+            const asked = readAction(manifestPath, positionals[1])
             return await configCommand({
-                action: manifestPath,
-                ...(positionals[1] === undefined ? {} : { ref: positionals[1] }),
+                action: asked.action,
+                ...(asked.ref === undefined ? {} : { ref: asked.ref }),
                 ...(positionals[2] === undefined ? {} : { name: positionals[2] }),
                 ...(positionals[3] === undefined ? {} : { value: positionals[3] }),
                 ...(flags.str("channel") === undefined

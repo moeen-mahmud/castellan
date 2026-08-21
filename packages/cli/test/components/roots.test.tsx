@@ -14,11 +14,13 @@ import { describe, expect, test } from "bun:test"
 import { createElement as h } from "react"
 import { App } from "#components/App"
 import { Brandmark } from "#components/Brandmark"
+import { ConfigEditor, type ConfigEditorProps } from "#components/ConfigEditor"
 import { Picker } from "#components/Picker"
 import { SessionPicker, type SessionPickerProps } from "#components/SessionPicker"
 import { SkillBrowser } from "#components/SkillBrowser"
 import { WizardApp } from "#components/WizardApp"
 import type { BrowseRow, InstallReport } from "#lib/browse"
+import type { EditorRow } from "#lib/config-editor"
 import { MAX_TRANSCRIPT_ITEMS } from "#lib/const"
 import type { SandboxAgent } from "#lib/sandbox"
 import type { AppProps } from "#lib/schema"
@@ -1038,5 +1040,155 @@ describe("App, the landing state", () => {
         const frame = harness.frame()
         harness.unmount()
         expect(frame.text).toContain("session local:abc123")
+    })
+})
+
+describe("ConfigEditor", () => {
+    const ROWS: readonly EditorRow[] = [
+        { kind: "heading", label: "tools" },
+        {
+            kind: "setting",
+            setting: { path: "tools.dialect", means: "nlt | native", agentListed: true },
+            value: "nlt",
+        },
+        {
+            kind: "setting",
+            setting: {
+                path: "server.host",
+                means: "the address the API binds",
+                agentListed: false,
+            },
+            value: "127.0.0.1",
+        },
+        { kind: "heading", label: "who may reach it" },
+        { kind: "allow", channelId: "tg", channelType: "telegram", handles: ["@moeen_m"] },
+        { kind: "heading", label: "secrets" },
+        {
+            kind: "secret",
+            name: "MODEL_API_KEY",
+            why: "the manifest will not load until it is set",
+            present: false,
+        },
+    ]
+
+    function editor(overrides: Partial<ConfigEditorProps> = {}) {
+        return h(ConfigEditor, {
+            rows: ROWS,
+            apply: async () => "written",
+            reload: () => ROWS,
+            columns: 80,
+            window: 12,
+            onDone: () => {},
+            ...overrides,
+        })
+    }
+
+    test("every row is listed with its current value, and nothing wraps", () => {
+        const frame = renderFrame(editor(), { columns: 80 })
+        expect(frame.text).toContain("tools.dialect")
+        expect(frame.text).toContain("nlt")
+        expect(frame.text).toContain("server.host")
+        expect(frame.text).toContain("127.0.0.1")
+        expect(frame.text).toContain("tg.allowFrom")
+        expect(frame.text).toContain("@moeen_m")
+        expect(overflowing(frame, 80)).toEqual([])
+    })
+
+    test("a secret shows only that it is unset — never a value, not even a length", () => {
+        // A listing that leaked it would make the masked field decorative.
+        const frame = renderFrame(editor(), { columns: 80 })
+        expect(frame.text).toContain("MODEL_API_KEY")
+        expect(frame.text).toContain("(not set)")
+    })
+
+    test("the cursor opens on the first setting, not on the heading above it", async () => {
+        const harness = mount(editor(), { columns: 80 })
+        const frame = harness.frame()
+        harness.unmount()
+        const cursored = frame.lines.find((line) => line.includes("❯")) ?? ""
+        expect(cursored).toContain("tools.dialect")
+    })
+
+    test("enter opens the field seeded with the value, and esc returns to the list", async () => {
+        const harness = mount(editor(), { columns: 80 })
+        await harness.press(KEY.enter)
+        const editing = harness.frame()
+        await harness.press(KEY.escape)
+        const back = harness.frame()
+        harness.unmount()
+        expect(editing.text).toContain("nlt")
+        expect(editing.text).toContain("enter writes it")
+        expect(back.text).toContain("enter changes it")
+    })
+
+    test("a confirmed edit calls apply with what was typed, and shows what came back", async () => {
+        // The far end of the editor: the reducer is asserted separately, and this is what proves the
+        // buffer actually reaches the writer.
+        const seen: string[] = []
+        const harness = mount(
+            editor({
+                apply: async (_row, raw) => {
+                    seen.push(raw)
+                    return "tools.dialect is now native"
+                },
+            }),
+            { columns: 80 },
+        )
+        await harness.press(KEY.enter)
+        // The seed is selected-and-replaced by typing over it: clear it first, as a person would.
+        for (const _ of "nlt") await harness.press(KEY.backspace)
+        await harness.press("n", "a", "t", "i", "v", "e", KEY.enter)
+        await harness.settle(20)
+        const frame = harness.frame()
+        harness.unmount()
+        expect(seen).toEqual(["native"])
+        expect(frame.text).toContain("tools.dialect is now native")
+    })
+
+    test("a refused edit keeps the buffer and shows the reason", async () => {
+        const harness = mount(
+            editor({
+                apply: async () => {
+                    throw new Error("that is not a dialect")
+                },
+            }),
+            { columns: 80 },
+        )
+        await harness.press(KEY.enter, "x", KEY.enter)
+        await harness.settle(20)
+        const frame = harness.frame()
+        harness.unmount()
+        expect(frame.text).toContain("that is not a dialect")
+        // Still editing, so the value can be corrected rather than retyped.
+        expect(frame.text).toContain("enter writes it")
+    })
+
+    test("esc while browsing reports whether anything changed", async () => {
+        const closed: boolean[] = []
+        const harness = mount(editor({ onDone: (changed) => closed.push(changed) }), {
+            columns: 80,
+        })
+        await harness.press(KEY.escape)
+        harness.unmount()
+        expect(closed).toEqual([false])
+    })
+
+    test("an unfocused editor ignores the keyboard", async () => {
+        // Ink fires every active hook, so a pane over a live prompt would otherwise have two surfaces
+        // reading one keystroke — a wrong action rather than a rendering fault.
+        const closed: boolean[] = []
+        const harness = mount(
+            editor({ focused: false, onDone: (changed) => closed.push(changed) }),
+            { columns: 80 },
+        )
+        await harness.press(KEY.escape)
+        harness.unmount()
+        expect(closed).toEqual([])
+    })
+
+    test("it lays out at the 40-column floor without a row wrapping", async () => {
+        // A row that wraps is a broken list, and the name column shrinks before the value does.
+        const frame = renderFrame(editor({ columns: 40 }), { columns: 40 })
+        expect(overflowing(frame, 40)).toEqual([])
     })
 })

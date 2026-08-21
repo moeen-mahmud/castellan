@@ -104,6 +104,7 @@ export {
     envOverrides,
     envReferencesIn,
     expandEnvDeep,
+    layeredEnv,
     mergeEnv,
     parseDotEnv,
 } from "./manifest/env.ts"

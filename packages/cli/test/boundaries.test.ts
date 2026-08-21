@@ -127,6 +127,10 @@ describe("the pure modules stay pure", () => {
         // network, so *which* edits need a confirmation has to be assertable without performing one —
         // the same argument `remove-plan.ts` makes about an irreversible sequence's order.
         "lib/config-view.ts",
+        // The editor's arithmetic: which rows exist, where the cursor may land, what a field starts
+        // with. Pure so the two things most likely to be wrong are data — the cursor stepping over a
+        // heading, and a secret never being seeded into a buffer.
+        "lib/config-editor.ts",
         // Text in, text out. A `.env` writer that reflowed the file would drop the comments naming where
         // each key came from, which matters more here than in the manifest.
         "lib/dotenv-edit.ts",

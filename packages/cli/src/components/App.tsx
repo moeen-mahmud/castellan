@@ -29,6 +29,7 @@ import { Box, Text, useApp, useInput } from "ink"
 import { type ComponentType, useCallback, useEffect, useMemo, useState } from "react"
 import { BRAND_INDENT, Brandmark } from "#components/Brandmark"
 import { CommandOutput } from "#components/CommandOutput"
+import type { ConfigEditorProps } from "#components/ConfigEditor"
 import { HistorySearch } from "#components/HistorySearch"
 import { Live } from "#components/Live"
 import { Palette } from "#components/Palette"
@@ -44,6 +45,8 @@ import { useTerminalSize } from "#hooks/useTerminalSize"
 import { useTurn } from "#hooks/useTurn"
 import { keyContext, keyToIntent } from "#keymap"
 import { chatFrame, transcriptRowsAfterBrand } from "#lib/chat-frame"
+import type { EditorRow } from "#lib/config-editor"
+import { applyEditorRow, editorRowsFor } from "#lib/config-rows"
 import {
     EXIT_ARM_MS,
     FALLBACK_COLUMNS,
@@ -95,6 +98,13 @@ type Pane =
      * and re-reading it on every frame would put a database query in the render path.
      */
     | { readonly kind: "sessions"; readonly stored: readonly SessionRowSource[] | undefined }
+    /**
+     * The settings editor. `rows` is read when the pane opens, not kept current.
+     *
+     * Read once because the editor re-reads after each write of its own — keeping it live here would put
+     * a file read in the render path for a surface that already knows when it has changed something.
+     */
+    | { readonly kind: "config"; readonly rows: readonly EditorRow[] }
 
 export function App({
     agent,
@@ -153,6 +163,7 @@ export function App({
      * built binary then dies at parse time with `Duplicate export of 'SessionPicker'` while every test —
      * which imports source — passes. Both edges dynamic, no duplicate.
      */
+    const [Editor, setEditor_] = useState<ComponentType<ConfigEditorProps> | undefined>(undefined)
     const [Sessions, setSessions] = useState<ComponentType<SessionPickerProps> | undefined>(
         undefined,
     )
@@ -414,6 +425,20 @@ export function App({
                         })
                     return true
                 }
+                if (entry.word === "/config" && (rest.trim() === "" || rest.trim() === "edit")) {
+                    // Bare `/config` is the editor; `/config list` and the rest are still the plain
+                    // command in an output pane, which the fallthrough below handles.
+                    if (manifestPath === undefined) {
+                        note("this session has no manifest path, so there is nothing to edit")
+                        return true
+                    }
+                    setPane({ kind: "config", rows: editorRowsFor(manifestPath) })
+                    void import("#components/ConfigEditor").then((module) =>
+                        // Wrapped in a function, or `useState` would call the component as an updater.
+                        setEditor_(() => module.ConfigEditor),
+                    )
+                    return true
+                }
                 if (entry.word === "/skills" && catalogue !== undefined) {
                     setPane({ kind: "skills" })
                     void import("#components/SkillBrowser").then((module) =>
@@ -433,7 +458,10 @@ export function App({
             }
             return false
         },
-        [openCommand, catalogue, sessions, onSwitch, note],
+        // `manifestPath` is read by the `/config` branch. A prop that does not change in practice, and
+        // listing it is what stops a later change from being captured stale — the same reason the rule
+        // exists rather than a suppression here.
+        [openCommand, catalogue, sessions, onSwitch, note, manifestPath],
     )
 
     // ── the pane has the keyboard while it is open ────────────────────────────────────────
@@ -591,6 +619,48 @@ export function App({
         },
         { isActive: pane.kind === "none" },
     )
+
+    if (pane.kind === "config") {
+        return (
+            <Box flexDirection="column" width={columns} height={size.rows}>
+                <Text color={THEME.accent} bold wrap="truncate">
+                    {titleLine({ title: `${BRAND.name} ${VERSION}`, summary: "settings" }, columns)}
+                </Text>
+                {Editor === undefined ? (
+                    <Box marginLeft={2}>
+                        <Spinner label="reading the settings" />
+                    </Box>
+                ) : (
+                    <Editor
+                        rows={pane.rows}
+                        apply={(row, raw) => applyEditorRow(manifestPath ?? "", row, raw)}
+                        reload={() => editorRowsFor(manifestPath ?? "")}
+                        columns={columns}
+                        window={SESSION_PICKER_ROWS}
+                        onDone={(changed) => {
+                            setPane({ kind: "none" })
+                            // An agent's settings are fixed for the lifetime of the process running it,
+                            // so a change that is not followed by a restart is a change that silently
+                            // did not apply — rule 8's shape. The draft rides across, for the reason
+                            // `/restart` carries it: throwing away a half-written message is a second,
+                            // unasked-for consequence of asking for the first.
+                            if (changed) {
+                                onRestart?.(editor.value)
+                                exit()
+                            }
+                        }}
+                    />
+                )}
+                {/*
+                 * The slack goes *below* a long list, not above it. Bottom-anchoring is right for the
+                 * conversation switcher — a dozen short rows that read as a menu — and wrong here: the
+                 * settings run past twenty rows, so a spacer above them started the list mid-screen with
+                 * eight blank rows over it and the rest running off the bottom.
+                 */}
+                <Box flexGrow={1} />
+            </Box>
+        )
+    }
 
     if (pane.kind === "sessions") {
         return (

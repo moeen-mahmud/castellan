@@ -303,19 +303,26 @@ export const COMMANDS: readonly CommandSpec[] = [
         // are deliberately floored on the fields decision 11.29 reserves for a person — which left
         // those fields with no editor at all until this existed.
         //
-        // `output` rather than `view`: the result is a listing or a one-line report, not a surface
-        // somebody navigates. A `set` from inside a session cannot take effect in it, which the report
-        // says, and the pane path already knows how to hand back a restart.
+        // `view`, because bare `/config` opens the editor — a surface somebody navigates — while every
+        // other action is a listing or a one-line report and falls through to an output pane. That
+        // fallthrough is the existing contract for a view: "a view named in the table with nothing built
+        // yet falls back to its own output".
         name: "config",
 
-        inSession: "output",
+        inSession: "view",
         summary: "read and change an agent's settings, and fill in its secrets",
         args: [
             {
                 name: "action",
-                required: true,
-                help: "what to do",
+                // Optional, because `config <agent>` with no action opens the editor. `readAction`
+                // decides which of the two the first positional is; the six action words win.
+                required: false,
+                help: "what to do (default: edit)",
                 choices: [
+                    {
+                        value: "edit",
+                        help: "the full-screen editor — also what bare `config <agent>` opens",
+                    },
                     { value: "list", help: "every setting, its current value, and who may set it" },
                     { value: "get", help: "one setting" },
                     { value: "set", help: "change one setting" },
@@ -329,7 +336,9 @@ export const COMMANDS: readonly CommandSpec[] = [
                     },
                 ],
             },
-            { ...MANIFEST, required: true },
+            // Not required: `config <agent>` puts the agent in positional 0, and `readAction` moves it.
+            // Declaring it required would fail on arity before that ever ran.
+            { ...MANIFEST, required: false },
             {
                 name: "name",
                 required: false,

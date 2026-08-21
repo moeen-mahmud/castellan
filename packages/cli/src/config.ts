@@ -28,10 +28,8 @@
  * decides which, so "what needs a confirmation" is assertable without performing one.
  */
 
-import { chmodSync, existsSync, readFileSync, statSync, writeFileSync } from "node:fs"
-import { join } from "node:path"
+import { readFileSync } from "node:fs"
 import {
-    editManifest,
     HarnessError,
     manifestDocument,
     manifestValueAt,
@@ -39,29 +37,37 @@ import {
     parseSettingValue,
     processAlive,
     readManifestHeader,
-    SETTINGS,
     type Setting,
     SqliteStore,
     settingByPath,
 } from "@dispach/core"
-import { ambientEnv } from "#lib/ambient"
+import { applyAllow, applySecret, applySet, checkedHandle } from "#lib/config-apply"
+import type { EditorRow } from "#lib/config-editor"
+import { agentEnv } from "#lib/config-env"
+import { applyEditorRow, currentValues, editorRowsFor } from "#lib/config-rows"
 import {
     confirmationFor,
     envNeeds,
     renderChange,
     renderOne,
     renderSettings,
-    type SettingValue,
     settablePaths,
     showValue,
     unmet,
 } from "#lib/config-view"
 import { askSecret, askYesNo } from "#lib/confirm"
-import { EXIT_FAILURE, EXIT_OK } from "#lib/const"
-import { upsertEnv } from "#lib/dotenv-edit"
-import { telegramHandle } from "#lib/init-flow"
+import {
+    ENTER_ALT_SCREEN,
+    EXIT_FAILURE,
+    EXIT_OK,
+    FALLBACK_COLUMNS,
+    MAX_SCREEN_ROWS,
+} from "#lib/const"
+import { flushOutput, markAltScreen, onExit, restoreTerminal } from "#lib/exit"
+import { resolveModeFromProcess } from "#lib/output"
 import { bullet, keyValue } from "#lib/render"
 import { resolveAgentRef, storePath } from "#lib/sandbox"
+import { screenColumns } from "#lib/screen"
 
 export interface ConfigCommandOptions {
     /** `list` | `get` | `set` | `env` | `allow`. */
@@ -88,7 +94,43 @@ export interface ConfigCommandOptions {
     readonly out?: (text: string) => void
 }
 
-const ACTIONS = ["list", "get", "set", "env", "allow"] as const
+const ACTIONS = ["list", "get", "set", "env", "allow", "edit"] as const
+
+/**
+ * Read the action and the agent out of the positionals, allowing `config <agent>` with no action.
+ *
+ * The editor is what most people want from this command, so typing its name and an agent has to work.
+ * Disambiguated the way this repo already does it twice over: a slash command takes arguments only
+ * after a token that is *exactly* a known command, and `resolveAgentRef` lets the filesystem win with a
+ * note on genuine ambiguity. Here the six action words win, and anything else is an agent.
+ *
+ * The collision is an agent literally named after an action, and it gets the note rather than silence —
+ * running the wrong thing quietly is the failure worth avoiding, and it does not look wrong in output.
+ */
+export function readAction(
+    first: string | undefined,
+    second: string | undefined,
+    warn: (line: string) => void = (line) => process.stderr.write(line),
+): { readonly action: string; readonly ref: string | undefined } {
+    const given = (first ?? "").trim()
+    if (given === "") return { action: "edit", ref: undefined }
+    if (!ACTIONS.includes(given as (typeof ACTIONS)[number])) {
+        return { action: "edit", ref: given }
+    }
+    if (second !== undefined && ACTIONS.includes(second as (typeof ACTIONS)[number])) {
+        // Both words are action names, so one of them is an agent and only the order says which. The
+        // first wins, and the note is what stops a silently-wrong run — the same choice
+        // `resolveAgentRef` makes for a bare name shadowed by a directory.
+        warn(`note: reading "${given}" as the action and "${second}" as the agent\n`)
+    }
+    if (second === undefined && given !== "list") {
+        // A known action word with nothing after it. `config edit` alone is the editor with no agent,
+        // which fails later with the usual missing-manifest error; anything else is ambiguous only if an
+        // agent has that name, and `resolveAgentRef` is what finds out.
+        return { action: given, ref: undefined }
+    }
+    return { action: given, ref: second }
+}
 
 export async function configCommand(options: ConfigCommandOptions): Promise<number> {
     const out = options.out ?? ((text: string) => process.stdout.write(text))
@@ -113,7 +155,7 @@ export async function configCommand(options: ConfigCommandOptions): Promise<numb
             // whose job is the overview, and a note repeated on unrelated edits is one nobody reads.
             const missing = unmet(
                 envNeeds(manifestDocument(readFileSync(manifestPath, "utf8"))),
-                ambientEnv([manifestPath]),
+                agentEnv(manifestPath),
             )
             for (const need of missing) {
                 out(`\n${bullet(`${need.name} is not set — ${need.why}`)}\n`)
@@ -127,49 +169,11 @@ export async function configCommand(options: ConfigCommandOptions): Promise<numb
             return await set(manifestPath, options, out)
         case "env":
             return await env(manifestPath, options, out)
+        case "edit":
+            return await edit(manifestPath, options, out)
         default:
             return await allow(manifestPath, options, out)
     }
-}
-
-/**
- * Every setting with whatever the file currently holds.
- *
- * Two rows do not have a readable dotted path — `allowFrom` lives inside a list entry and `writeRoots`
- * inside a provider — so they are gathered by walking the block instead. Shown rather than omitted: a
- * field missing from a listing reads as "no such concept", which is the same reasoning that puts a
- * `none` row in slot 2 instead of leaving the line out.
- */
-function currentValues(manifestPath: string): readonly SettingValue[] {
-    const source = readFileSync(manifestPath, "utf8")
-    return SETTINGS.map((setting) => {
-        if (setting.path === "channels[].allowFrom") {
-            const channels = manifestValueAt(source, ["channels"])
-            if (!Array.isArray(channels)) return { setting, value: undefined }
-            const byId: Record<string, unknown> = {}
-            for (const entry of channels) {
-                if (typeof entry !== "object" || entry === null) continue
-                const row = entry as { id?: unknown; allowFrom?: unknown }
-                if (typeof row.id !== "string") continue
-                byId[row.id] = row.allowFrom ?? []
-            }
-            return { setting, value: Object.keys(byId).length === 0 ? undefined : byId }
-        }
-        if (setting.path === "tools.providers.<id>.writeRoots") {
-            const providers = manifestValueAt(source, ["tools", "providers"])
-            if (typeof providers !== "object" || providers === null || Array.isArray(providers)) {
-                return { setting, value: undefined }
-            }
-            const roots: Record<string, unknown> = {}
-            for (const [id, config] of Object.entries(providers as Record<string, unknown>)) {
-                if (typeof config !== "object" || config === null) continue
-                const found = (config as { writeRoots?: unknown }).writeRoots
-                if (found !== undefined) roots[id] = found
-            }
-            return { setting, value: Object.keys(roots).length === 0 ? undefined : roots }
-        }
-        return { setting, value: manifestValueAt(source, setting.path.split(".")) }
-    })
 }
 
 function get(
@@ -238,13 +242,17 @@ async function set(
         }
     }
 
-    const ambient = ambientEnv([manifestPath])
+    // The agent's own layered environment, not this process's. `ambientEnv` alone does not do it: it
+    // demotes a colliding cwd variable and never adds the agent's own file, so a token sitting beside
+    // the manifest read as unset.
+    const ambient = agentEnv(manifestPath)
     const before = unmet(
         envNeeds(manifestDocument(readFileSync(manifestPath, "utf8"))),
         ambient,
     ).map((need) => need.name)
 
-    const result = await editManifest({ file: manifestPath, path: path.split("."), value })
+    // `applySet` owns the write, so the editor and this command cannot validate a value differently.
+    const result = await applySet(manifestPath, path, options.value)
 
     // Newly required only. Computed either side of the edit rather than guessed from the value, so
     // `server.enabled true` reports the token it has just made load-bearing and `limits.maxSteps 9`
@@ -329,10 +337,6 @@ async function running(
     return undefined
 }
 
-function envPathOf(manifestPath: string): string {
-    return join(manifestPath.replace(/\/agent\.yaml$/, ""), ".env")
-}
-
 /**
  * Put a secret in the `.env` beside the manifest.
  *
@@ -381,22 +385,10 @@ async function env(
         })
     }
 
-    const path = envPathOf(manifestPath)
-    const before = existsSync(path) ? readFileSync(path, "utf8") : ""
-    const upsert = upsertEnv(before, name, value)
-    writeFileSync(path, upsert.text, { encoding: "utf8", mode: 0o600 })
-    // `writeFileSync`'s mode applies only when it creates the file, so an existing 0644 stays 0644.
-    const loose = (statSync(path).mode & 0o077) !== 0
-    if (loose) chmodSync(path, 0o600)
-
-    out(
-        `${keyValue([
-            { label: upsert.replaced ? "replaced" : "wrote", value: name },
-            { label: "file", value: path },
-        ])}\n`,
-    )
-    if (loose)
-        out(`${bullet("tightened this file to 0600 — it holds every secret this agent has")}\n`)
+    // The write itself is `applySecret`, which the editor calls too — two callers deciding separately
+    // whether to tighten the file's mode is the same class of split as two manifest writers.
+    const applied = applySecret(manifestPath, name, value)
+    out(`${keyValue([{ label: "set", value: applied.note }])}\n`)
     out(`${bullet("takes effect the next time the agent starts")}\n`)
     return EXIT_OK
 }
@@ -481,16 +473,10 @@ async function allow(
         return EXIT_OK
     }
 
-    // The whole list is rewritten because one entry's key is not addressable. That re-renders the
-    // block, which is why `allowFrom` is worth its own command rather than being a documented recipe.
-    const rewritten = entries.map((entry, index) =>
-        index === at ? { ...entry, allowFrom: next } : entry,
-    )
-    const result = await editManifest({
-        file: manifestPath,
-        path: ["channels"],
-        value: rewritten,
-    })
+    // `applyAllow` owns the write and the handle check, so the editor cannot validate a handle
+    // differently from this command. It takes the whole list, because the whole list is what gets
+    // written: one entry's key is not addressable by the source editor.
+    const result = await applyAllow(manifestPath, String(target.id ?? ""), next)
     const held = await running(manifestPath, options)
 
     out(
@@ -514,34 +500,80 @@ async function allow(
     return EXIT_OK
 }
 
-/**
- * A handle, validated against the service that issues it.
- *
- * Telegram's rule is shared with `init` rather than restated, because a check only one surface performs
- * is a check the two disagree about. An unknown channel type passes through: guessing at another
- * service's identifier format would refuse handles that are perfectly valid.
- */
-function checkedHandle(raw: string, type: string): string {
-    const given = raw.trim()
-    if (given === "") {
-        throw new HarnessError({
-            code: "cli_config_handle_missing",
-            message: "No handle given.",
-            hint: "`config allow <agent> @handle`. On Telegram that is the username, not the display name.",
-            field: "handle",
-        })
-    }
-    if (type !== "telegram") return given
-    const checked = telegramHandle(given)
-    if (!checked.ok) {
-        throw new HarnessError({
-            code: "cli_config_handle_invalid",
-            message: `"${given}" ${checked.reason}`,
-            hint: "A handle that cannot exist matches nobody, and the only symptom is the bot silently refusing every message from the person it was set up for.",
-            field: "handle",
-        })
-    }
-    return checked.value
-}
-
 export const CONFIG_EXIT_FAILURE = EXIT_FAILURE
+
+/**
+ * The editor, standalone.
+ *
+ * Alternate screen, because it waits for keys: it takes the terminal and gives it back. A changed flag
+ * comes back through `onDone` so the one line printed afterwards can say a restart is needed — printed
+ * on the real screen after the restore, because hard rule 8 does not stop applying when a screen closes.
+ */
+async function edit(
+    manifestPath: string,
+    options: ConfigCommandOptions,
+    out: (text: string) => void,
+): Promise<number> {
+    // Refused rather than attempted without a terminal. Two things went wrong otherwise, and the second
+    // is the serious one: the alternate-screen sequence was written into a *pipe*, and Ink's own "raw
+    // mode is not supported" error left the command exiting **0** — a failure that reported success,
+    // which hard rule 8 exists to prevent. `browse` and `init` already ask this question the same way.
+    const decision = resolveModeFromProcess({ plain: false, json: false, oneShot: false })
+    if (decision.mode !== "rich") {
+        throw new HarnessError({
+            code: "cli_config_edit_needs_terminal",
+            message: "The settings editor needs a terminal.",
+            hint: `Not one here (${decision.because}). \`config list\` reads them and \`config set\` changes one, both of which work on a pipe.`,
+        })
+    }
+
+    const [{ render }, { createElement }, { ConfigEditor }] = await Promise.all([
+        import("ink"),
+        import("react"),
+        import("#components/ConfigEditor"),
+    ])
+
+    let changed = false
+    let finish: () => void = () => {}
+    const closed = new Promise<void>((resolve) => {
+        finish = resolve
+    })
+
+    markAltScreen()
+    process.stdout.write(ENTER_ALT_SCREEN)
+
+    // No wrapper component: the editor is a *view*, so it owns its own state and its single `useInput`,
+    // exactly as `SkillBrowser` and `SessionPicker` do. Holding it here needed `useState` in this file,
+    // which is a shared command path — and a static React import there costs ~170-210 ms on every
+    // command including `validate --json`, which a boundaries test refuses outright.
+    const instance = render(
+        createElement(ConfigEditor, {
+            rows: editorRowsFor(manifestPath),
+            apply: (row: EditorRow, raw: string) => applyEditorRow(manifestPath, row, raw),
+            reload: () => editorRowsFor(manifestPath),
+            // A pty can report `columns === 0`, which `?? fallback` does not cover — measured, and it
+            // once laid a picker's rows out for half the terminal, uniformly, on every row.
+            columns: screenColumns(process.stdout.columns, FALLBACK_COLUMNS),
+            window: MAX_SCREEN_ROWS,
+            onDone: (didChange: boolean) => {
+                changed = didChange
+                finish()
+            },
+        }),
+        { exitOnCtrlC: false },
+    )
+    onExit(() => instance.unmount())
+    await closed
+    instance.unmount()
+    restoreTerminal()
+    await flushOutput()
+
+    const held = await running(manifestPath, options)
+    if (!changed) {
+        out(`${keyValue([{ label: "unchanged", value: manifestPath }])}\n`)
+        return EXIT_OK
+    }
+    out(`${keyValue([{ label: "changed", value: manifestPath }])}\n`)
+    out(`${bullet(`takes effect after ${restartHint(held?.mode)}`)}\n`)
+    return EXIT_OK
+}

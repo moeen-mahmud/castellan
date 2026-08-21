@@ -10,6 +10,7 @@ import { describe, expect, test } from "bun:test"
 import { SETTINGS, settingByPath } from "@dispach/core"
 import {
     confirmationFor,
+    editorRows,
     envNeeds,
     renderChange,
     renderSettings,
@@ -196,5 +197,72 @@ describe("showValue", () => {
         // and `String(entry)` on an object writes `[object Object]`, which has been a real defect three
         // times in three different renderers.
         expect(showValue([{ type: "telegram", id: "tg" }])).toBe('[{"type":"telegram","id":"tg"}]')
+    })
+})
+
+describe("editorRows", () => {
+    const SETTINGS_ROWS: readonly SettingValue[] = SETTINGS.map((setting) => ({
+        setting,
+        value: undefined,
+    }))
+
+    function build(channels: readonly { id: string; type: string; allowFrom: string[] }[] = []) {
+        return editorRows(SETTINGS_ROWS, {
+            channels,
+            secrets: [{ name: "MODEL_API_KEY", why: "the manifest will not load" }],
+            present: () => false,
+        })
+    }
+
+    test("a row nobody can act on is not offered at all", () => {
+        // `tools.providers.<id>.writeRoots` needs a provider named, and the editor has no way to ask
+        // which — a row that cannot be used is the dead end this surface exists to remove. `config list`
+        // still shows it, which is where a listing belongs.
+        const paths = build().map((row) => (row.kind === "setting" ? row.setting.path : ""))
+        expect(paths).not.toContain("tools.providers.<id>.writeRoots")
+        expect(paths).not.toContain("channels[].allowFrom")
+    })
+
+    test("allowFrom is expanded to one row per declared channel", () => {
+        const rows = build([
+            { id: "tg", type: "telegram", allowFrom: ["@a"] },
+            { id: "tg2", type: "telegram", allowFrom: [] },
+        ])
+        const allow = rows.filter((row) => row.kind === "allow")
+        expect(allow.map((row) => (row.kind === "allow" ? row.channelId : ""))).toEqual([
+            "tg",
+            "tg2",
+        ])
+    })
+
+    test("no channels means no allow section at all, heading included", () => {
+        // A heading over nothing is a row the cursor has to step past for no reason.
+        expect(build().some((row) => row.kind === "allow")).toBe(false)
+        expect(build().some((row) => row.kind === "heading" && row.label.includes("reach"))).toBe(
+            false,
+        )
+    })
+
+    test("every secret the manifest depends on gets a row", () => {
+        const secrets = build().filter((row) => row.kind === "secret")
+        expect(secrets.length).toBe(1)
+        expect(secrets[0]?.kind === "secret" && secrets[0].name).toBe("MODEL_API_KEY")
+    })
+
+    test("each manifest block gets exactly one heading", () => {
+        const headings = build()
+            .filter((row) => row.kind === "heading")
+            .map((row) => (row.kind === "heading" ? row.label : ""))
+        expect(new Set(headings).size).toBe(headings.length)
+    })
+
+    test("a heading always has at least one row under it", () => {
+        // Otherwise the cursor steps over a label describing nothing.
+        const rows = build([{ id: "tg", type: "telegram", allowFrom: [] }])
+        for (const [at, row] of rows.entries()) {
+            if (row.kind !== "heading") continue
+            expect(rows[at + 1]?.kind).not.toBe("heading")
+            expect(rows[at + 1]).toBeDefined()
+        }
     })
 })

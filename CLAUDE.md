@@ -564,6 +564,29 @@ Never claim a performance property without a number in `evals/` and a script to 
   with arguments: the palette ran `/config` and typing `/config get model.main.id` spent a model turn
   instead. Both derived now. `dispatch`'s own comment already said it was "shared so the two cannot
   diverge" — only one of the two reached it.
+- **`ambientEnv` is not "the agent's environment", and using it as one makes a surface lie.** It layers
+  the *cwd*'s `.env` against an agent's — demoting a colliding variable so a project checkout cannot
+  silently change which model a sandbox agent runs on — and returns `process.env` unchanged when nothing
+  is in tension. It never *adds* the file beside the manifest; `loadManifest` does that through
+  `layeredEnv`. Asked "is this set", it reported a token missing that plainly was not, and put `(not
+  set)` on an editor row immediately after somebody set it. `lib/config-env.ts` is the honest version.
+  The comment claiming the layered behaviour was written *before* the code that would have provided it,
+  which is the transferable half.
+- **A prop that bounds a list is a ceiling; the terminal wins.** Handing the editor `MAX_SCREEN_ROWS` as
+  its window put the whole list on a 30-row terminal — one row too many, so Ink's own output scrolled
+  the buffer and the first block, the cursor and the footer went off the top with nothing saying so. An
+  overflowing frame is corruption, not a scrollbar; clamp against the measured rows, which is the line
+  `SkillBrowser` already had. And the slack goes **below** a long list: bottom-anchoring reads as a menu
+  for a dozen short rows and starts twenty-plus settings mid-screen under eight blank ones.
+- **A field consumed by one of two renderers looks consumed from the type and is silent in the other.**
+  `Screen` puts `ScreenHeader.summary` on its own dim line; `titleLine`, the one-line variant every pane
+  uses, dropped it — so the conversation switcher passed "pick a conversation" and the settings editor
+  "settings", and neither had ever appeared. Not dead vocabulary, which is what makes it hard to see.
+- **A surface that mounts Ink refuses a non-terminal.** `config edit` did not, and without a tty it wrote
+  the alternate-screen escape **into a pipe** while Ink's own raw-mode error left the command exiting
+  **0** — hard rule 8, from inside a command whose whole job is being careful. `resolveModeFromProcess`
+  is the question `browse` and `init` already ask. Name the alternative in the refusal: "needs a
+  terminal" on its own is a dead end for the scripted case.
 - **`agent.yaml` is edited by `config_set`, never by `file_write`, and never by re-serialising it.**
   A whole-file overwrite cannot be validated; a targeted change is re-checked against the schema
   before anything is written. And `parseDocument` → `setIn` → `String(doc)` **reflows the file**: a

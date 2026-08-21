@@ -122,11 +122,18 @@ own (`config_set`), and the two are deliberately not the same: what a tool may d
 ask for, but where it writes, who may reach it and what address it listens on are yours.
 
 ```bash
+dispach config milo                                 # a screen: every setting, edit in place
 dispach config list milo                            # every setting, its value, and who may set it
 dispach config set milo model.main.id deepseek-v4-pro
 dispach config env milo MODEL_API_KEY               # prompted, masked, written 0600
 dispach config allow milo @your_handle              # who a channel accepts messages from
 ```
+
+`config <agent>` with no action opens the editor, which covers the same fields plus one `allowFrom` row
+per channel and every secret the manifest depends on — masked as you type, and never shown afterwards.
+Each row is written when you confirm it, so there is no unsaved state to lose; a value the schema
+rejects is refused with the schema's own words and nothing is written. `/config` inside a session opens
+the same screen, and restarts the agent on the way out so the change is actually in force.
 
 Every edit is placed in the file, re-validated against the real schema and only then written, so a
 change that would stop the agent loading is refused instead of discovered at the next boot. Comments
