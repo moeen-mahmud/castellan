@@ -109,6 +109,20 @@ export const REASONING_FOLD_ROWS = 4
 export const SEARCH_ROWS = 6
 
 /**
+ * Rows a single-value field may wrap to before it scrolls to follow the caret.
+ *
+ * Smaller than `MAX_INPUT_ROWS`, because a *value* is not a message: a wizard answer and a manifest
+ * setting are one line of intent that happens to be long. Three is enough for the longest thing a
+ * generated manifest holds — `tools.pinned` at 92 characters is two rows on an 80-column terminal — and
+ * few enough that the field never pushes the rest of the screen around.
+ *
+ * There was no bound at all before, because the field passed no width: in the settings editor a long
+ * value was clipped at the terminal's edge with the caret past the clip, and you could not see what you
+ * were typing. The wizard escaped it — a bordered box bounds its text whatever the field passes.
+ */
+export const FIELD_ROWS = 3
+
+/**
  * Transcript items kept before the oldest are dropped.
  *
  * Load-bearing rather than prudent, and it was missing for three phases. While the conversation lived

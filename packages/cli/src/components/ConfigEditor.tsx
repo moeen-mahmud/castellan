@@ -44,7 +44,7 @@ import {
     settle,
     typing,
 } from "#lib/config-editor"
-import { MIN_SCREEN_ROWS, SCREEN_CHROME_ROWS } from "#lib/const"
+import { FIELD_ROWS, MIN_SCREEN_ROWS, SCREEN_CHROME_ROWS } from "#lib/const"
 import { clip, viewport } from "#lib/rows"
 import type { SelectMove } from "#lib/select"
 import { THEME } from "#lib/theme"
@@ -161,12 +161,21 @@ export function ConfigEditor({
                     label={labelFor(row)}
                     editor={state.editor}
                     secret={row.kind === "secret"}
+                    // Without these the value is clipped at the terminal's edge and the caret sits past
+                    // the clip: `tools.pinned` is 92 characters in a generated manifest, so the first
+                    // long row anybody opens is one they cannot see themselves typing in.
+                    columns={columns}
+                    // Generous, because while editing this view *is* the screen: it draws a description,
+                    // the field and a hint, and nothing else. `FIELD_ROWS` is the shared floor for a
+                    // field sharing space with other content; here the space is free, and a value that
+                    // scrolled while two-thirds of the terminal sat empty would be a self-inflicted
+                    // version of the bug this fixes. At 40 columns — the documented floor — eight rows
+                    // holds about 320 characters, past anything a manifest field contains.
+                    maxRows={Math.max(FIELD_ROWS, visible - 2)}
                     {...(state.note === undefined ? {} : { error: state.note })}
                 />
                 <Text dimColor wrap="truncate">
-                    {state.busy
-                        ? "  writing…"
-                        : `  enter writes it · esc keeps ${valueNow(row)} · ^C closes`}
+                    {state.busy ? "  writing…" : `  enter writes it · ${keepHint(row)} · ^C closes`}
                 </Text>
             </Box>
         )
@@ -284,6 +293,21 @@ export function valueNow(row: EditorRow): string {
             return ""
     }
 }
+
+/**
+ * What escape keeps, short enough to be a hint rather than a second copy of the value.
+ *
+ * Naming the old value is genuinely useful for a scalar — `esc keeps nlt` tells you what backing out
+ * gets you. For a list it was a 92-character echo of the line directly above it, truncated by the
+ * terminal, which is noise in the one row that should be telling you which keys do what.
+ */
+function keepHint(row: EditorRow): string {
+    const value = valueNow(row)
+    return value.length <= KEEP_HINT_CHARS ? `esc keeps ${value}` : "esc cancels"
+}
+
+/** Past this, naming the old value is a second copy of it rather than a hint. */
+const KEEP_HINT_CHARS = 24
 
 /** The one-line explanation shown above the field while editing. */
 function describeRow(row: EditorRow): string {

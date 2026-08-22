@@ -572,6 +572,24 @@ Never claim a performance property without a number in `evals/` and a script to 
   set)` on an editor row immediately after somebody set it. `lib/config-env.ts` is the honest version.
   The comment claiming the layered behaviour was written *before* the code that would have provided it,
   which is the transferable half.
+- **`LineCursor` without `columns` truncates, and its own docstring says so — `TextField` never passed
+  it.** So in the settings editor a value longer than the terminal was clipped at the right edge with
+  the caret *past* the clip: you could not see what you were typing, and `tools.pinned` is 92 characters
+  in a generated manifest, which makes it the first long value anybody opens. The wizard escaped it
+  because a **bordered box bounds its text whatever the field passes** — and that distinction is the
+  transferable part: `Prompt` passed `columns`, `TextField` did not, and only the caller drawing into an
+  unbordered column was broken.
+- **A test that passes with the fix reverted is not a guard, and the reflex is to assume symmetry.** On
+  finding the truncation I wrote a wizard test to match, and it passed with the width removed — the
+  bordered frame was already doing the work. Second time in two phases: `palette.test.ts` counted 11
+  entries against a 16-row list and had never been able to fail. **Revert the fix and watch the new test
+  go red** before believing it, and before claiming a second caller has the same bug.
+- **A field that owns the screen should use it.** `FIELD_ROWS` is sized for a field sharing a box with
+  other content; the settings editor's editing view draws a description, the field and a hint and nothing
+  else, so bounding it at three rows made a 140-character value scroll while two-thirds of the terminal
+  sat empty — a self-inflicted version of the bug being fixed. And naming the old value in the hint
+  (`esc keeps …`) is useful for a scalar and becomes a truncated second copy of the line above it for a
+  list, in the one row that should say which keys do what.
 - **A prop that bounds a list is a ceiling; the terminal wins.** Handing the editor `MAX_SCREEN_ROWS` as
   its window put the whole list on a 30-row terminal — one row too many, so Ink's own output scrolled
   the buffer and the first block, the cursor and the footer went off the top with nothing saying so. An

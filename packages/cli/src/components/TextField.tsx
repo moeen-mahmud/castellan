@@ -20,9 +20,36 @@ export interface TextFieldProps {
     readonly error?: string
     /** Mask the value as it is typed. Passed straight through to the cursor. */
     readonly secret?: boolean
+    /**
+     * Columns available for the value. **Not optional in practice.**
+     *
+     * `LineCursor`'s own docstring says it: omitted, nothing wraps and a line wider than whatever draws
+     * this is truncated by Ink at a width nobody chose. This component never passed it, and in the
+     * settings editor — which draws the field into an unbordered column — a value longer than the
+     * terminal was clipped at the right edge with the caret *past* the clip. You could not see what you
+     * were typing, and `tools.pinned` is 92 characters in a generated manifest, so it was the first long
+     * value anybody opened.
+     *
+     * **The wizard was not affected, and checking that mattered**: its bordered frame gives the `<Text>`
+     * a bounded width, so Ink wrapped it anyway. Measured, after the assumption that it must be broken
+     * too — the guard that would have "proved" it passed with the fix reverted. It is passed there now
+     * regardless, because whoever owns a bounded window should wrap the text itself rather than leave it
+     * to whatever happens to enclose it, and because `maxRows` genuinely bounds the height.
+     */
+    readonly columns?: number
+    /** Rows the value may take before the view scrolls to follow the cursor. */
+    readonly maxRows?: number
 }
 
-export function TextField({ label, editor, placeholder, error, secret }: TextFieldProps) {
+export function TextField({
+    label,
+    editor,
+    placeholder,
+    error,
+    secret,
+    columns,
+    maxRows,
+}: TextFieldProps) {
     return (
         <Box flexDirection="column">
             <Text>{label}</Text>
@@ -37,6 +64,8 @@ export function TextField({ label, editor, placeholder, error, secret }: TextFie
                 gutter={GLYPH.prompt}
                 {...(placeholder === undefined ? {} : { placeholder })}
                 {...(secret === true ? { secret: true } : {})}
+                {...(columns === undefined ? {} : { columns })}
+                {...(maxRows === undefined ? {} : { maxRows })}
             />
             {error === undefined ? null : (
                 <Text color={THEME.error}>

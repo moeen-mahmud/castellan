@@ -22,7 +22,7 @@ import { WizardFrame } from "#components/WizardFrame"
 import { useTerminalSize } from "#hooks/useTerminalSize"
 import { keyToCheckIntent, keyToWizardIntent } from "#keymap"
 import { type BrowseRow, chosenEntries, selectableOf } from "#lib/browse"
-import { FALLBACK_COLUMNS, FALLBACK_ROWS } from "#lib/const"
+import { FALLBACK_COLUMNS, FALLBACK_ROWS, FIELD_ROWS } from "#lib/const"
 import type { PartialAnswers, QuestionDefaults } from "#lib/init-flow"
 import { firstSelectable, type MultiSelectState, reduceMultiSelect } from "#lib/multiselect"
 import { screenColumns, screenRows } from "#lib/screen"
@@ -357,6 +357,15 @@ export function WizardApp({ title, given, defaults, onDone }: WizardAppProps) {
                             <TextField
                                 label={currentQuestion(state)?.prompt ?? ""}
                                 editor={state.editor}
+                                // Not a bug fix here: the bordered frame already bounds the text, so a
+                                // long answer wrapped without this — measured, rather than assumed after
+                                // the settings editor turned out to be broken. Passed because the
+                                // component that owns a bounded window should do its own wrapping, and
+                                // because `maxRows` is a real bound on the height that did not exist.
+                                columns={
+                                    screenColumns(size.columns, FALLBACK_COLUMNS) - BRAND_INDENT
+                                }
+                                maxRows={FIELD_ROWS}
                                 placeholder={currentQuestion(state)?.fallback ?? ""}
                                 {...(state.error === undefined ? {} : { error: state.error })}
                                 {...(isSecretStep(state) ? { secret: true } : {})}

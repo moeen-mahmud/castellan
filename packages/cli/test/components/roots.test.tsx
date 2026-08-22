@@ -399,6 +399,26 @@ describe("SkillBrowser", () => {
 })
 
 describe("WizardApp", () => {
+    test("a long answer wraps inside the box instead of running off it", async () => {
+        // Not a regression guard for the truncation bug — this passes with that fix reverted, because the
+        // bordered frame bounds the text whatever the field passes. Kept as a guard on the *box*: it is
+        // what makes the field's own width unnecessary here, and if the border ever goes this is the test
+        // that notices. Checking it is what stopped a claim that the wizard was equally broken.
+        const harness = mount(
+            h(WizardApp, { title: "Setup", given: {}, defaults: {}, onDone: () => {} }),
+            { columns: 80 },
+        )
+        await harness.press(
+            ..."Ada Lovelace Byron the Countess of Lovelace and analyst of the Engine".split(""),
+        )
+        const frame = harness.frame()
+        harness.unmount()
+        const unwrapped = frame.text.replace(/\n\s+/g, " ")
+        expect(unwrapped).toContain("analyst of the Engine")
+        expect(frame.text).not.toContain("…")
+        expect(overflowing(frame, 80)).toEqual([])
+    })
+
     test("asks the first question and counts the steps honestly", () => {
         const harness = mount(
             h(WizardApp, { title: "Setup", given: {}, defaults: {}, onDone: () => {} }),
@@ -1184,6 +1204,67 @@ describe("ConfigEditor", () => {
         await harness.press(KEY.escape)
         harness.unmount()
         expect(closed).toEqual([])
+    })
+
+    test("a value longer than the terminal wraps, so the caret is on screen", async () => {
+        // The reported bug. `TextField` passed no width to `LineCursor`, whose own docstring says that
+        // means nothing wraps and the line is truncated by Ink at a width nobody chose — so a generated
+        // manifest's `tools.pinned` (92 characters) was clipped at the right edge with the caret *past*
+        // the clip. You could not see what you were typing.
+        const pinned =
+            '["file_read","file_write","file_edit","glob","grep","exec","config_read","config_set"]'
+        const rows: readonly EditorRow[] = [
+            {
+                kind: "setting",
+                setting: {
+                    path: "tools.pinned",
+                    means: "the tools it may call",
+                    agentListed: true,
+                },
+                value: JSON.parse(pinned) as string[],
+            },
+        ]
+        const harness = mount(editor({ rows }), { columns: 80 })
+        await harness.press(KEY.enter)
+        const frame = harness.frame()
+        harness.unmount()
+        // The tail is visible, which is where the caret is, and nothing was clipped away. Asserted on
+        // the *unwrapped* text, because wrapping is the fix: `config_set` is legitimately split across
+        // the break as `"con` / `fig_set"]`, and a test looking for it whole would fail on a working
+        // wrap and pass on a truncation that happened to keep it.
+        const unwrapped = frame.text.replace(/\n {2}/g, "")
+        expect(unwrapped).toContain('"config_set"]')
+        expect(frame.text).not.toContain("…")
+        expect(frame.lines.filter((line) => line.includes("file_read")).length).toBe(1)
+        expect(overflowing(frame, 80)).toEqual([])
+    })
+
+    test("the hint stops echoing a value once it is longer than a hint", async () => {
+        // It read `esc keeps ["file_read",...` — a truncated second copy of the line directly above,
+        // in the one row that should say which keys do what.
+        const short = mount(editor(), { columns: 80 })
+        await short.press(KEY.enter)
+        const shortFrame = short.frame()
+        short.unmount()
+        expect(shortFrame.text).toContain("esc keeps nlt")
+
+        const rows: readonly EditorRow[] = [
+            {
+                kind: "setting",
+                setting: {
+                    path: "tools.pinned",
+                    means: "the tools it may call",
+                    agentListed: true,
+                },
+                value: ["file_read", "file_write", "file_edit", "glob", "grep", "exec"],
+            },
+        ]
+        const long = mount(editor({ rows }), { columns: 80 })
+        await long.press(KEY.enter)
+        const longFrame = long.frame()
+        long.unmount()
+        expect(longFrame.text).toContain("esc cancels")
+        expect(longFrame.text).not.toContain("esc keeps [")
     })
 
     test("it lays out at the 40-column floor without a row wrapping", async () => {

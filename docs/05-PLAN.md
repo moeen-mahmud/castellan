@@ -2628,3 +2628,21 @@ is no third intent mapper to keep in step.
 
 **Non-goals.** A staged set with a cancel-all (11.111). Editing `writeRoots` from the editor (11.112).
 Sequence indexing in the writer — a key inside a list entry is reached by rewriting the list.
+
+**Follow-up, reported by Moeen and fixed (2026-08-22).** A long value could not be edited: `TextField`
+never passed `columns` to `LineCursor`, so the settings editor clipped anything wider than the terminal
+at the right edge with the caret *past* the clip — `tools.pinned` is 92 characters in a generated
+manifest. Fixed by threading the width and a row bound, sizing the editing view's bound from the screen
+it owns rather than from the shared `FIELD_ROWS`, and stopping the hint from echoing a long value.
+Measured at the 40-column floor: a 140-character `tools.policy.allow` is fully visible across five rows
+where three made it scroll under an empty terminal.
+
+The wizard, `TextField`'s other caller, turned out **not** to be affected — a bordered box bounds its
+text whatever the field passes — and the test written to prove otherwise passed with the fix reverted
+(11.119).
+
+- [x] A value wider than the terminal wraps and its tail is on screen, at 80 columns and at 40
+- [x] The same value in the in-session pane behaves identically
+- [x] Deleting and retyping at the end of a wrapped value is visible throughout
+- [x] The new guard **fails** with the width removed — checked, unlike the wizard one
+- [x] `bun test` 2528/0 · `test:node` 1164/0 · `typecheck` clean · `lint` at the 6 pre-existing warnings
